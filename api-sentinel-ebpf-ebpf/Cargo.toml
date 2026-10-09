@@ -1,0 +1,17 @@
+[package]
+name = "api-sentinel-ebpf-ebpf"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+api-sentinel-ebpf-common = { path = "../api-sentinel-ebpf-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "api-sentinel-ebpf"
+path = "src/main.rs"

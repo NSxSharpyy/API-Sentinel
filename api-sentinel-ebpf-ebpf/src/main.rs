@@ -13,7 +13,50 @@ pub fn api_sentinel_ebpf(ctx: TracePointContext) -> u32 {
 }
 
 fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint sched_switch called");
+    let oldstate = unsafe { ctx.read_at::<i32>(16) }.map_err(|_| 1u32)?;
+    let newstate = unsafe { ctx.read_at::<i32>(20) }.map_err(|_| 1u32)?;
+    let sport = unsafe { ctx.read_at::<u16>(24) }.map_err(|_| 1u32)?;
+    let dport = unsafe { ctx.read_at::<u16>(26) }.map_err(|_| 1u32)?;
+
+    let old_name = match oldstate {
+        1 => "ESTABLISHED",
+        2 => "SYN_SENT",
+        3 => "SYN_RECV",
+        4 => "FIN_WAIT1",
+        5 => "FIN_WAIT2",
+        6 => "TIME_WAIT",
+        7 => "CLOSE",
+        8 => "CLOSE_WAIT",
+        9 => "LAST_ACK",
+        10 => "LISTEN",
+        11 => "CLOSING",
+        _ => "UNKNOWN",
+    };
+
+    let new_name = match newstate {
+        1 => "ESTABLISHED",
+        2 => "SYN_SENT",
+        3 => "SYN_RECV",
+        4 => "FIN_WAIT1",
+        5 => "FIN_WAIT2",
+        6 => "TIME_WAIT",
+        7 => "CLOSE",
+        8 => "CLOSE_WAIT",
+        9 => "LAST_ACK",
+        10 => "LISTEN",
+        11 => "CLOSING",
+        _ => "UNKNOWN",
+    };
+
+    info!(
+        &ctx,
+        "TCP state change: {} -> {}, ports {} -> {}",
+        old_name,
+        new_name,
+        sport,
+        dport
+    );
+
     Ok(0)
 }
 

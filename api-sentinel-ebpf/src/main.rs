@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let program: &mut TracePoint = ebpf.program_mut("api_sentinel_ebpf").unwrap().try_into()?;
     program.load()?;
-    program.attach("sched", "sched_switch")?;
+    program.attach("sock", "inet_sock_set_state")?;
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");

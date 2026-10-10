@@ -1,0 +1,29 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sample API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "Get all users",
+        "operationId": "getUsers"
+      },
+      "post": {
+        "summary": "Create a user",
+        "operationId": "createUser"
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Get user by ID",
+        "operationId": "getUserById"
+      },
+      "delete": {
+        "summary": "Delete a user",
+        "operationId": "deleteUser"
+      }
+    }
+  }
+}

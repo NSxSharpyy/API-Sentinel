@@ -1,15 +1,15 @@
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
-
-# Virtual environment
+*.pyd
 .venv/
-
-# Environment variables and secrets
+venv/
 .env
-.env.*
 
-# Test and coverage cache
+# Testing and coverage
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Generated reports
+reports/

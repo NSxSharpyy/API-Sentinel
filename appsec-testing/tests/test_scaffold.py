@@ -1,4 +1,4 @@
-"""Day 1 tests: every scaffolded service behaves safely and consistently."""
+"""Day 1 scaffold tests updated for Day 2 services."""
 import importlib.util
 import pathlib
 import sys
@@ -7,12 +7,11 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-# One representative placeholder route per service
 STUBS = {
-    "auth_service": ("POST", "/api/v2/auth/login"),
-    "user_service": ("GET", "/api/v2/users/me"),
-    "order_service": ("GET", "/api/v2/orders"),
-    "billing_service": ("GET", "/api/v2/billing/invoices/1"),
+    "auth_service": ("POST", "/api/v2/auth/login", 400),
+    "user_service": ("GET", "/api/v2/users/me", 401),
+    "order_service": ("GET", "/api/v2/orders", 401),
+    "billing_service": ("GET", "/api/v2/billing/invoices/1", 401),
 }
 
 
@@ -32,42 +31,41 @@ def load_app(service_dir):
 
 @pytest.fixture(params=list(STUBS))
 def service(request):
-    app = load_app(request.param)
-    return request.param, app.test_client()
+    return request.param, load_app(request.param).test_client()
 
 
 def test_health_ok(service):
     _, client = service
-    resp = client.get("/health")
-    assert resp.status_code == 200
-    assert resp.get_json()["status"] == "ok"
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
 
 
-def test_stub_route_returns_501(service):
+def test_unauthenticated_first_route_is_rejected(service):
     name, client = service
-    method, path = STUBS[name]
-    resp = client.open(path, method=method)
-    assert resp.status_code == 501
-    assert resp.get_json()["error"] == "not_implemented"
+    method, path, expected = STUBS[name]
+    response = client.open(path, method=method)
+    assert response.status_code == expected
+    assert response.status_code != 501
 
 
 def test_unknown_route_is_json_404_without_leaks(service):
     _, client = service
-    resp = client.get("/api/v2/does-not-exist")
-    assert resp.status_code == 404
-    assert resp.get_json() == {"error": "not_found"}
-    assert "Traceback" not in resp.get_data(as_text=True)
+    response = client.get("/api/v2/does-not-exist")
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "not_found"}
+    assert "Traceback" not in response.get_data(as_text=True)
 
 
 def test_wrong_method_is_json_405(service):
     _, client = service
-    resp = client.post("/health")
-    assert resp.status_code == 405
-    assert resp.get_json() == {"error": "method_not_allowed"}
+    response = client.post("/health")
+    assert response.status_code == 405
+    assert response.get_json() == {"error": "method_not_allowed"}
 
 
 def test_request_id_is_returned_and_echoed(service):
     _, client = service
     assert client.get("/health").headers.get("X-Request-ID")
-    resp = client.get("/health", headers={"X-Request-ID": "trace-123"})
-    assert resp.headers["X-Request-ID"] == "trace-123"
+    response = client.get("/health", headers={"X-Request-ID": "trace-123"})
+    assert response.headers["X-Request-ID"] == "trace-123"

@@ -1,0 +1,64 @@
+services:
+  auth:
+    build: ./appsec-testing/services/auth_service
+    container_name: api-sentinel-auth
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5001"
+    ports:
+      - "127.0.0.1:5001:5001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  user:
+    build: ./appsec-testing/services/user_service
+    container_name: api-sentinel-user
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5002"
+    ports:
+      - "127.0.0.1:5002:5002"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  order:
+    build: ./appsec-testing/services/order_service
+    container_name: api-sentinel-order
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5003"
+    ports:
+      - "127.0.0.1:5003:5003"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5003/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  billing:
+    build: ./appsec-testing/services/billing_service
+    container_name: api-sentinel-billing
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5004"
+    ports:
+      - "127.0.0.1:5004:5004"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5004/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s

@@ -67,6 +67,7 @@ def create_service(service_name):
             "status": response.status_code,
             "duration_ms": duration_ms,
             "client_ip": request.remote_addr,
+            "user_id": getattr(g, "user_id", None),
         }})
         return response
 

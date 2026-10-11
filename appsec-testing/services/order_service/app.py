@@ -1,20 +1,36 @@
-"""MOCK Order Processing Service. Placeholder routes; real logic arrives on Day 2."""
+
+"""MOCK Order Service: secure object-level authorization control."""
 import os
 
-from service_base import create_service, not_implemented
+from flask import g, jsonify
+
+from mock_data import get_order, list_orders_for_user
+from security import require_auth
+from service_base import create_service
 
 app, logger = create_service("order-service")
 
 
 @app.get("/api/v2/orders")
+@require_auth
 def list_orders():
-    return not_implemented("list orders: implemented Day 2")
+    return jsonify(orders=list_orders_for_user(g.user_id))
 
 
 @app.get("/api/v2/orders/<int:order_id>")
-def get_order(order_id):
-    return not_implemented("get order: implemented Day 2")
+@require_auth
+def get_order_by_id(order_id):
+    order = get_order(order_id)
+
+    if order is None or order["user_id"] != g.user_id:
+        return jsonify(error="not_found"), 404
+
+    return jsonify(order)
 
 
 if __name__ == "__main__":
-    app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "5003")))
+    app.run(
+        host=os.getenv("HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", "5003")),
+        debug=False,
+    )

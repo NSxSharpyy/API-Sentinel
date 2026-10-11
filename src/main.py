@@ -1,8 +1,16 @@
+from src.reporter import save_findings
+from src.repo_crawler import (
+    discover_openapi_files,
+    fetch_openapi_spec,
+    extract_api_contracts,
+    save_api_contracts,
+)
 from pathlib import Path
 import argparse
 import json
 import re
-import yaml
+import yaml # type: ignore
+
 
 
 from src.inventory import (
@@ -158,7 +166,23 @@ def main() -> None:
     parser.add_argument(
         "--spec",
         default="samples/openapi.json",
-        help="Path to the OpenAPI JSON specification",
+        help="Path to the OpenAPI JSON or YAML specification",
+    )
+
+    parser.add_argument(
+        "--repo-owner",
+        help="GitHub repository owner",
+    )
+
+    parser.add_argument(
+        "--repo-name",
+        help="GitHub repository name",
+    )
+
+    parser.add_argument(
+        "--repo-branch",
+        default="main",
+        help="GitHub repository branch (default: main)",
     )
 
     parser.add_argument(
@@ -186,7 +210,45 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    if args.repo_owner and args.repo_name:
+        try:
+            discovered_files = discover_openapi_files(
+                args.repo_owner,
+                args.repo_name,
+                args.repo_branch,
+            )
 
+            print("\n=== API-Sentinel: Repository Contract Crawler ===")
+            print(f"Repository: {args.repo_owner}/{args.repo_name}")
+            print(f"Branch: {args.repo_branch}")
+            print(f"OpenAPI files discovered: {len(discovered_files)}")
+
+            all_contracts = []
+
+            for file_path in discovered_files:
+                print(f"[FETCH] {file_path}")
+
+                spec = fetch_openapi_spec(
+                    args.repo_owner,
+                    args.repo_name,
+                    args.repo_branch,
+                    file_path,
+                )
+
+                contracts = extract_api_contracts(spec)
+
+                for contract in contracts:
+                    contract["source_file"] = file_path
+
+                all_contracts.extend(contracts)
+
+            save_api_contracts(all_contracts)
+
+            print(f"Extracted API contracts: {len(all_contracts)}")
+
+        except RuntimeError as error:
+            print(f"Repository crawler error: {error}")
+            return
     try:
 
         # ==========================================

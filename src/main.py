@@ -2,6 +2,8 @@ from pathlib import Path
 import argparse
 import json
 import re
+import yaml
+
 
 from src.inventory import (
     load_approved_apis,
@@ -18,7 +20,7 @@ from src.runtime import (
 
 
 def parse_openapi_spec(file_path: str) -> dict:
-    """Load and validate an OpenAPI JSON specification."""
+    """Load and validate an OpenAPI JSON or YAML specification."""
 
     path = Path(file_path)
 
@@ -32,18 +34,28 @@ def parse_openapi_spec(file_path: str) -> dict:
             "The supplied specification path is not a file."
         )
 
+    suffix = path.suffix.lower()
+
     try:
         with path.open("r", encoding="utf-8") as file:
-            spec = json.load(file)
+            if suffix == ".json":
+                spec = json.load(file)
+            elif suffix in {".yaml", ".yml"}:
+                spec = yaml.safe_load(file)
+            else:
+                raise ValueError(
+                    f"Unsupported specification format: {suffix}. "
+                    "Use .json, .yaml, or .yml."
+                )
 
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, yaml.YAMLError) as exc:
         raise ValueError(
-            "Invalid JSON OpenAPI specification."
+            "Invalid JSON or YAML OpenAPI specification."
         ) from exc
 
     if not isinstance(spec, dict):
         raise ValueError(
-            "The specification must be a JSON object."
+            "The specification must be a JSON object or YAML mapping."
         )
 
     if not isinstance(spec.get("openapi"), str):
@@ -51,14 +63,19 @@ def parse_openapi_spec(file_path: str) -> dict:
             "Missing or invalid OpenAPI version field."
         )
 
-    if not isinstance(spec.get("paths", {}), dict):
+    if "paths" not in spec:
         raise ValueError(
-            "The 'paths' field must be a JSON object."
+            "Invalid OpenAPI specification: required 'paths' field is missing."
+        )
+
+    if not isinstance(spec["paths"], dict):
+        raise ValueError(
+            "The 'paths' field must be a mapping/object."
         )
 
     if not isinstance(spec.get("info"), dict):
         raise ValueError(
-            "The 'info' field must be a JSON object."
+            "The 'info' field must be a mapping/object."
         )
 
     return spec

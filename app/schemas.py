@@ -19,6 +19,7 @@ class RawPacketChunk(BaseModel):
 
     protocol: Optional[str] = None
     sequence_number: Optional[int] = Field(default=None, ge=0)
+    tcp_flags: Optional[list[str]] = None
 
 
 class HeaderData(BaseModel):

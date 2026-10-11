@@ -111,7 +111,8 @@ def test_root_endpoint():
 
     assert response.status_code == 200
     assert response.json()["status"] == "running"
-    assert response.json()["day"] == 1
+    assert "day" not in response.json()
+
 
 
 def test_queue_status_endpoint():
@@ -122,6 +123,7 @@ def test_queue_status_endpoint():
         "raw_packet_queue": 0,
         "header_queue": 0,
         "metadata_queue": 0,
+        "dropped_packet_count": 0,
     }
 
 

@@ -1,4 +1,5 @@
 
+
 import base64
 import json
 
@@ -10,11 +11,15 @@ HTTP_TRANSACTION_TOPIC = b"http.transaction"
 
 
 def serialize_http_message(message: HTTPMessage) -> bytes:
-    """Serialize an HTTP request into a JSON broker event."""
+    """Serialize an HTTP request or response into a JSON broker event."""
     event = {
         "event_type": "http.transaction",
+        "message_type": message.message_type,
+        "connection_id": message.connection_id,
         "method": message.method,
         "uri": message.uri,
+        "status_code": message.status_code,
+        "reason_phrase": message.reason_phrase,
         "version": message.version,
         "headers": message.headers,
         "body_base64": base64.b64encode(message.body).decode("ascii"),
@@ -33,14 +38,16 @@ class HTTPTransactionPublisher:
         self.socket.bind(endpoint)
 
     def publish(self, message: HTTPMessage) -> None:
-        """Publish one transaction on the HTTP transaction topic."""
+        """Publish one HTTP message on the transaction topic."""
         payload = serialize_http_message(message)
         self.socket.send_multipart(
             [HTTP_TRANSACTION_TOPIC, payload]
         )
 
     def close(self) -> None:
+        """Close the publisher socket."""
         self.socket.close()
+
 
 class HTTPTransactionSubscriber:
     """Receive HTTP transaction events from a ZeroMQ PUB socket."""
@@ -49,7 +56,10 @@ class HTTPTransactionSubscriber:
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.SUB)
         self.socket.setsockopt(zmq.LINGER, 0)
-        self.socket.setsockopt(zmq.SUBSCRIBE, HTTP_TRANSACTION_TOPIC)
+        self.socket.setsockopt(
+            zmq.SUBSCRIBE,
+            HTTP_TRANSACTION_TOPIC,
+        )
         self.socket.connect(endpoint)
 
     def receive(self, timeout_ms: int = 3000) -> dict | None:
@@ -58,10 +68,12 @@ class HTTPTransactionSubscriber:
             return None
 
         topic, payload = self.socket.recv_multipart()
+
         if topic != HTTP_TRANSACTION_TOPIC:
             return None
 
         return json.loads(payload.decode("utf-8"))
 
     def close(self) -> None:
+        """Close the subscriber socket."""
         self.socket.close()

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { X } from "lucide-react";
+import { useTelemetry } from "../hooks/useTelemetry";
 
 import TopNavigation from "../components/layout/TopNavigation.jsx";
 import Sidebar from "../components/layout/Sidebar.jsx";
@@ -10,6 +11,13 @@ import SystemStatusBanner from "../components/layout/SystemStatusBanner.jsx";
 export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const {
+    connectionStatus,
+    latestMessage,
+    lastError,
+    isMockMode,
+  } = useTelemetry();
 
   const toggleSidebar = () => {
     setSidebarCollapsed((previous) => !previous);
@@ -76,7 +84,13 @@ export default function DashboardLayout() {
         {/* Main viewport */}
         <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-[1600px] space-y-6">
-            <SystemStatusBanner />
+            <SystemStatusBanner
+              connectionStatus={connectionStatus}
+              latestMessage={latestMessage}
+              lastError={lastError}
+              isMockMode={isMockMode}
+            />
+
             <Outlet />
           </div>
         </main>
@@ -96,4 +110,3 @@ export default function DashboardLayout() {
     </div>
   );
 }
-

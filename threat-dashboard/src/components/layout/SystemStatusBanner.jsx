@@ -1,28 +1,73 @@
 
-import { Info } from "lucide-react";
+export default function SystemStatusBanner({
+  connectionStatus = "disconnected",
+  latestMessage,
+  lastError,
+  isMockMode = false,
+}) {
+  const statusLabels = {
+    connected: "Connected to backend",
+    connecting: "Connecting to backend...",
+    disconnected: "Backend disconnected",
+    error: "Connection error",
+    mock: "Mock telemetry active",
+  };
 
-export default function SystemStatusBanner() {
+  const statusLabel =
+    statusLabels[connectionStatus] ||
+    "Unknown connection status";
+
+  const statusColor =
+    connectionStatus === "connected"
+      ? "bg-green-500"
+      : connectionStatus === "mock"
+        ? "bg-amber-500"
+        : connectionStatus === "error"
+          ? "bg-red-500"
+          : "bg-slate-400";
+
   return (
     <section
-      role="status"
-      className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4"
+      className="mb-6 rounded-xl border border-slate-200 bg-white p-4"
+      aria-live="polite"
     >
-      <Info
-        size={20}
-        className="mt-0.5 shrink-0 text-blue-700"
-        aria-hidden="true"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`h-2.5 w-2.5 rounded-full ${statusColor}`}
+        />
 
-      <div>
-        <h2 className="text-sm font-semibold text-blue-900">
-          Frontend is running
+        <h2 className="font-semibold text-slate-900">
+          {statusLabel}
         </h2>
-
-        <p className="mt-1 text-sm text-blue-800">
-          Dashboard layout is ready. Live backend telemetry
-          has not been connected yet.
-        </p>
       </div>
+
+      {isMockMode && (
+        <p className="mt-2 text-sm font-medium text-amber-700">
+          MOCK DATA — TEMPORARY. These events are simulated,
+          not live security detections.
+        </p>
+      )}
+
+      {!isMockMode && connectionStatus !== "connected" && (
+        <p className="mt-2 text-sm text-slate-600">
+          Live backend telemetry is not currently available.
+        </p>
+      )}
+
+      {lastError && (
+        <p className="mt-2 text-sm text-red-700" role="alert">
+          {lastError}
+        </p>
+      )}
+
+      {latestMessage && (
+        <p className="mt-2 break-words text-sm text-slate-600">
+          Latest message received:{" "}
+          {typeof latestMessage.type === "string"
+            ? latestMessage.type
+            : "Telemetry event"}
+        </p>
+      )}
     </section>
   );
 }

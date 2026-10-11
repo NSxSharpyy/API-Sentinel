@@ -92,3 +92,59 @@ def test_publisher_delivers_http_transaction():
             publisher.close()
         subscriber.close()
 
+from app.http_pipeline import HTTPMessagePipeline
+
+
+def test_pipeline_publishes_fragmented_http_request():
+    # Select an available local TCP port.
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    endpoint = f"tcp://127.0.0.1:{port}"
+    subscriber = HTTPTransactionSubscriber(endpoint)
+    publisher = None
+
+    try:
+        # Give ZeroMQ time to establish the subscription.
+        time.sleep(0.3)
+        publisher = HTTPTransactionPublisher(endpoint)
+        time.sleep(0.3)
+
+        pipeline = HTTPMessagePipeline(publisher)
+
+        # First chunk is incomplete, so nothing should be published.
+        first = pipeline.feed(
+            b"POST /api/events HTTP/1.1\r\n"
+            b"Host: example.test\r\n"
+            b"Content-Length: 7\r\n"
+            b"Content-Type: text/plain\r\n\r\n"
+            b"hel"
+        )
+
+        assert first == []
+
+        # The second chunk completes the request body.
+        second = pipeline.feed(b"lo!!!")
+
+        assert len(second) == 1
+        assert second[0].method == "POST"
+        assert second[0].uri == "/api/events"
+        assert second[0].body == b"hello!!"
+
+        # Verify the reconstructed request reached the subscriber.
+        event = subscriber.receive(timeout_ms=3000)
+
+        assert event is not None
+        assert event["event_type"] == "http.transaction"
+        assert event["method"] == "POST"
+        assert event["uri"] == "/api/events"
+        assert event["version"] == "HTTP/1.1"
+        assert event["headers"]["host"] == "example.test"
+        assert event["body_base64"] == "aGVsbG8hIQ=="
+
+    finally:
+        if publisher is not None:
+            publisher.close()
+        subscriber.close()
+

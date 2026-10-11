@@ -85,3 +85,99 @@ def test_rejects_non_bytes_input():
 
     with pytest.raises(TypeError):
         parser.feed("GET / HTTP/1.1\r\n\r\n")
+
+
+def test_complete_http_response():
+    parser = HTTPStreamParser()
+
+    raw = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Length: 5\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"Hello"
+    )
+
+    messages = parser.feed(raw)
+
+    assert len(messages) == 1
+    response = messages[0]
+    assert response.message_type == "response"
+    assert response.version == "HTTP/1.1"
+    assert response.status_code == 200
+    assert response.reason_phrase == "OK"
+    assert response.headers["content-length"] == "5"
+    assert response.body == b"Hello"
+    assert response.method is None
+    assert response.uri is None
+
+
+def test_fragmented_http_response():
+    parser = HTTPStreamParser()
+
+    first = parser.feed(
+        b"HTTP/1.1 404 Not Found\r\n"
+        b"Content-Length: 4\r\n\r\n"
+        b"No"
+    )
+    assert first == []
+
+    second = parser.feed(b"pe")
+    assert len(second) == 1
+    assert second[0].status_code == 404
+    assert second[0].reason_phrase == "Not Found"
+    assert second[0].body == b"Nope"
+
+
+def test_valid_body_within_limit():
+    parser = HTTPStreamParser(max_body_bytes=5)
+
+    messages = parser.feed(
+        b"POST /test HTTP/1.1\r\n"
+        b"Content-Length: 5\r\n\r\n"
+        b"12345"
+    )
+
+    assert len(messages) == 1
+    assert messages[0].body == b"12345"
+
+
+def test_rejects_body_over_limit():
+    parser = HTTPStreamParser(max_body_bytes=4)
+
+    with pytest.raises(ValueError, match="body exceeds size limit"):
+        parser.feed(
+            b"POST /test HTTP/1.1\r\n"
+            b"Content-Length: 5\r\n\r\n"
+        )
+
+    assert parser.buffer == bytearray()
+
+
+def test_rejects_invalid_content_length():
+    invalid_values = [b"-1", b"abc", b"+5", b"1.5"]
+
+    for value in invalid_values:
+        parser = HTTPStreamParser()
+        request = (
+            b"POST /test HTTP/1.1\r\n"
+            b"Content-Length: "
+            + value
+            + b"\r\n\r\n"
+        )
+
+        with pytest.raises(ValueError, match="Invalid Content-Length"):
+            parser.feed(request)
+
+        assert parser.buffer == bytearray()
+
+
+def test_rejects_response_status_code_out_of_range():
+    parser = HTTPStreamParser()
+
+    with pytest.raises(ValueError, match="status code out of range"):
+        parser.feed(
+            b"HTTP/1.1 999 Invalid\r\n\r\n"
+        )
+
+    assert parser.buffer == bytearray()

@@ -5,6 +5,28 @@ Mock e-commerce microservices for validating the eBPF API security project.
 
 ## Quick Start
 
+### Configure the authentication secret
+
+Generate a cryptographically random secret:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Create a `.env` file in the repository root containing:
+
+```text
+TOKEN_SECRET=PASTE_GENERATED_SECRET_HERE
+```
+
+Replace the placeholder with the generated value. Keep `.env` local and never commit it.
+
+Start the services from the repository root:
+
+```bash
+./scripts/run_all.sh
+```
+
 From the repository root:
 
 ```bash

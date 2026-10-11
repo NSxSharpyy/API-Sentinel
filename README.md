@@ -2,22 +2,24 @@
 
 Mock e-commerce microservices for validating the eBPF API security project.
 
+
 ## Quick Start
+
+From the repository root:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+
+python -m pip install -r appsec-testing/requirements.txt
+
 ./scripts/run_all.sh
 ```
 
-## Documentation
+Open another terminal from the repository root and check service health:
 
-See [docs/architecture.md](docs/architecture.md) for the service architecture, ports, logging conventions, and planned lab vulnerabilities.
+```bash
+python scripts/check_health.py
+```
 
-## Testing
-
-Run `pytest -v` to execute the scaffold tests.
-
-Run `python scripts/check_health.py` while the services are running to verify their health.# API-Sentinel
-Runtime BOLA &amp; Shadow API Detection Engine
+The authentication, user, order, and billing services should respond successfully.

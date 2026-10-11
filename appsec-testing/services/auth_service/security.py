@@ -14,10 +14,10 @@ TOKEN_TTL_SECONDS = 3600
 
 
 def _secret():
-    return os.getenv(
-        "TOKEN_SECRET", "lab-only-secret-change-me"
-    ).encode()
-
+    secret = os.getenv("TOKEN_SECRET")
+    if not secret:
+        raise RuntimeError("TOKEN_SECRET must be configured")
+    return secret.encode()
 
 def _b64encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()

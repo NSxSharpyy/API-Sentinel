@@ -5,6 +5,7 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "5001"
+      TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
     ports:
       - "127.0.0.1:5001:5001"
     restart: unless-stopped
@@ -21,6 +22,7 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "5002"
+      TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
     ports:
       - "127.0.0.1:5002:5002"
     restart: unless-stopped
@@ -37,6 +39,7 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "5003"
+      TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
     ports:
       - "127.0.0.1:5003:5003"
     restart: unless-stopped
@@ -53,6 +56,7 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "5004"
+      TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
     ports:
       - "127.0.0.1:5004:5004"
     restart: unless-stopped

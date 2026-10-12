@@ -1,4 +1,15 @@
+
 services:
+  seed:
+    build: ./appsec-testing/services/billing_service
+    container_name: api-sentinel-seed
+    environment:
+      DB_PATH: /app/data/shop.db
+    volumes:
+      - shop-data:/app/data
+    entrypoint: ["python", "/app/seed_db.py"]
+    restart: "no"
+
   auth:
     build: ./appsec-testing/services/auth_service
     container_name: api-sentinel-auth
@@ -6,6 +17,12 @@ services:
       HOST: "0.0.0.0"
       PORT: "5001"
       TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
+      DB_PATH: /app/data/shop.db
+    volumes:
+      - shop-data:/app/data
+    depends_on:
+      seed:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:5001:5001"
     restart: unless-stopped
@@ -23,6 +40,12 @@ services:
       HOST: "0.0.0.0"
       PORT: "5002"
       TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
+      DB_PATH: /app/data/shop.db
+    volumes:
+      - shop-data:/app/data
+    depends_on:
+      seed:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:5002:5002"
     restart: unless-stopped
@@ -40,6 +63,12 @@ services:
       HOST: "0.0.0.0"
       PORT: "5003"
       TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
+      DB_PATH: /app/data/shop.db
+    volumes:
+      - shop-data:/app/data
+    depends_on:
+      seed:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:5003:5003"
     restart: unless-stopped
@@ -57,6 +86,12 @@ services:
       HOST: "0.0.0.0"
       PORT: "5004"
       TOKEN_SECRET: "${TOKEN_SECRET:?Set TOKEN_SECRET in the root .env file}"
+      DB_PATH: /app/data/shop.db
+    volumes:
+      - shop-data:/app/data
+    depends_on:
+      seed:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:5004:5004"
     restart: unless-stopped
@@ -66,3 +101,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+volumes:
+  shop-data:

@@ -1,3 +1,4 @@
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -7,7 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app/data
+
 USER appuser
 
 ENV PYTHONUNBUFFERED=1 HOST=0.0.0.0

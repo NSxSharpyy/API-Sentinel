@@ -7,9 +7,10 @@ use aya_ebpf::{
     maps::HashMap,
     programs::{ProbeContext, TracePointContext},
 };
+
 use aya_log_ebpf::info;
 
-// Maps socket address to the TGID that entered tcp_v4_connect.
+// Map: socket address -> owning process TGID
 #[map]
 static SOCKET_TGID: HashMap<u64, u32> = HashMap::with_max_entries(10240, 0);
 
@@ -22,7 +23,7 @@ pub fn api_sentinel_ebpf(ctx: TracePointContext) -> u32 {
 }
 
 fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
-    // Read socket pointer from inet_sock_set_state.
+    // Read socket address and TCP state fields.
     let socket_addr = unsafe { ctx.read_at::<u64>(8) }.map_err(|_| 1u32)?;
 
     let oldstate = unsafe { ctx.read_at::<i32>(16) }.map_err(|_| 1u32)?;
@@ -33,24 +34,59 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
 
     let dport = unsafe { ctx.read_at::<u16>(26) }.map_err(|_| 1u32)?;
 
-    // Find the process recorded for this socket.
+    // Address family and network protocol.
+    let family = unsafe { ctx.read_at::<u16>(28) }.map_err(|_| 1u32)?;
+
+    let protocol = unsafe { ctx.read_at::<u16>(30) }.map_err(|_| 1u32)?;
+
+    // IPv4 source address: four bytes at offsets 32-35.
+    let src0 = unsafe { ctx.read_at::<u8>(32) }.map_err(|_| 1u32)?;
+    let src1 = unsafe { ctx.read_at::<u8>(33) }.map_err(|_| 1u32)?;
+    let src2 = unsafe { ctx.read_at::<u8>(34) }.map_err(|_| 1u32)?;
+    let src3 = unsafe { ctx.read_at::<u8>(35) }.map_err(|_| 1u32)?;
+
+    // IPv4 destination address: four bytes at offsets 36-39.
+    let dst0 = unsafe { ctx.read_at::<u8>(36) }.map_err(|_| 1u32)?;
+    let dst1 = unsafe { ctx.read_at::<u8>(37) }.map_err(|_| 1u32)?;
+    let dst2 = unsafe { ctx.read_at::<u8>(38) }.map_err(|_| 1u32)?;
+    let dst3 = unsafe { ctx.read_at::<u8>(39) }.map_err(|_| 1u32)?;
+
+    // Look up the owning process for this socket.
     let owner_tgid = match unsafe { SOCKET_TGID.get(&socket_addr) } {
         Some(tgid) => *tgid,
         None => 0,
     };
 
-    // Log numeric TCP states to keep the eBPF program smaller.
+    // Log TCP states, ports, address family and protocol.
     info!(
         &ctx,
-        "Socket owner TGID: {}, TCP states: {} -> {}, ports {} -> {}",
+        "TGID {}, family {}, protocol {}, TCP {} -> {}, ports {} -> {}",
         owner_tgid,
+        family,
+        protocol,
         oldstate,
         newstate,
         sport,
         dport
     );
 
-    // Remove the entry when the socket reaches TCP_CLOSE (state 7).
+    // Display IPv4 addresses only when AF_INET is reported.
+    if family == 2 {
+        info!(
+            &ctx,
+            "IPv4 source {}.{}.{}.{} destination {}.{}.{}.{}",
+            src0,
+            src1,
+            src2,
+            src3,
+            dst0,
+            dst1,
+            dst2,
+            dst3
+        );
+    }
+
+    // TCP_CLOSE is state number 7.
     if newstate == 7 {
         let _ = SOCKET_TGID.remove(&socket_addr);
     }
@@ -58,7 +94,7 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
     Ok(0)
 }
 
-// Capture the socket pointer and owner when IPv4 connect starts.
+// Record the TGID when an IPv4 connection begins.
 #[kprobe]
 pub fn api_sentinel_tcp_v4_connect(ctx: ProbeContext) -> u32 {
     let socket: *const u8 = match ctx.arg(0) {

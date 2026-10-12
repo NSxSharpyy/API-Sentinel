@@ -1,18 +1,49 @@
-import socket
-import time
 
-from app.message_broker import (
-    HTTPTransactionPublisher,
-    HTTPTransactionSubscriber,
-)
 import base64
 import json
+import socket
+import time
+import uuid
 
+from app.http_pipeline import HTTPMessagePipeline
 from app.http_reassembly import HTTPMessage
 from app.message_broker import (
     HTTP_TRANSACTION_TOPIC,
+    HTTPTransactionPublisher,
+    HTTPTransactionSubscriber,
     serialize_http_message,
 )
+
+
+def _available_endpoint():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    return f"tcp://127.0.0.1:{port}"
+
+
+def _wait_for_subscriber(subscriber, publisher, timeout=3.0):
+    """Wait until a uniquely identifiable probe event is received."""
+    marker = f"readiness-{uuid.uuid4().hex}"
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        message = HTTPMessage(
+            method="GET",
+            uri=f"/{marker}",
+            version="HTTP/1.1",
+            headers={},
+            body=b"",
+        )
+        publisher.publish(message)
+
+        event = subscriber.receive(timeout_ms=100)
+
+        if event is not None and event.get("uri") == f"/{marker}":
+            return
+
+    raise AssertionError("Subscriber did not receive readiness event in time")
 
 
 def test_serializes_http_request_as_json():
@@ -54,21 +85,15 @@ def test_preserves_binary_request_body():
 def test_topic_is_bytes():
     assert HTTP_TRANSACTION_TOPIC == b"http.transaction"
 
-def test_publisher_delivers_http_transaction():
-    # Ask Windows for an available local TCP port.
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
 
-    endpoint = f"tcp://127.0.0.1:{port}"
+def test_publisher_delivers_http_transaction():
+    endpoint = _available_endpoint()
     subscriber = HTTPTransactionSubscriber(endpoint)
     publisher = None
 
     try:
-        # Allow the subscriber to connect and subscribe.
-        time.sleep(0.3)
         publisher = HTTPTransactionPublisher(endpoint)
-        time.sleep(0.3)
+        _wait_for_subscriber(subscriber, publisher)
 
         message = HTTPMessage(
             method="POST",
@@ -92,28 +117,18 @@ def test_publisher_delivers_http_transaction():
             publisher.close()
         subscriber.close()
 
-from app.http_pipeline import HTTPMessagePipeline
-
 
 def test_pipeline_publishes_fragmented_http_request():
-    # Select an available local TCP port.
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-
-    endpoint = f"tcp://127.0.0.1:{port}"
+    endpoint = _available_endpoint()
     subscriber = HTTPTransactionSubscriber(endpoint)
     publisher = None
 
     try:
-        # Give ZeroMQ time to establish the subscription.
-        time.sleep(0.3)
         publisher = HTTPTransactionPublisher(endpoint)
-        time.sleep(0.3)
+        _wait_for_subscriber(subscriber, publisher)
 
         pipeline = HTTPMessagePipeline(publisher)
 
-        # First chunk is incomplete, so nothing should be published.
         first = pipeline.feed(
             b"POST /api/events HTTP/1.1\r\n"
             b"Host: example.test\r\n"
@@ -124,7 +139,6 @@ def test_pipeline_publishes_fragmented_http_request():
 
         assert first == []
 
-        # The second chunk completes the request body.
         second = pipeline.feed(b"lo!!!")
 
         assert len(second) == 1
@@ -132,7 +146,6 @@ def test_pipeline_publishes_fragmented_http_request():
         assert second[0].uri == "/api/events"
         assert second[0].body == b"hello!!"
 
-        # Verify the reconstructed request reached the subscriber.
         event = subscriber.receive(timeout_ms=3000)
 
         assert event is not None
@@ -147,4 +160,3 @@ def test_pipeline_publishes_fragmented_http_request():
         if publisher is not None:
             publisher.close()
         subscriber.close()
-

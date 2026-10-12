@@ -27,25 +27,27 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
     let socket_addr = unsafe { ctx.read_at::<u64>(8) }.map_err(|_| 1u32)?;
 
     let oldstate = unsafe { ctx.read_at::<i32>(16) }.map_err(|_| 1u32)?;
-
     let newstate = unsafe { ctx.read_at::<i32>(20) }.map_err(|_| 1u32)?;
-
     let sport = unsafe { ctx.read_at::<u16>(24) }.map_err(|_| 1u32)?;
-
     let dport = unsafe { ctx.read_at::<u16>(26) }.map_err(|_| 1u32)?;
 
-    // Address family and network protocol.
+    // Read address family and network protocol.
     let family = unsafe { ctx.read_at::<u16>(28) }.map_err(|_| 1u32)?;
-
     let protocol = unsafe { ctx.read_at::<u16>(30) }.map_err(|_| 1u32)?;
 
-    // IPv4 source address: four bytes at offsets 32-35.
+    // Process only IPv4 TCP events.
+    // AF_INET = 2, IPPROTO_TCP = 6.
+    if family != 2 || protocol != 6 {
+        return Ok(0);
+    }
+
+    // IPv4 source address: bytes at offsets 32-35.
     let src0 = unsafe { ctx.read_at::<u8>(32) }.map_err(|_| 1u32)?;
     let src1 = unsafe { ctx.read_at::<u8>(33) }.map_err(|_| 1u32)?;
     let src2 = unsafe { ctx.read_at::<u8>(34) }.map_err(|_| 1u32)?;
     let src3 = unsafe { ctx.read_at::<u8>(35) }.map_err(|_| 1u32)?;
 
-    // IPv4 destination address: four bytes at offsets 36-39.
+    // IPv4 destination address: bytes at offsets 36-39.
     let dst0 = unsafe { ctx.read_at::<u8>(36) }.map_err(|_| 1u32)?;
     let dst1 = unsafe { ctx.read_at::<u8>(37) }.map_err(|_| 1u32)?;
     let dst2 = unsafe { ctx.read_at::<u8>(38) }.map_err(|_| 1u32)?;
@@ -70,23 +72,21 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
         dport
     );
 
-    // Display IPv4 addresses only when AF_INET is reported.
-    if family == 2 {
-        info!(
-            &ctx,
-            "IPv4 source {}.{}.{}.{} destination {}.{}.{}.{}",
-            src0,
-            src1,
-            src2,
-            src3,
-            dst0,
-            dst1,
-            dst2,
-            dst3
-        );
-    }
+    // Log IPv4 source and destination addresses.
+    info!(
+        &ctx,
+        "IPv4 source {}.{}.{}.{} destination {}.{}.{}.{}",
+        src0,
+        src1,
+        src2,
+        src3,
+        dst0,
+        dst1,
+        dst2,
+        dst3
+    );
 
-    // TCP_CLOSE is state number 7.
+    // TCP_CLOSE = state 7; remove the socket from the map.
     if newstate == 7 {
         let _ = SOCKET_TGID.remove(&socket_addr);
     }
@@ -103,7 +103,6 @@ pub fn api_sentinel_tcp_v4_connect(ctx: ProbeContext) -> u32 {
     };
 
     let socket_addr = socket as u64;
-
     let pid_tgid = bpf_get_current_pid_tgid();
     let tgid = (pid_tgid >> 32) as u32;
 

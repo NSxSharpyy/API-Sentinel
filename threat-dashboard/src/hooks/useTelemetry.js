@@ -21,7 +21,6 @@ export function useTelemetry() {
       },
 
       onMessage: (message) => {
-        console.log("Telemetry message received:", message);
         setLatestMessage(message);
       },
 

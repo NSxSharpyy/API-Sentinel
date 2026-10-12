@@ -5,7 +5,30 @@ export default function TopNavigation({
   sidebarCollapsed,
   onToggleSidebar,
   onToggleMobileMenu,
+  connectionStatus = "disconnected",
 }) {
+  const statusLabels = {
+    connected: "Backend connected",
+    connecting: "Connecting...",
+    disconnected: "Backend disconnected",
+    error: "Connection error",
+    mock: "Mock telemetry active",
+  };
+
+  const statusColors = {
+    connected: "bg-green-500",
+    connecting: "bg-amber-500",
+    disconnected: "bg-gray-400",
+    error: "bg-red-500",
+    mock: "bg-amber-500",
+  };
+
+  const statusLabel =
+    statusLabels[connectionStatus] || "Unknown status";
+
+  const statusColor =
+    statusColors[connectionStatus] || "bg-gray-400";
+
   const handleMenuClick = () => {
     if (window.innerWidth < 768) {
       onToggleMobileMenu();
@@ -49,18 +72,18 @@ export default function TopNavigation({
 
       <div
         className="flex items-center gap-2 rounded-full border border-gray-200 px-3 py-2"
-        aria-label="Backend connection status: not connected"
+        aria-label={`Backend connection status: ${statusLabel}`}
+        role="status"
       >
         <span
-          className="h-2 w-2 rounded-full bg-gray-400"
+          className={`h-2 w-2 rounded-full ${statusColor}`}
           aria-hidden="true"
         />
 
         <span className="text-xs font-medium text-gray-600 sm:text-sm">
-          Backend not connected
+          {statusLabel}
         </span>
       </div>
     </header>
   );
 }
-

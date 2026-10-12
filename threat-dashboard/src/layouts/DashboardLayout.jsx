@@ -37,6 +37,7 @@ export default function DashboardLayout() {
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
         onToggleMobileMenu={toggleMobileMenu}
+        connectionStatus={connectionStatus}
       />
 
       <div className="flex min-h-[calc(100vh-64px)]">

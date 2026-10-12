@@ -1,4 +1,4 @@
-
+﻿
 import {
   BrowserRouter,
   Navigate,
@@ -21,7 +21,7 @@ function PlaceholderPage({ title, description }) {
       </p>
 
       <p className="mt-4 text-xs text-gray-500">
-        Placeholder only — functionality is scheduled for a later day.
+        Placeholder only â€” functionality is scheduled for a later day.
       </p>
     </section>
   );
@@ -47,7 +47,7 @@ export default function AppRouter() {
             element={
               <PlaceholderPage
                 title="Incidents"
-                description="Incident cards and severity badges will be added on Day 3."
+                description="The incident investigation page is pending. Reusable alert cards and severity badges are available for integration."
               />
             }
           />

@@ -10,7 +10,7 @@ use aya_ebpf::{
 
 use aya_log_ebpf::info;
 
-// Map: socket address -> owning process TGID
+// Map: socket address -> owning process TGID.
 #[map]
 static SOCKET_TGID: HashMap<u64, u32> = HashMap::with_max_entries(10240, 0);
 
@@ -25,7 +25,6 @@ pub fn api_sentinel_ebpf(ctx: TracePointContext) -> u32 {
 fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
     // Read socket address and TCP state fields.
     let socket_addr = unsafe { ctx.read_at::<u64>(8) }.map_err(|_| 1u32)?;
-
     let oldstate = unsafe { ctx.read_at::<i32>(16) }.map_err(|_| 1u32)?;
     let newstate = unsafe { ctx.read_at::<i32>(20) }.map_err(|_| 1u32)?;
     let sport = unsafe { ctx.read_at::<u16>(24) }.map_err(|_| 1u32)?;
@@ -54,16 +53,23 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
     let dst3 = unsafe { ctx.read_at::<u8>(39) }.map_err(|_| 1u32)?;
 
     // Look up the owning process for this socket.
-    let owner_tgid = match unsafe { SOCKET_TGID.get(&socket_addr) } {
-        Some(tgid) => *tgid,
-        None => 0,
-    };
+    // A missing map entry does not prove that no process exists.
+    match unsafe { SOCKET_TGID.get(&socket_addr) } {
+        Some(tgid) => {
+            info!(&ctx, "Process attribution: KNOWN, TGID {}", *tgid);
+        }
+        None => {
+            info!(
+                &ctx,
+                "Process attribution: UNKNOWN, socket missing from SOCKET_TGID map"
+            );
+        }
+    }
 
-    // Log TCP states, ports, address family and protocol.
+    // Log TCP states, address family, protocol and ports.
     info!(
         &ctx,
-        "TGID {}, family {}, protocol {}, TCP {} -> {}, ports {} -> {}",
-        owner_tgid,
+        "family {}, protocol {}, TCP {} -> {}, ports {} -> {}",
         family,
         protocol,
         oldstate,

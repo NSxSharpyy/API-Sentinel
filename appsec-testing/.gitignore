@@ -9,3 +9,4 @@ data/*.db-wal
 data/
 *.db
 *.db-journal
+logs/

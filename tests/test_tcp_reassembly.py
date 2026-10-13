@@ -85,3 +85,19 @@ def test_feed_requires_initial_sequence():
 
     with pytest.raises(ValueError, match="Initial expected sequence"):
         stream.feed(100, b"data")
+
+
+def test_overlapping_out_of_order_segments_do_not_duplicate_bytes():
+    stream = new_stream(initial_sequence=100)
+
+    assert stream.feed(106, b"GHI") == b""
+    assert stream.feed(108, b"IJK") == b""
+    assert stream.feed(100, b"ABCDEF") == b"ABCDEFGHIJK"
+
+
+def test_overlapping_segments_with_different_start_positions():
+    stream = new_stream(initial_sequence=100)
+
+    assert stream.feed(108, b"IJKL") == b""
+    assert stream.feed(106, b"GHIJ") == b""
+    assert stream.feed(100, b"ABCDEF") == b"ABCDEFGHIJKL"

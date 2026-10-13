@@ -135,7 +135,7 @@ class TrafficGenerator:
             self.logger.write(
                 {
                     "timestamp": utc_timestamp(),
-		    "legitimate": True,
+            "legitimate": True,
                     "username": customer_name,
                     "action": action,
                     "method": method.upper(),
@@ -200,6 +200,10 @@ class TrafficGenerator:
         """Perform safe read-only actions for one authenticated customer."""
         user_id = self.authenticate(customer)
 
+        if user_id is None:
+            raise RuntimeError(
+                "Login response did not identify the authenticated user"
+            )
         self.request(
             "GET", "/api/v2/users/me", "get_my_profile"
         ).raise_for_status()

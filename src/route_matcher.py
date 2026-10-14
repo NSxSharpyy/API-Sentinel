@@ -1,3 +1,6 @@
+from .route_normalizer import normalize_route
+
+
 class RouteMatcher:
     """Match observed API routes against declared API contracts."""
 
@@ -9,20 +12,29 @@ class RouteMatcher:
             path = contract.get("path", "")
 
             if method and path:
-                self.declared_routes.add((method, path))
+                try:
+                    normalized_path = normalize_route(path)
+                    self.declared_routes.add((method, normalized_path))
+                except ValueError:
+                    continue
 
     def match_route(self, method, observed_route):
         """Check whether an observed route exists in the contract."""
 
-        key = (method.strip().upper(), observed_route)
+        normalized_method = method.strip().upper()
+        normalized_route = normalize_route(observed_route)
+
+        key = (normalized_method, normalized_route)
+
+        declared = key in self.declared_routes
 
         return {
-            "method": key[0],
-            "route": key[1],
-            "declared": key in self.declared_routes,
+            "method": normalized_method,
+            "route": normalized_route,
+            "declared": declared,
             "status": (
                 "declared"
-                if key in self.declared_routes
+                if declared
                 else "potentially_undocumented"
             ),
         }

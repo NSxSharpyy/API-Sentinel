@@ -1,4 +1,5 @@
 import unittest
+from unittest import result
 
 from src.route_matcher import RouteMatcher
 
@@ -73,6 +74,23 @@ class TestRouteMatcher(unittest.TestCase):
                 "GET", "/api/v1/orders"
             )["declared"]
         )
+
+    def test_matches_dynamic_observed_route(self):
+        matcher = RouteMatcher([
+        {
+            "method": "GET",
+            "path": "/api/v1/orders/{id}",
+        }
+    ])
+
+        result = matcher.match_route(
+        "GET",
+        "/api/v1/orders/8921",
+    )
+
+        self.assertTrue(result["declared"])
+        self.assertEqual(result["route"], "/api/v1/orders/{id}")
+        self.assertEqual(result["status"], "declared")
 
 
 if __name__ == "__main__":

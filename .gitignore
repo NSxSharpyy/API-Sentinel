@@ -12,3 +12,4 @@ data/*.db-shm
 
 # Local test databases
 appsec-testing/tests/.test_shop.db*
+appsec-testing/benchmarks/results/

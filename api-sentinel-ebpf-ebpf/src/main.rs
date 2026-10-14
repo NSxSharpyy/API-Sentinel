@@ -4,15 +4,19 @@
 use aya_ebpf::{
     helpers::bpf_get_current_pid_tgid,
     macros::{kprobe, map, tracepoint},
-    maps::HashMap,
+    maps::{HashMap, RingBuf},
     programs::{ProbeContext, TracePointContext},
 };
 
-use aya_log_ebpf::info;
+use api_sentinel_ebpf_common::NetworkEvent;
 
 // Map: socket address -> owning process TGID.
 #[map]
 static SOCKET_TGID: HashMap<u64, u32> = HashMap::with_max_entries(10240, 0);
+
+// Ring buffer: kernel -> userspace events.
+#[map]
+static EVENTS: RingBuf = RingBuf::with_byte_size(1 << 24, 0);
 
 #[tracepoint]
 pub fn api_sentinel_ebpf(ctx: TracePointContext) -> u32 {
@@ -23,84 +27,61 @@ pub fn api_sentinel_ebpf(ctx: TracePointContext) -> u32 {
 }
 
 fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
-    // Read socket address and TCP state fields.
     let socket_addr = unsafe { ctx.read_at::<u64>(8) }.map_err(|_| 1u32)?;
-    let oldstate = unsafe { ctx.read_at::<i32>(16) }.map_err(|_| 1u32)?;
-    let newstate = unsafe { ctx.read_at::<i32>(20) }.map_err(|_| 1u32)?;
-    let sport = unsafe { ctx.read_at::<u16>(24) }.map_err(|_| 1u32)?;
-    let dport = unsafe { ctx.read_at::<u16>(26) }.map_err(|_| 1u32)?;
+    let old_state = unsafe { ctx.read_at::<i32>(16) }.map_err(|_| 1u32)?;
+    let new_state = unsafe { ctx.read_at::<i32>(20) }.map_err(|_| 1u32)?;
+    let source_port = unsafe { ctx.read_at::<u16>(24) }.map_err(|_| 1u32)?;
+    let destination_port = unsafe { ctx.read_at::<u16>(26) }.map_err(|_| 1u32)?;
 
-    // Read address family and network protocol.
     let family = unsafe { ctx.read_at::<u16>(28) }.map_err(|_| 1u32)?;
     let protocol = unsafe { ctx.read_at::<u16>(30) }.map_err(|_| 1u32)?;
 
-    // Process only IPv4 TCP events.
     // AF_INET = 2, IPPROTO_TCP = 6.
     if family != 2 || protocol != 6 {
         return Ok(0);
     }
 
-    // IPv4 source address: bytes at offsets 32-35.
     let src0 = unsafe { ctx.read_at::<u8>(32) }.map_err(|_| 1u32)?;
     let src1 = unsafe { ctx.read_at::<u8>(33) }.map_err(|_| 1u32)?;
     let src2 = unsafe { ctx.read_at::<u8>(34) }.map_err(|_| 1u32)?;
     let src3 = unsafe { ctx.read_at::<u8>(35) }.map_err(|_| 1u32)?;
 
-    // IPv4 destination address: bytes at offsets 36-39.
     let dst0 = unsafe { ctx.read_at::<u8>(36) }.map_err(|_| 1u32)?;
     let dst1 = unsafe { ctx.read_at::<u8>(37) }.map_err(|_| 1u32)?;
     let dst2 = unsafe { ctx.read_at::<u8>(38) }.map_err(|_| 1u32)?;
     let dst3 = unsafe { ctx.read_at::<u8>(39) }.map_err(|_| 1u32)?;
 
-    // Look up the owning process for this socket.
-    // A missing map entry does not prove that no process exists.
-    match unsafe { SOCKET_TGID.get(&socket_addr) } {
-        Some(tgid) => {
-            info!(&ctx, "Process attribution: KNOWN, TGID {}", *tgid);
-        }
-        None => {
-            info!(
-                &ctx,
-                "Process attribution: UNKNOWN, socket missing from SOCKET_TGID map"
-            );
-        }
-    }
+    let (tgid, attribution_known) = match unsafe { SOCKET_TGID.get(&socket_addr) } {
+        Some(owner_tgid) => (*owner_tgid, 1),
+        None => (0, 0),
+    };
 
-    // Log TCP states, address family, protocol and ports.
-    info!(
-        &ctx,
-        "family {}, protocol {}, TCP {} -> {}, ports {} -> {}",
+    let event = NetworkEvent {
+        tgid,
         family,
         protocol,
-        oldstate,
-        newstate,
-        sport,
-        dport
-    );
+        old_state,
+        new_state,
+        source_port,
+        destination_port,
+        source_ipv4: [src0, src1, src2, src3],
+        destination_ipv4: [dst0, dst1, dst2, dst3],
+        attribution_known,
+        reserved: [0; 3],
+    };
 
-    // Log IPv4 source and destination addresses.
-    info!(
-        &ctx,
-        "IPv4 source {}.{}.{}.{} destination {}.{}.{}.{}",
-        src0,
-        src1,
-        src2,
-        src3,
-        dst0,
-        dst1,
-        dst2,
-        dst3
-    );
+    // Send one structured event to userspace.
+    // Events may be dropped if the ring buffer is full
+    let _ = EVENTS.output::<NetworkEvent>(&event, 0);
 
-    // TCP_CLOSE = state 7; remove the socket from the map.
-    if newstate == 7 {
+    // TCP_CLOSE = state 7.
+    if new_state == 7 {
         let _ = SOCKET_TGID.remove(&socket_addr);
     }
 
     Ok(0)
 }
 
-// Record the TGID when an IPv4 connection begins.
 #[kprobe]
 pub fn api_sentinel_tcp_v4_connect(ctx: ProbeContext) -> u32 {
     let socket: *const u8 = match ctx.arg(0) {

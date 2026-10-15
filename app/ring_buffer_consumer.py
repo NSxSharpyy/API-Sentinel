@@ -32,9 +32,9 @@ async def consume_events(
             packet = RawPacketChunk.model_validate(event)
         except ValidationError:
             stats.rejected += 1
+            queues.rejected_packet_count += 1
             logger.warning("Rejected an invalid packet event")
             continue
-
         try:
             queues.raw_packet_queue.put_nowait(packet)
         except asyncio.QueueFull:
@@ -44,5 +44,6 @@ async def consume_events(
             continue
 
         stats.accepted += 1
+        queues.accepted_packet_count += 1
 
     return stats

@@ -70,21 +70,55 @@ def test_rejects_invalid_request_line():
         parser.feed(b"NOT_HTTP\r\n\r\n")
 
 
-def test_rejects_transfer_encoding_for_now():
+def test_complete_chunked_http_response():
     parser = HTTPStreamParser()
 
-    with pytest.raises(ValueError):
-        parser.feed(
-            b"POST / HTTP/1.1\r\n"
-            b"Transfer-Encoding: chunked\r\n\r\n"
-        )
+    messages = parser.feed(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"5\r\nHello\r\n"
+        b"6\r\n World\r\n"
+        b"0\r\n\r\n"
+    )
+
+    assert len(messages) == 1
+    assert messages[0].message_type == "response"
+    assert messages[0].status_code == 200
+    assert messages[0].body == b"Hello World"
 
 
-def test_rejects_non_bytes_input():
+def test_chunked_response_split_across_feeds():
     parser = HTTPStreamParser()
 
-    with pytest.raises(TypeError):
-        parser.feed("GET / HTTP/1.1\r\n\r\n")
+    first = parser.feed(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"5\r\nHel"
+    )
+    assert first == []
+
+    second = parser.feed(b"lo\r\n0\r\n\r\n")
+    assert len(second) == 1
+    assert second[0].body == b"Hello"
+
+
+def test_chunked_response_preserves_following_response():
+    parser = HTTPStreamParser()
+
+    messages = parser.feed(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"2\r\nOK\r\n"
+        b"0\r\n\r\n"
+        b"HTTP/1.1 204 No Content\r\n\r\n"
+    )
+
+    assert len(messages) == 2
+    assert messages[0].body == b"OK"
+    assert messages[1].status_code == 204
+    assert messages[1].body == b""
 
 
 def test_complete_http_response():

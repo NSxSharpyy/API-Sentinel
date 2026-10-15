@@ -17,3 +17,6 @@ metadata_queue: asyncio.Queue[PacketMetadata] = asyncio.Queue(
 
 # Number of raw packets rejected because the queue was full.
 dropped_packet_count = 0
+# Cumulative packet-event counters for this application process.
+accepted_packet_count = 0
+rejected_packet_count = 0

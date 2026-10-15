@@ -1,4 +1,3 @@
-
 from datetime import datetime, timezone
 
 import pytest
@@ -23,10 +22,12 @@ def clean_queues():
     for queue in (raw_packet_queue, header_queue, metadata_queue):
         while not queue.empty():
             queue.get_nowait()
+            queue.task_done()
     yield
     for queue in (raw_packet_queue, header_queue, metadata_queue):
         while not queue.empty():
             queue.get_nowait()
+            queue.task_done()
 
 
 def test_raw_packet_schema():
@@ -114,7 +115,6 @@ def test_root_endpoint():
     assert "day" not in response.json()
 
 
-
 def test_queue_status_endpoint():
     response = client.get("/queue-status")
 
@@ -123,7 +123,10 @@ def test_queue_status_endpoint():
         "raw_packet_queue": 0,
         "header_queue": 0,
         "metadata_queue": 0,
+        "accepted_packet_count": 0,
+        "rejected_packet_count": 0,
         "dropped_packet_count": 0,
+        "capture_running": False,
     }
 
 

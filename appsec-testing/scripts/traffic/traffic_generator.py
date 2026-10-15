@@ -14,6 +14,11 @@ from pathlib import Path
 import requests
 
 try:
+    from .sent_requests_log import SentRequestsLogger
+except ImportError:
+    from sent_requests_log import SentRequestsLogger
+
+try:
     from .customer_pool import build_customer_pool
 except ImportError:
     from customer_pool import build_customer_pool
@@ -93,6 +98,9 @@ class TrafficGenerator:
         self.rng = random.Random(seed)
         self.customers = build_customer_pool()
         self.logger = TrafficLogger(output_dir)
+        self.sent_logger = SentRequestsLogger(
+            Path(output_dir) / "sent_requests.jsonl"
+        )
         self.session = requests.Session()
         self.current_customer = None
         self.action_count = 0
@@ -111,8 +119,14 @@ class TrafficGenerator:
             raise ValueError(f"Unknown API service path: {path}")
 
         url = f"{self.base_url}:{port}{path}"
+        request_id = self.sent_logger.new_request_id()
+        headers = dict(kwargs.pop("headers", {}) or {})
+        headers["X-Request-ID"] = request_id
+        kwargs["headers"] = headers
+
         start = time.perf_counter()
         status_code = 0
+        error = None
 
         try:
             response = self.session.request(
@@ -123,6 +137,9 @@ class TrafficGenerator:
             )
             status_code = response.status_code
             return response
+        except requests.RequestException as exc:
+            error = type(exc).__name__
+            raise
         finally:
             latency_ms = round(
                 (time.perf_counter() - start) * 1000, 2
@@ -135,7 +152,7 @@ class TrafficGenerator:
             self.logger.write(
                 {
                     "timestamp": utc_timestamp(),
-            "legitimate": True,
+                    "legitimate": True,
                     "username": customer_name,
                     "action": action,
                     "method": method.upper(),
@@ -143,6 +160,18 @@ class TrafficGenerator:
                     "status_code": status_code,
                     "latency_ms": latency_ms,
                 }
+            )
+            self.sent_logger.record(
+                request_id,
+                method,
+                path,
+                source="traffic_generator",
+                legitimate=True,
+                username=customer_name,
+                action=action,
+                status_code=status_code,
+                latency_ms=latency_ms,
+                error=error,
             )
             self.action_count += 1
 

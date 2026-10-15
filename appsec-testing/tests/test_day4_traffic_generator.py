@@ -75,3 +75,17 @@ def test_zero_duration_is_rejected(tmp_path):
 
     generator.session.close()
     generator.logger.close()
+
+
+def test_customer_pool_rejects_empty_database(monkeypatch):
+    from types import SimpleNamespace
+    import scripts.traffic.customer_pool as customer_pool_module
+
+    monkeypatch.setattr(
+        customer_pool_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout="[]", stderr=""),
+    )
+
+    with pytest.raises(RuntimeError, match="contains no customers"):
+        build_customer_pool()

@@ -215,3 +215,76 @@ def test_rejects_response_status_code_out_of_range():
         )
 
     assert parser.buffer == bytearray()
+def test_query_string_is_preserved_in_uri():
+    parser = HTTPStreamParser()
+
+    messages = parser.feed(
+        b"GET /api/users?role=admin&page=2 HTTP/1.1\r\n"
+        b"Host: example.com\r\n\r\n"
+    )
+
+    assert len(messages) == 1
+    assert messages[0].uri == "/api/users?role=admin&page=2"
+
+
+def test_chunked_request_with_trailers():
+    parser = HTTPStreamParser()
+
+    messages = parser.feed(
+        b"POST /upload?source=test HTTP/1.1\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"4\r\nWiki\r\n"
+        b"5\r\npedia\r\n"
+        b"0\r\n"
+        b"X-Checksum: abc123\r\n"
+        b"\r\n"
+    )
+
+    assert len(messages) == 1
+    assert messages[0].uri == "/upload?source=test"
+    assert messages[0].body == b"Wikipedia"
+
+
+def test_multipart_form_body_is_preserved():
+    parser = HTTPStreamParser()
+    boundary = b"----Boundary123"
+
+    body = (
+        b"------Boundary123\r\n"
+        b'Content-Disposition: form-data; name="username"\r\n\r\n'
+        b"harsha\r\n"
+        b"------Boundary123\r\n"
+        b'Content-Disposition: form-data; name="note"\r\n\r\n'
+        b"hello world\r\n"
+        b"------Boundary123--\r\n"
+    )
+
+    request = (
+        b"POST /upload HTTP/1.1\r\n"
+        b"Content-Type: multipart/form-data; boundary="
+        + boundary
+        + b"\r\n"
+        + b"Content-Length: "
+        + str(len(body)).encode()
+        + b"\r\n\r\n"
+        + body
+    )
+
+    messages = parser.feed(request)
+
+    assert len(messages) == 1
+    assert messages[0].headers["content-type"] == (
+        "multipart/form-data; boundary=----Boundary123"
+    )
+    assert messages[0].body == body
+
+
+def test_rejects_malformed_chunk_terminator():
+    parser = HTTPStreamParser()
+
+    with pytest.raises(ValueError, match="Invalid chunk data terminator"):
+        parser.feed(
+            b"POST /upload HTTP/1.1\r\n"
+            b"Transfer-Encoding: chunked\r\n\r\n"
+            b"3\r\nabcXX"
+        )

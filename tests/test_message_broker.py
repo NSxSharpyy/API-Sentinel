@@ -160,3 +160,55 @@ def test_pipeline_publishes_fragmented_http_request():
         if publisher is not None:
             publisher.close()
         subscriber.close()
+
+def test_pipeline_correlates_request_and_reverse_direction_response():
+    publisher = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+    pipeline = HTTPMessagePipeline(publisher)
+
+    request = (
+        b"GET /health HTTP/1.1\r\n"
+        b"Host: example.test\r\n\r\n"
+    )
+    response = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Length: 2\r\n\r\nOK"
+    )
+
+    pipeline.feed(
+        request,
+        connection_id="TCP|10.0.0.10:49152->10.0.0.20:80",
+    )
+    pipeline.feed(
+        response,
+        connection_id="TCP|10.0.0.20:80->10.0.0.10:49152",
+    )
+
+    assert len(pipeline.completed_transactions) == 1
+
+    transaction = pipeline.completed_transactions[0]
+    assert transaction.request.uri == "/health"
+    assert transaction.response.status_code == 200
+
+    # Existing message-by-message publishing remains intact.
+    assert publisher.publish.call_count == 2
+
+
+def test_pipeline_discards_pending_request_when_connection_closes():
+    publisher = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+    pipeline = HTTPMessagePipeline(publisher)
+
+    connection_id = "TCP|10.0.0.10:49152->10.0.0.20:80"
+
+    pipeline.feed(
+        b"GET /pending HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        connection_id=connection_id,
+    )
+
+    assert pipeline.correlator.pending_request_count == 1
+
+    pipeline.close_connection(
+        "TCP|10.0.0.20:80->10.0.0.10:49152"
+    )
+
+    assert pipeline.correlator.pending_request_count == 0
+    assert pipeline.correlator.dropped_requests == 1

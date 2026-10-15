@@ -1,4 +1,5 @@
 
+from collections import deque
 from collections.abc import Callable
 
 from app.http_reassembly import (
@@ -7,12 +8,17 @@ from app.http_reassembly import (
     HTTPStreamParser,
 )
 from app.message_broker import HTTPTransactionPublisher
+from app.transaction_correlator import (
+    HTTPTransaction,
+    HTTPTransactionCorrelator,
+)
 
 DEFAULT_CONNECTION_ID = "default"
+MAX_COMPLETED_TRANSACTIONS = 1000
 
 
 class HTTPMessagePipeline:
-    """Parse HTTP byte chunks and publish completed messages per connection."""
+    """Parse HTTP messages, publish events, and correlate transactions."""
 
     def __init__(
         self,
@@ -20,6 +26,7 @@ class HTTPMessagePipeline:
         parser: HTTPStreamParser | None = None,
         parser_factory: Callable[[], HTTPStreamParser] = HTTPStreamParser,
         max_connections: int = 10000,
+        correlator: HTTPTransactionCorrelator | None = None,
     ):
         if max_connections <= 0:
             raise ValueError("max_connections must be positive")
@@ -27,8 +34,18 @@ class HTTPMessagePipeline:
         self.publisher = publisher
         self.parser_factory = parser_factory
         self.max_connections = max_connections
+        self.correlator = (
+            correlator
+            if correlator is not None
+            else HTTPTransactionCorrelator()
+        )
 
-        # Preserve compatibility with callers that provide a parser.
+        # Retain only the latest transactions for inspection.
+        self.completed_transactions: deque[HTTPTransaction] = deque(
+            maxlen=MAX_COMPLETED_TRANSACTIONS
+        )
+
+        # Preserve compatibility with callers using the default parser.
         self._parsers: dict[str, HTTPStreamParser] = {
             DEFAULT_CONNECTION_ID: (
                 parser if parser is not None else parser_factory()
@@ -42,7 +59,7 @@ class HTTPMessagePipeline:
 
     @property
     def open_connections(self) -> int:
-        """Return the number of connection parsers currently retained."""
+        """Return the number of parser instances currently retained."""
         return len(self._parsers)
 
     def _get_parser(self, connection_id: str) -> HTTPStreamParser:
@@ -65,17 +82,24 @@ class HTTPMessagePipeline:
         self,
         connection_id: str = DEFAULT_CONNECTION_ID,
     ) -> None:
-        """Remove parser state when a connection is closed."""
+        """Remove parser state and pending correlation requests."""
         self._parsers.pop(connection_id, None)
+        self.correlator.close_connection(connection_id)
 
     def _publish_all(
         self,
         messages: list[HTTPMessage],
         connection_id: str,
     ) -> None:
-        """Attach connection identity and publish completed messages."""
+        """Correlate completed messages and publish individual events."""
         for message in messages:
             message.connection_id = connection_id
+
+            transaction = self.correlator.process(message)
+            if transaction is not None:
+                self.completed_transactions.append(transaction)
+
+            # Preserve the existing ZeroMQ per-message event contract.
             self.publisher.publish(message)
 
     def feed(
@@ -83,11 +107,7 @@ class HTTPMessagePipeline:
         data: bytes,
         connection_id: str = DEFAULT_CONNECTION_ID,
     ) -> list[HTTPMessage]:
-        """Parse and publish messages for one connection.
-
-        Completed messages are published even if a later message in the
-        same input chunk is malformed.
-        """
+        """Parse, correlate, and publish complete HTTP messages."""
         parser = self._get_parser(connection_id)
 
         try:

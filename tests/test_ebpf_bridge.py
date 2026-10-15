@@ -100,3 +100,35 @@ def test_reader_ignores_invalid_payload_hex():
         assert result == []
 
     asyncio.run(run_test())
+
+
+def test_reader_reports_successful_process_start():
+    async def run_test():
+        started = []
+
+        result = [
+            item
+            async for item in read_capture_events(
+                [sys.executable, "-c", "pass"],
+                on_started=lambda: started.append(True),
+            )
+        ]
+
+        assert result == []
+        assert started == [True]
+
+    asyncio.run(run_test())
+
+
+def test_reader_reports_nonzero_exit_code():
+    async def run_test():
+        with pytest.raises(
+            RuntimeError,
+            match="exited unexpectedly with code 7",
+        ):
+            async for _ in read_capture_events(
+                [sys.executable, "-c", "raise SystemExit(7)"]
+            ):
+                pass
+
+    asyncio.run(run_test())

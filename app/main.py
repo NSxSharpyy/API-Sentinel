@@ -5,12 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import queues
+from app.capture_supervisor import supervise_capture
 from app.config import settings
-from app.ebpf_bridge import read_capture_events
 from app.http_pipeline import HTTPMessagePipeline
 from app.message_broker import HTTPTransactionPublisher
 from app.packet_worker import packet_worker
-from app.ring_buffer_consumer import consume_events
 from app.queues import (
     header_queue,
     metadata_queue,
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the packet worker at startup and stop it at shutdown."""
+    """Start the packet worker and supervised capture reader."""
     stop_event = asyncio.Event()
     publisher = HTTPTransactionPublisher()
     pipeline = HTTPMessagePipeline(publisher=publisher)
@@ -30,6 +29,10 @@ async def lifespan(app: FastAPI):
     app.state.stop_event = stop_event
     app.state.http_pipeline = pipeline
     app.state.http_publisher = publisher
+    app.state.capture_status = "starting"
+
+    def update_capture_status(status: str) -> None:
+        app.state.capture_status = status
 
     worker_task = asyncio.create_task(
         packet_worker(pipeline, stop_event),
@@ -42,27 +45,32 @@ async def lifespan(app: FastAPI):
         "-n",
         "/usr/local/sbin/api-sentinel-ring-reader",
     ]
+
     capture_task = asyncio.create_task(
-        consume_events(read_capture_events(reader_command)),
-        name="api-sentinel-capture-consumer",
+        supervise_capture(
+            reader_command,
+            stop_event,
+            on_status=update_capture_status,
+        ),
+        name="api-sentinel-capture-supervisor",
     )
     app.state.capture_task = capture_task
 
     logger.info("API-Sentinel packet worker started")
-    logger.info("API-Sentinel eBPF capture consumer started")
+    logger.info("API-Sentinel capture supervisor started")
 
     try:
         yield
     finally:
+        stop_event.set()
         capture_task.cancel()
+
         try:
             await capture_task
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.exception("eBPF capture consumer failed during shutdown")
-
-        stop_event.set()
+            logger.exception("Capture supervisor failed during shutdown")
 
         try:
             await asyncio.wait_for(worker_task, timeout=5.0)
@@ -72,6 +80,8 @@ async def lifespan(app: FastAPI):
                 await worker_task
             except asyncio.CancelledError:
                 pass
+        except Exception:
+            logger.exception("Packet worker failed during shutdown")
         finally:
             publisher.close()
 
@@ -98,6 +108,7 @@ async def root():
 @app.get("/queue-status")
 async def queue_status():
     capture_task = getattr(app.state, "capture_task", None)
+    capture_status = getattr(app.state, "capture_status", "stopped")
 
     return {
         "raw_packet_queue": raw_packet_queue.qsize(),
@@ -107,6 +118,8 @@ async def queue_status():
         "rejected_packet_count": queues.rejected_packet_count,
         "dropped_packet_count": queues.dropped_packet_count,
         "capture_running": (
-            capture_task is not None and not capture_task.done()
+            capture_status == "running"
+            and capture_task is not None
+            and not capture_task.done()
         ),
     }

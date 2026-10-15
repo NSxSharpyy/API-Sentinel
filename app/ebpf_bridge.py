@@ -1,34 +1,51 @@
-
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+async def _log_reader_stderr(stream: asyncio.StreamReader) -> None:
+    """Drain and log stderr without blocking the reader process."""
+    while line := await stream.readline():
+        message = line.decode("utf-8", errors="replace").rstrip()
+        if message:
+            logger.warning("Capture reader stderr: %s", message)
+
+
 async def read_capture_events(
     reader_command: list[str],
+    *,
+    on_started: Callable[[], None] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Read newline-delimited JSON packet events from a capture process."""
 
     process = await asyncio.create_subprocess_exec(
         *reader_command,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
-
-    if process.stdout is None:
-        process.kill()
-        await process.wait()
-        raise RuntimeError("Capture reader stdout is unavailable")
+    stderr_task: asyncio.Task[None] | None = None
 
     try:
+        if process.stdout is None:
+            raise RuntimeError("Capture reader stdout is unavailable")
+
+        if process.stderr is not None:
+            stderr_task = asyncio.create_task(
+                _log_reader_stderr(process.stderr)
+            )
+
+        if on_started is not None:
+            on_started()
+
+        logger.info("Capture reader started (pid=%s)", process.pid)
+
         while True:
             line = await process.stdout.readline()
-
             if not line:
                 break
 
@@ -39,7 +56,7 @@ async def read_capture_events(
                 continue
 
             if not isinstance(event, dict):
-                logger.warning("Ignoring capture event that is not a JSON object")
+                logger.warning("Ignoring non-object capture event")
                 continue
 
             packet_id = event.get("packet_id")
@@ -58,18 +75,12 @@ async def read_capture_events(
                 logger.warning("Ignoring event with invalid payload_hex")
                 continue
 
-            protocol_number = event.get("protocol")
-            protocol = {
-                6: "TCP",
-                17: "UDP",
-            }.get(protocol_number)
-
+            protocol = {6: "TCP", 17: "UDP"}.get(event.get("protocol"))
             if protocol is None:
                 logger.debug("Ignoring unsupported or undecoded packet")
                 continue
 
             flags_value = event.get("tcp_flags", 0)
-
             if (
                 not isinstance(flags_value, int)
                 or isinstance(flags_value, bool)
@@ -106,12 +117,38 @@ async def read_capture_events(
                 "tcp_flags": flag_names,
             }
 
+        return_code = await process.wait()
+        if return_code != 0:
+            raise RuntimeError(
+                f"Capture reader exited unexpectedly with code {return_code}"
+            )
+
+        logger.warning(
+            "Capture reader exited normally; supervisor will restart it"
+        )
+
     finally:
         if process.returncode is None:
-            process.terminate()
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
 
         try:
             await asyncio.wait_for(process.wait(), timeout=3)
         except asyncio.TimeoutError:
-            process.kill()
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
             await process.wait()
+
+        if stderr_task is not None:
+            try:
+                await asyncio.wait_for(stderr_task, timeout=1)
+            except asyncio.TimeoutError:
+                stderr_task.cancel()
+                try:
+                    await stderr_task
+                except asyncio.CancelledError:
+                    pass

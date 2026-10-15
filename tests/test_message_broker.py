@@ -1,3 +1,4 @@
+from unittest.mock import Mock
 
 import base64
 import json
@@ -212,3 +213,61 @@ def test_pipeline_discards_pending_request_when_connection_closes():
 
     assert pipeline.correlator.pending_request_count == 0
     assert pipeline.correlator.dropped_requests == 1
+
+
+def test_pipeline_persists_correlated_transaction():
+    publisher = Mock()
+    store = Mock()
+    pipeline = HTTPMessagePipeline(
+        publisher=publisher,
+        transaction_store=store,
+    )
+
+    client_to_server = (
+        "TCP|10.0.0.10:49152->10.0.0.20:80"
+    )
+    server_to_client = (
+        "TCP|10.0.0.20:80->10.0.0.10:49152"
+    )
+
+    pipeline.feed(
+        b"GET /health HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        connection_id=client_to_server,
+    )
+    pipeline.feed(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK",
+        connection_id=server_to_client,
+    )
+
+    store.save.assert_called_once()
+    transaction = store.save.call_args.args[0]
+    assert transaction.request.uri == "/health"
+    assert transaction.response.status_code == 200
+    assert len(pipeline.completed_transactions) == 1
+    assert publisher.publish.call_count == 2
+def test_pipeline_continues_publishing_when_persistence_fails(caplog):
+    publisher = Mock()
+    store = Mock()
+    store.save.side_effect = RuntimeError("database unavailable")
+
+    pipeline = HTTPMessagePipeline(
+        publisher=publisher,
+        transaction_store=store,
+    )
+
+    client_to_server = "TCP|10.0.0.10:49152->10.0.0.20:80"
+    server_to_client = "TCP|10.0.0.20:80->10.0.0.10:49152"
+
+    pipeline.feed(
+        b"GET /health HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        connection_id=client_to_server,
+    )
+    pipeline.feed(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK",
+        connection_id=server_to_client,
+    )
+
+    assert store.save.call_count == 1
+    assert publisher.publish.call_count == 2
+    assert len(pipeline.completed_transactions) == 1
+    assert "Failed to persist HTTP transaction" in caplog.text

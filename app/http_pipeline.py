@@ -1,4 +1,4 @@
-
+import logging
 from collections import deque
 from collections.abc import Callable
 
@@ -12,13 +12,16 @@ from app.transaction_correlator import (
     HTTPTransaction,
     HTTPTransactionCorrelator,
 )
+from app.transaction_store import TransactionStore
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONNECTION_ID = "default"
 MAX_COMPLETED_TRANSACTIONS = 1000
 
 
 class HTTPMessagePipeline:
-    """Parse HTTP messages, publish events, and correlate transactions."""
+    """Parse HTTP messages, publish events, and persist transactions."""
 
     def __init__(
         self,
@@ -27,6 +30,7 @@ class HTTPMessagePipeline:
         parser_factory: Callable[[], HTTPStreamParser] = HTTPStreamParser,
         max_connections: int = 10000,
         correlator: HTTPTransactionCorrelator | None = None,
+        transaction_store: TransactionStore | None = None,
     ):
         if max_connections <= 0:
             raise ValueError("max_connections must be positive")
@@ -39,13 +43,12 @@ class HTTPMessagePipeline:
             if correlator is not None
             else HTTPTransactionCorrelator()
         )
+        self.transaction_store = transaction_store
 
-        # Retain only the latest transactions for inspection.
         self.completed_transactions: deque[HTTPTransaction] = deque(
             maxlen=MAX_COMPLETED_TRANSACTIONS
         )
 
-        # Preserve compatibility with callers using the default parser.
         self._parsers: dict[str, HTTPStreamParser] = {
             DEFAULT_CONNECTION_ID: (
                 parser if parser is not None else parser_factory()
@@ -91,13 +94,22 @@ class HTTPMessagePipeline:
         messages: list[HTTPMessage],
         connection_id: str,
     ) -> None:
-        """Correlate completed messages and publish individual events."""
+        """Correlate messages, persist matches, and publish individual events."""
         for message in messages:
             message.connection_id = connection_id
 
             transaction = self.correlator.process(message)
             if transaction is not None:
                 self.completed_transactions.append(transaction)
+
+                if self.transaction_store is not None:
+                    try:
+                        self.transaction_store.save(transaction)
+                    except Exception:
+                        logger.exception(
+                            "Failed to persist HTTP transaction; "
+                            "continuing message publishing"
+                        )
 
             # Preserve the existing ZeroMQ per-message event contract.
             self.publisher.publish(message)
@@ -107,7 +119,7 @@ class HTTPMessagePipeline:
         data: bytes,
         connection_id: str = DEFAULT_CONNECTION_ID,
     ) -> list[HTTPMessage]:
-        """Parse, correlate, and publish complete HTTP messages."""
+        """Parse, correlate, persist, and publish complete HTTP messages."""
         parser = self._get_parser(connection_id)
 
         try:

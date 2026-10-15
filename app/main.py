@@ -10,25 +10,32 @@ from app.config import settings
 from app.http_pipeline import HTTPMessagePipeline
 from app.message_broker import HTTPTransactionPublisher
 from app.packet_worker import packet_worker
-from app.queues import (
-    header_queue,
-    metadata_queue,
-    raw_packet_queue,
-)
+from app.queues import header_queue, metadata_queue, raw_packet_queue
+from app.transaction_store import TransactionStore, initialize_database
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the packet worker and supervised capture reader."""
+    """Initialize persistence and start packet capture services."""
     stop_event = asyncio.Event()
+
+    # Initialize SQLAlchemy tables before starting background services.
+    initialize_database()
+
     publisher = HTTPTransactionPublisher()
-    pipeline = HTTPMessagePipeline(publisher=publisher)
+    transaction_store = TransactionStore()
+
+    pipeline = HTTPMessagePipeline(
+        publisher=publisher,
+        transaction_store=transaction_store,
+    )
 
     app.state.stop_event = stop_event
     app.state.http_pipeline = pipeline
     app.state.http_publisher = publisher
+    app.state.transaction_store = transaction_store
     app.state.capture_status = "starting"
 
     def update_capture_status(status: str) -> None:
@@ -70,7 +77,9 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.exception("Capture supervisor failed during shutdown")
+            logger.exception(
+                "Capture supervisor failed during shutdown"
+            )
 
         try:
             await asyncio.wait_for(worker_task, timeout=5.0)
@@ -81,7 +90,9 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
         except Exception:
-            logger.exception("Packet worker failed during shutdown")
+            logger.exception(
+                "Packet worker failed during shutdown"
+            )
         finally:
             publisher.close()
 

@@ -75,7 +75,7 @@ export function createTelemetryClient({
       };
 
       emitMockEvent();
-      mockTimer = window.setInterval(emitMockEvent, 2500);
+      mockTimer = window.setInterval(emitMockEvent, 5000);
 
       return;
     }

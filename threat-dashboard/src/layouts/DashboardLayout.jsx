@@ -17,6 +17,7 @@ export default function DashboardLayout() {
     latestMessage,
     lastError,
     isMockMode,
+    transactions,
   } = useTelemetry();
 
   const toggleSidebar = () => {
@@ -92,7 +93,7 @@ export default function DashboardLayout() {
               isMockMode={isMockMode}
             />
 
-            <Outlet />
+            <Outlet context={{ transactions }} />
           </div>
         </main>
       </div>

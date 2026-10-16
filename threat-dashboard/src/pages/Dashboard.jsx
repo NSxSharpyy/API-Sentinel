@@ -1,8 +1,12 @@
+import { useOutletContext } from "react-router-dom";
 
 import { mockIncidents } from "../data/mockIncidents";
 import IncidentAlertGrid from "../components/ui/IncidentAlertGrid";
+import EndpointDataTable from "../components/ui/EndpointDataTable";
 
 export default function Dashboard() {
+  const { transactions = [] } = useOutletContext();
+
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
@@ -17,6 +21,7 @@ export default function Dashboard() {
 
   return (
     <section className="space-y-6">
+      {/* Dashboard Heading */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-gray-900">
           Security Overview
@@ -27,10 +32,12 @@ export default function Dashboard() {
         </p>
 
         <p className="mt-2 text-xs font-medium text-amber-700">
-          DEMO DATA — Not connected to live telemetry
+          DEMO DATA — Incident alerts use temporary demo data.
+          Endpoint transactions depend on telemetry availability.
         </p>
       </div>
 
+      {/* Incident Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">
@@ -61,6 +68,23 @@ export default function Dashboard() {
         </article>
       </div>
 
+      {/* Endpoint Transaction Table */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            API Endpoint Activity
+          </h2>
+
+          <p className="mt-1 text-sm text-gray-600">
+            Recent endpoint transactions received through the telemetry
+            client. Data appears here when valid transactions are received.
+          </p>
+        </div>
+
+        <EndpointDataTable transactions={transactions} />
+      </section>
+
+      {/* Recent Security Alerts */}
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">

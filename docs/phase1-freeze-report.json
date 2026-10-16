@@ -1,0 +1,197 @@
+{
+  "project": "API-Sentinel",
+  "milestone": "Phase 1",
+  "generated_at_utc": "2026-10-16T11:34:07.516936+00:00",
+  "status": "PASS",
+  "summary": {
+    "total_checks": 13,
+    "passed": 13,
+    "failed": 0
+  },
+  "run_directory": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248",
+  "checks": [
+    {
+      "name": "All four API services healthy",
+      "status": "PASS",
+      "details": {
+        "auth": {
+          "status": 200,
+          "body": {
+            "api_version": "v2",
+            "service": "auth-service",
+            "status": "ok"
+          }
+        },
+        "user": {
+          "status": 200,
+          "body": {
+            "api_version": "v2",
+            "service": "user-service",
+            "status": "ok"
+          }
+        },
+        "order": {
+          "status": 200,
+          "body": {
+            "api_version": "v2",
+            "service": "order-service",
+            "status": "ok"
+          }
+        },
+        "billing": {
+          "status": 200,
+          "body": {
+            "api_version": "v2",
+            "service": "billing-service",
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "Seeded database integrity",
+      "status": "PASS",
+      "details": {
+        "customers": 50,
+        "orders": 147,
+        "invoices": 147,
+        "foreign_key_errors": 0,
+        "test_users": [
+          {
+            "id": 1,
+            "username": "alice.anderson1"
+          },
+          {
+            "id": 2,
+            "username": "bob.brown2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Intentional billing BOLA remains demonstrable",
+      "status": "PASS",
+      "details": {
+        "requester_id": 1,
+        "invoice_id": 3,
+        "actual_owner_id": 2,
+        "http_status": 200,
+        "expected_lab_behavior": "cross-user invoice request returns 200"
+      }
+    },
+    {
+      "name": "Order service blocks cross-user object access",
+      "status": "PASS",
+      "details": {
+        "requester_id": 1,
+        "order_id": 3,
+        "http_status": 404,
+        "expected_status": 404
+      }
+    },
+    {
+      "name": "Authenticated API benchmark (10 VUs, 15s)",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/authenticated-benchmark.log",
+        "output_tail": "p(95)=486.071855 p(99)=490.591374\n\n    HTTP\n    http_req_duration..............: avg=8.48ms     min=1.47ms     med=4.34ms   max=491.72ms   p(90)=10.35ms    p(95)=12.67ms    p(99)=21.73ms   \n      { expected_response:true }...: avg=8.48ms     min=1.47ms     med=4.34ms   max=491.72ms   p(90)=10.35ms    p(95)=12.67ms    p(99)=21.73ms   \n      { workload:authenticated }...: avg=5.52ms     min=1.47ms     med=4.33ms   max=24.84ms    p(90)=9.95ms     p(95)=12.34ms    p(99)=17.84ms   \n    http_req_failed................: 0.00%  0 out of 1410\n    http_reqs......................: 1410   91.013157/s\n\n    EXECUTION\n    iteration_duration.............: avg=548.4ms    min=515.73ms   med=528.09ms max=1.01s      p(90)=557.42ms   p(95)=568.91ms   p(99)=1s        \n    iterations.....................: 280    18.073535/s\n    vus............................: 10     min=10        max=10\n    vus_max........................: 10     min=10        max=10\n\n    NETWORK\n    data_received..................: 692 kB 45 kB/s\n    data_sent......................: 313 kB 20 kB/s\n\n\n\n\nrunning (15.5s), 00/10 VUs, 280 complete and 0 interrupted iterations\nauthenticated_api \u2713 [ 100% ] 10 VUs  15s\n\n==========================================\n Authenticated Benchmark Result\n==========================================\nk6 exit status: 0\nJSON summary:   /home/ld/API-Sentinel/appsec-testing/benchmarks/results/authenticated_20261016_073249.json\nConsole log:    /home/ld/API-Sentinel/appsec-testing/benchmarks/results/authenticated_console_20261016_073249.log\n\nReview the k6 output for:\n  - http_req_duration{workload:authenticated}: p(95)<50\n  - http_req_failed: rate<0.01\n  - benchmark_errors: rate<0.01\n  - checks: rate>0.99\n  - login_duration_ms: reported separately\n\nBenchmark PASSED: all configured k6 thresholds passed.\n"
+      }
+    },
+    {
+      "name": "Legitimate traffic generator (20 seconds)",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/legitimate-traffic.log",
+        "output_tail": "Traffic logs: /home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/legitimate/traffic_20261016_073307.jsonl\nCSV logs:     /home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/legitimate/traffic_20261016_073307.csv\nGenerating traffic for 20 seconds...\nRequests logged: 126\nTraffic generation finished.\n"
+      }
+    },
+    {
+      "name": "Sustained load generator (500 requests, 20 req/s)",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/sustained-load.log",
+        "output_tail": "nandes6: HTTP 200\n[457/500] alice.anderson41: HTTP 200\n[458/500] henry.harris28: HTTP 200\n[459/500] sara.taylor18: HTTP 200\n[460/500] charlie.clark3: HTTP 200\n[461/500] alice.anderson1: HTTP 200\n[462/500] bob.brown22: HTTP 200\n[463/500] james.johnson50: HTTP 200\n[464/500] isha.iyer9: HTTP 200\n[465/500] alice.anderson41: HTTP 200\n[466/500] rahul.sharma17: HTTP 200\n[467/500] kavya.khan11: HTTP 200\n[468/500] henry.harris48: HTTP 200\n[469/500] isha.iyer29: HTTP 200\n[470/500] priya.roberts36: HTTP 200\n[471/500] fatima.fernandes46: HTTP 200\n[472/500] henry.harris28: HTTP 200\n[473/500] priya.roberts36: HTTP 200\n[474/500] alice.anderson1: HTTP 200\n[475/500] henry.harris8: HTTP 200\n[476/500] ethan.evans5: HTTP 200\n[477/500] ethan.evans45: HTTP 200\n[478/500] james.johnson10: HTTP 200\n[479/500] olivia.patel35: HTTP 200\n[480/500] charlie.clark3: HTTP 200\n[481/500] diana.davis24: HTTP 200\n[482/500] sara.taylor38: HTTP 200\n[483/500] priya.roberts36: HTTP 200\n[484/500] james.johnson10: HTTP 200\n[485/500] henry.harris28: HTTP 200\n[486/500] isha.iyer9: HTTP 200\n[487/500] charlie.clark3: HTTP 200\n[488/500] zoya.young20: HTTP 200\n[489/500] diana.davis24: HTTP 200\n[490/500] charlie.clark3: HTTP 200\n[491/500] charlie.clark23: HTTP 200\n[492/500] noah.nair14: HTTP 200\n[493/500] diana.davis44: HTTP 200\n[494/500] priya.roberts16: HTTP 200\n[495/500] charlie.clark43: HTTP 200\n[496/500] grace.gupta7: HTTP 200\n[497/500] charlie.clark23: HTTP 200\n[498/500] james.johnson50: HTTP 200\n[499/500] priya.roberts36: HTTP 200\n[500/500] grace.gupta27: HTTP 200\n\n===== Sustained-load summary =====\nOrder requests succeeded: 500\nOrder requests failed:    0\nElapsed seconds:           29.03\nSent-request log:          /home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/sustained/sent_requests.jsonl\n"
+      }
+    },
+    {
+      "name": "Traffic evidence files contain requests",
+      "status": "PASS",
+      "details": {
+        "sources": [
+          "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/legitimate/sent_requests.jsonl",
+          "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/sustained/sent_requests.jsonl"
+        ],
+        "combined_bytes": 180553
+      }
+    },
+    {
+      "name": "Forward legitimate requests to mock ingestion",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/forward-legitimate.log",
+        "output_tail": "b6b-fc82-42c6-aa3d-8030aeab4dd6\n[CAPTURED] d6e258b2-d1e1-4a6b-9d74-e7c471627b5a\n[CAPTURED] 6cbd46d9-7326-4fd5-8b20-da5120623554\n[CAPTURED] d64873fa-d79d-467d-894d-3745481547e2\n[CAPTURED] 61e55318-5159-49f5-a679-866ff547086a\n[CAPTURED] 7be6406d-e8f6-4b8d-9e32-192d4fba6b1f\n[CAPTURED] 09147337-1f31-41c4-8fe7-9b2c1aa35d91\n[CAPTURED] 91875894-2abc-4882-abea-0470590fbfa2\n[CAPTURED] 27234266-cd34-4cdb-a196-361a6d96b9fc\n[CAPTURED] 19aee8b0-43b4-4dfd-8297-54aa0055abff\n[CAPTURED] e4727670-a4c7-462a-9073-49f913980740\n[CAPTURED] 14903a47-f699-46a3-a7b9-4185ae3d0ef9\n[CAPTURED] 4b976dcb-9abe-4be6-aa39-59af6b5cfb37\n[CAPTURED] 3306385d-2922-4a1d-8cd0-fda414fefb81\n[CAPTURED] 1fa3ca89-7b4f-42f1-8908-65f1d581af8c\n[CAPTURED] 98d98646-3c55-4c44-b310-ee9eb1f8e441\n[CAPTURED] e47f224a-d866-4edd-9fc0-92a535b460ed\n[CAPTURED] dd946cc5-940b-47d2-a4c4-7aafa76ca900\n[CAPTURED] 54cd76bb-f24b-45fd-9048-a1e9f5823255\n[CAPTURED] dea613e6-3a0c-4ae4-8d48-ea6c83872c8c\n[CAPTURED] b8cae25f-0980-4bb5-bf91-01812e448b71\n[CAPTURED] ef05798f-bcaf-4a58-a481-e7f193dc4f0d\n[CAPTURED] 402cc4fb-53fa-4cfb-a140-c0a589a34617\n[CAPTURED] 93627ecb-e05a-45b4-ba64-243233a4be64\n[CAPTURED] 273543a4-0b8c-4b2b-83d0-cde5c25ebb53\n[CAPTURED] da3de1bc-5991-445a-8575-e8b62d153531\n[CAPTURED] 45adeb19-6651-49ba-933d-b45f929ff147\n[CAPTURED] 86bf5024-b03d-4d73-a49e-4c455dba7c64\n[CAPTURED] 416d334d-d988-4ad5-b184-03f45d6323fd\n[CAPTURED] 9ff2b0c1-56d7-4292-bb4b-a1f0084db5f1\n[CAPTURED] cbff5006-81f3-44ac-bc4d-070ce5dff848\n[CAPTURED] 862ff66c-41a9-4ac7-a963-edb01f077240\n[CAPTURED] 5e67a78d-ecd6-47ac-b002-3afc6230bf88\n[CAPTURED] 60346219-01cd-4ed6-a0d7-a049ae1e1720\n[CAPTURED] 7f7b64f8-242a-4652-aae2-315c0065edac\n[CAPTURED] b7d7122c-b2ce-46a0-9b71-1759c795984e\n\n===== Forwarder summary =====\nRead: 126\nForwarded: 126\nDropped: 0\nFailed: 0\nInvalid: 0\n"
+      }
+    },
+    {
+      "name": "Forward sustained requests to mock ingestion",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/forward-sustained.log",
+        "output_tail": "d1a-cfa9-41f2-9037-ced7b4a65755\n[CAPTURED] 50bf3a75-11d7-4d7c-9212-c474aed97524\n[CAPTURED] d09d4640-34b0-4882-b7e3-77fb6a6e3e11\n[CAPTURED] 85ac16e9-ed36-439e-8333-88d629b6a212\n[CAPTURED] cd574aef-1a61-445d-8272-fb832ff08a25\n[CAPTURED] 76d42e9f-9adc-4728-b11a-7db62eaad907\n[CAPTURED] 772bc6de-cd2b-4cfd-8e6d-73de22a52b56\n[CAPTURED] 59456d93-6162-4925-8c43-71f513fa6068\n[CAPTURED] 5d0309a6-e676-4b5d-992f-e73ac6565e5c\n[CAPTURED] ae40a142-03ab-4a3d-8678-3c6f4bb27e9d\n[CAPTURED] 49e20bf1-04a0-489c-a10c-87f1b8c2fdbc\n[CAPTURED] e97da98b-c7f5-4fb5-bc74-5529fd9b1472\n[CAPTURED] 69a1d557-2e79-49ad-b713-965322f056de\n[CAPTURED] df37ad09-3166-402d-98d0-f59bd07c1147\n[CAPTURED] bc92f748-4f69-43fe-b301-8bef3cf23444\n[CAPTURED] 8920e748-46c9-4ca9-8c70-c2776854b15f\n[CAPTURED] 941db743-9313-404f-aacc-98eaf1e935dc\n[CAPTURED] d0371e9c-c334-41fc-ab0f-fbf6d06655fe\n[CAPTURED] 30c9034d-3f5d-4ec8-9287-00524817e41a\n[CAPTURED] 8f5634e1-576b-4f1b-bb8e-efef2b4177ad\n[CAPTURED] d36d0d35-6d28-480a-bc90-af20d725b777\n[CAPTURED] 1ad3fb4b-1dd3-4781-8ea1-49a722b8d0e6\n[CAPTURED] c830ed8d-b727-4705-a3c4-ab2f3e2ce72a\n[CAPTURED] f132e25e-4583-4de9-9c12-8b8daa751054\n[CAPTURED] c7163a93-4cde-445d-ba53-77f288643067\n[CAPTURED] 631b367b-4f0d-499c-8e55-f1b4f7ffc8df\n[CAPTURED] f7ed6548-59d0-415e-b97a-06d9af12054c\n[CAPTURED] e1047bbd-0382-4f9f-a393-86178b817aff\n[CAPTURED] 6ab18507-31de-414e-979d-0f4f669448b5\n[CAPTURED] 6af3ad6a-fa8c-499b-8ba9-76e1f09d2019\n[CAPTURED] 09d947f7-89de-4469-86f1-ac6158e013be\n[CAPTURED] 32c44a55-edac-4726-8df3-f00e3d0497f4\n[CAPTURED] 7e2c0f12-229e-4215-b331-6afd9360a526\n[CAPTURED] e45ea9cf-b72a-448f-9057-34e496824038\n[CAPTURED] c643d051-5b27-4244-b720-bfb6f9797ffd\n[CAPTURED] 4930117d-76a0-49b3-b9f7-328c4f4e7f71\n\n===== Forwarder summary =====\nRead: 550\nForwarded: 550\nDropped: 0\nFailed: 0\nInvalid: 0\n"
+      }
+    },
+    {
+      "name": "Pipeline capture audit",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/pipeline_audit.log",
+        "output_tail": "Audit status: PASS\nSent records: 676\nCaptured records: 676\nCapture rate: 100.0%\nMissing request IDs: 0\nDuplicate capture IDs: 0\nAudit report: /home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/pipeline_audit.json\n"
+      }
+    },
+    {
+      "name": "Pipeline audit confirms 100% capture",
+      "status": "PASS",
+      "details": {
+        "audit_report": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/pipeline_audit.json",
+        "audit_details": {
+          "generated_at": "2026-10-16T11:34:01.394686+00:00",
+          "sent_source": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/sent_requests.jsonl",
+          "captures_source": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/captures.jsonl",
+          "status": "PASS",
+          "failures": [],
+          "sent_records": 676,
+          "sent_records_without_valid_id": 0,
+          "captured_records": 676,
+          "captured_records_without_valid_id": 0,
+          "unique_sent_request_ids": 676,
+          "unique_captured_request_ids": 676,
+          "matched_unique_request_ids": 676,
+          "captured_sent_transactions": 676,
+          "capture_rate_percent": 100.0,
+          "missing_request_ids": [],
+          "unexpected_capture_request_ids": [],
+          "duplicate_sent_request_ids": [],
+          "duplicate_capture_request_ids": [],
+          "sent_parse_errors": [],
+          "capture_parse_errors": []
+        },
+        "exit_code": 0
+      }
+    },
+    {
+      "name": "Full pytest suite",
+      "status": "PASS",
+      "details": {
+        "returncode": 0,
+        "log": "/home/ld/API-Sentinel/appsec-testing/logs/phase1-run-20261016-073248/pytest.log",
+        "output_tail": "......................................................................   [100%]\n70 passed in 4.42s\n"
+      }
+    }
+  ]
+}

@@ -94,10 +94,10 @@ set -e
 
 if [[ "$K6_STATUS" -ne 0 ]]; then
     echo
-    echo "ERROR: k6 exited with status $K6_STATUS."
+    echo "WARNING: k6 exited with status $K6_STATUS."
+    echo "The benchmark summary will be printed before returning this status."
     echo "Check: $LOG_FILE"
     echo "Inspect: $RESULT_FILE"
-    exit "$K6_STATUS"
 fi
 
 echo
@@ -173,3 +173,8 @@ echo
 echo "JSON summary: $RESULT_FILE"
 echo "Console log:  $LOG_FILE"
 echo "Benchmark finished."
+
+if [[ "$K6_STATUS" -ne 0 ]]; then
+    echo "Benchmark FAILED: k6 reported a threshold or execution failure."
+    exit "$K6_STATUS"
+fi

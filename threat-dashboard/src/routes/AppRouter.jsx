@@ -21,7 +21,7 @@ function PlaceholderPage({ title, description }) {
       </p>
 
       <p className="mt-4 text-xs text-gray-500">
-        Placeholder only â€” functionality is scheduled for a later day.
+        Placeholder only - functionality is scheduled for a later day.
       </p>
     </section>
   );

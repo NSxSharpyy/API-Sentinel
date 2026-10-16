@@ -15,7 +15,11 @@ export function useTelemetry() {
       onStatus: (status) => {
         setConnectionStatus(status);
 
-        if (status !== "error") {
+        if (
+          status === "connecting" ||
+          status === "connected" ||
+          status === "mock"
+        ) {
           setLastError("");
         }
       },

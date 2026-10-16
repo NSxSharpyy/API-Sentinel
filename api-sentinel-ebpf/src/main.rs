@@ -100,12 +100,19 @@ async fn main() -> anyhow::Result<()> {
                         "UNKNOWN".to_string()
                     };
 
+                    let direction = match event.traffic_direction {
+                        1 => "EAST-WEST",
+                        2 => "NORTH-SOUTH",
+                        _ => "UNKNOWN/OTHER",
+                    };
+
                     println!(
-                        "NET_EVENT tgid={} family={} protocol={} \
+                        "NET_EVENT tgid={} direction={} family={} protocol={} \
                          tcp_state={}->{} \
                          src={}.{}.{}.{}:{} \
                          dst={}.{}.{}.{}:{}",
                         process,
+                        direction,
                         event.family,
                         event.protocol,
                         event.old_state,

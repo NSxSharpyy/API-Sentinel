@@ -8,6 +8,7 @@ import {
 
 import DashboardLayout from "../layouts/DashboardLayout";
 import Dashboard from "../pages/Dashboard";
+import ApiSurface from "../pages/ApiSurface";
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -54,12 +55,7 @@ export default function AppRouter() {
 
           <Route
             path="/api-surface"
-            element={
-              <PlaceholderPage
-                title="API Attack Surface"
-                description="The endpoint inventory is scheduled for Day 8."
-              />
-            }
+            element={<ApiSurface />}
           />
 
           <Route

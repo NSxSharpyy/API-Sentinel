@@ -112,3 +112,67 @@ Run the complete regression suite:
 ```bash
 pytest -q
 ```
+
+---
+
+# Day 9 — Horizontal Privilege Escalation Matrix
+
+## Purpose and scope
+
+`privesc_attack.py` checks four parameter-tampering vectors against the
+local order and billing APIs. It uses two different seeded customers:
+an authenticated attacker and a victim. Only local HTTP targets are
+accepted.
+
+## Run the matrix
+
+```bash
+python scripts/attacks/privesc_attack.py
+```
+
+Choose specific seeded users:
+
+```bash
+python scripts/attacks/privesc_attack.py \
+  --attacker alice.anderson1 \
+  --victim bob.clark2
+```
+
+Write evidence to a separate directory:
+
+```bash
+python scripts/attacks/privesc_attack.py \
+  --output-dir logs/day9-privesc
+```
+
+## Test matrix
+
+| Vector | Order service | Billing service |
+|---|---|---|
+| `path_id` | `BLOCKED` | `ESCALATION_SUCCESS` (intentional BOLA) |
+| `query_param` | `OWN_DATA_OR_IGNORED` | `OWN_DATA_OR_IGNORED` |
+| `header_x_user_id` | `OWN_DATA_OR_IGNORED` | `OWN_DATA_OR_IGNORED` |
+| `body_tamper` | `NOT_APPLICABLE` | `NOT_APPLICABLE` |
+
+The path test selects a real resource owned by the victim. Query and
+header tests check whether the attacker receives any foreign-owned items.
+The current list endpoints derive ownership from the authenticated token.
+The two object routes tested here are GET-only, so body tampering is
+recorded as not applicable without sending a request body.
+
+Any unexpected `ESCALATION_SUCCESS` outside the billing `path_id` case
+should be investigated. A `BLOCKED` or `ERROR` result where the matrix
+expects another verdict should also be investigated rather than silently
+reclassified.
+
+## Evidence and regression tests
+
+Records are appended to `logs/privesc_attack.jsonl` by default. Use
+`--output-dir` to isolate a run; preserve previous evidence.
+
+Run the tests:
+
+```bash
+pytest -v tests/test_day9_privesc_attack.py
+pytest -q
+```

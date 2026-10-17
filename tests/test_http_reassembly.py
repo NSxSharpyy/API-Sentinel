@@ -288,3 +288,80 @@ def test_rejects_malformed_chunk_terminator():
             b"Transfer-Encoding: chunked\r\n\r\n"
             b"3\r\nabcXX"
         )
+
+def test_rejects_chunk_trailers_over_size_limit():
+    parser = HTTPStreamParser()
+
+    oversized_trailer = (
+        b"POST /upload HTTP/1.1\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"0\r\n"
+        b"X-Long-Trailer: "
+        + b"a" * 65537
+        + b"\r\n\r\n"
+    )
+
+    with pytest.raises(ValueError, match="Chunk trailers exceed size limit"):
+        parser.feed(oversized_trailer)
+
+    assert parser.buffer == bytearray()
+
+
+def test_rejects_chunk_with_empty_extension_name():
+    parser = HTTPStreamParser()
+    request = (
+        b"POST /upload HTTP/1.1\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"1;=bad\r\n"
+        b"x\r\n"
+        b"0\r\n\r\n"
+    )
+
+    with pytest.raises(ValueError, match="Invalid chunk"):
+        parser.feed(request)
+
+
+def test_accepts_valid_chunk_extension():
+    parser = HTTPStreamParser()
+    request = (
+        b"POST /upload HTTP/1.1\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"4;foo=bar\r\n"
+        b"test\r\n"
+        b"0\r\n\r\n"
+    )
+
+    messages = parser.feed(request)
+
+    assert len(messages) == 1
+    assert messages[0].body == b"test"
+
+
+def test_rejects_chunk_extension_with_empty_value():
+    parser = HTTPStreamParser()
+    request = (
+        b"POST /upload HTTP/1.1\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b"1;foo=\r\n"
+        b"x\r\n"
+        b"0\r\n\r\n"
+    )
+
+    with pytest.raises(ValueError, match="Invalid chunk extension"):
+        parser.feed(request)
+
+
+def test_accepts_quoted_chunk_extension_with_semicolon():
+    parser = HTTPStreamParser()
+    request = (
+        b"POST /upload HTTP/1.1\r\n"
+        b"Transfer-Encoding: chunked\r\n\r\n"
+        b'4;foo="a;b"\r\n'
+        b"test\r\n"
+        b"0\r\n\r\n"
+    )
+
+    messages = parser.feed(request)
+
+    assert len(messages) == 1
+    assert messages[0].body == b"test"

@@ -63,7 +63,7 @@ def _decode_chunked_body(
             return None
 
         size_line = bytes(data[pos:line_end])
-        size_token = size_line.split(b";", 1)[0]
+        size_token, separator, extension_data = size_line.partition(b";")
         if not size_token or any(
             byte not in b"0123456789abcdefABCDEF"
             for byte in size_token
@@ -71,6 +71,54 @@ def _decode_chunked_body(
             raise ValueError("Invalid chunk size")
         if len(size_token) > 16:
             raise ValueError("Invalid chunk size")
+
+        if separator:
+            parts = []
+            current = bytearray()
+            quoted = False
+            escaped = False
+
+            for byte in extension_data:
+                if escaped:
+                    current.append(byte)
+                    escaped = False
+                elif quoted and byte == 0x5C:
+                    current.append(byte)
+                    escaped = True
+                elif byte == 0x22:
+                    current.append(byte)
+                    quoted = not quoted
+                elif byte == 0x3B and not quoted:
+                    parts.append(bytes(current))
+                    current.clear()
+                else:
+                    current.append(byte)
+
+            if quoted or escaped:
+                raise ValueError("Invalid chunk extension")
+            parts.append(bytes(current))
+
+            for part in parts:
+                name, equals, value = part.partition(b"=")
+                if not name or not _TOKEN_BYTES_RE.fullmatch(name):
+                    raise ValueError("Invalid chunk extension")
+                if equals:
+                    if not value:
+                        raise ValueError("Invalid chunk extension")
+                    if value.startswith(b'"') and value.endswith(b'"') and len(value) >= 2:
+                        inner = value[1:-1]
+                        i = 0
+                        while i < len(inner):
+                            byte = inner[i]
+                            if byte == 0x5C:
+                                i += 1
+                                if i >= len(inner) or inner[i] in (10, 13):
+                                    raise ValueError("Invalid chunk extension")
+                            elif byte == 0x22 or byte < 32 or byte == 127:
+                                raise ValueError("Invalid chunk extension")
+                            i += 1
+                    elif not _TOKEN_BYTES_RE.fullmatch(value):
+                        raise ValueError("Invalid chunk extension")
 
         chunk_size = int(size_token, 16)
         pos = line_end + 2
@@ -85,6 +133,9 @@ def _decode_chunked_body(
                 if len(data) - pos > 65536:
                     raise ValueError("Chunk trailers exceed size limit")
                 return None
+
+            if trailer_end - pos > 65536:
+                raise ValueError("Chunk trailers exceed size limit")
 
             trailer_block = bytes(data[pos:trailer_end])
             for line in trailer_block.split(b"\r\n"):

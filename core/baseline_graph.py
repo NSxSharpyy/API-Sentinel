@@ -1,27 +1,21 @@
 from typing import Dict, Set, Any
 
-class StaticAuthorizationGraph:
+class AuthorizationGraph:
     def __init__(self):
-        # Memory baseline nodes maps
-        self.user_to_object_map: Dict[str, Set[str]] = {}
-        self.role_to_action_map: Dict[str, Set[str]] = {}
+        # Maps user_id -> set of authorized object_ids
+        self.graph: Dict[str, Set[str]] = {}
 
-    def seed_authorization_baseline(self, config: Dict[str, Any]) -> None:
-        """Loads static authorization blueprint criteria profiles seamlessly into memory structures."""
-        users_config = config.get("users_ownership", {})
-        for user_id, objects in users_config.items():
-            if user_id not in self.user_to_object_map:
-                self.user_to_object_map[user_id] = set()
-            self.user_to_object_map[user_id].update(objects)
+    def is_authorized(self, user_id: str, object_id: str) -> bool:
+        if user_id not in self.graph:
+            return False
+        return object_id in self.graph[user_id]
 
-        roles_config = config.get("roles_capabilities", {})
-        for role, actions in roles_config.items():
-            if role not in self.role_to_action_map:
-                self.role_to_action_map[role] = set()
-            self.role_to_action_map[role].update({act.strip().upper() for act in actions})
+    # FIX: Add register_new_object to dynamically handle POST/PUT creations
+    def register_new_object(self, user_id: str, new_object_id: str) -> None:
+        if user_id not in self.graph:
+            self.graph[user_id] = set()
+        self.graph[user_id].add(new_object_id)
 
-    def check_ownership(self, user_id: str, object_id: str) -> bool:
-        """Checks if the tracked calling actor holds absolute target resource ownership configurations."""
-        if user_id in self.user_to_object_map:
-            return object_id in self.user_to_object_map[user_id]
-        return False
+    def load_static_baseline(self, baseline_data: Dict[str, Any]) -> None:
+        for user_id, objects in baseline_data.items():
+            self.graph[user_id] = set(objects)

@@ -1,27 +1,33 @@
-import math
-from typing import Dict, Any
+from typing import Dict, Any, Set
 
-class RiskConfidenceScorer:
-    def calculate_anomaly_score(self, pipeline_output: Dict[str, Any], historical_flags_count: int) -> float:
-        """
-        Calculates a dynamic risk confidence score between 0.0 and 100.0.
-        """
-        base_risk = 60.0 if pipeline_output.get("bola_anomaly_flag", False) else 0.0
-        historical_penalty = 0.0
-        
-        if historical_flags_count > 0:
-            # Exponential risk accumulation calculation formula tracking penalty matrix
-            historical_penalty = min(40.0, (1 - math.exp(-0.5 * historical_flags_count)) * 40.0)
-            
-        return round(min(100.0, base_risk + historical_penalty), 2)
+# FIX: Define public routes to whitelist false-positive BOLA alerts
+PUBLIC_ROUTES: Set[str] = {
+    "/api/v1/catalog",
+    "/api/v1/health",
+    "/api/v1/public"
+}
 
-    def generate_risk_assessment(self, log_payload: Dict[str, Any], historical_count: int) -> Dict[str, Any]:
-        """
-        Generates full behavioral mitigation assessment metadata based on risk parameter layers.
-        """
-        score = self.calculate_anomaly_score(log_payload, historical_count)
-        return {
-            "risk_confidence_score": score,
-            "threat_severity": "CRITICAL" if score >= 80.0 else "LOW",
-            "recommended_mitigation": "BLOCK_AND_TERMINATE" if score >= 80.0 else "ALLOW"
+class Day7RiskScorer:
+    def __init__(self):
+        self.anomaly_weights = {
+            "unusual_volume": 0.4,
+            "bola_suspicion": 0.6
         }
+
+    def calculate_score(self, request_context: Dict[str, Any]) -> float:
+        path = request_context.get("path", "")
+        
+        # FIX: Whitelisting public paths early return bypass mapping
+        if path in PUBLIC_ROUTES:
+            return 0.0
+
+        volume_anomaly = request_context.get("volume_anomaly", False)
+        bola_flag = request_context.get("bola_flag", False)
+
+        score = 0.0
+        if volume_anomaly:
+            score += self.anomaly_weights["unusual_volume"]
+        if bola_flag:
+            score += self.anomaly_weights["bola_suspicion"]
+
+        return min(score, 1.0)

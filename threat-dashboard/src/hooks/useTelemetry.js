@@ -82,8 +82,9 @@ export function useTelemetry() {
 
         setLastError("");
 
+        // Newest transaction first; retain at most 100 records.
         setTransactions((previous) =>
-          [transaction, ...previous].slice(0, 10)
+          [transaction, ...previous].slice(0, 100)
         );
       },
 

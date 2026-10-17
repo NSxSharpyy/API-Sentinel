@@ -93,7 +93,14 @@ export default function DashboardLayout() {
               isMockMode={isMockMode}
             />
 
-            <Outlet context={{ transactions }} />
+            {/* Share existing telemetry state with child routes */}
+            <Outlet
+              context={{
+                transactions,
+                connectionStatus,
+                isMockMode,
+              }}
+            />
           </div>
         </main>
       </div>

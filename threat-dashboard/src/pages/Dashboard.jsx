@@ -1,3 +1,4 @@
+
 import { useOutletContext } from "react-router-dom";
 
 import { mockIncidents } from "../data/mockIncidents";
@@ -5,7 +6,11 @@ import IncidentAlertGrid from "../components/ui/IncidentAlertGrid";
 import EndpointDataTable from "../components/ui/EndpointDataTable";
 
 export default function Dashboard() {
-  const { transactions = [] } = useOutletContext();
+  const {
+    transactions = [],
+    connectionStatus = "disconnected",
+    isMockMode = false,
+  } = useOutletContext();
 
   const incidents = mockIncidents;
 
@@ -81,7 +86,12 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <EndpointDataTable transactions={transactions} />
+        <EndpointDataTable
+          transactions={transactions}
+          loading={connectionStatus === "connecting"}
+          connectionStatus={connectionStatus}
+          isMockMode={isMockMode}
+        />
       </section>
 
       {/* Recent Security Alerts */}

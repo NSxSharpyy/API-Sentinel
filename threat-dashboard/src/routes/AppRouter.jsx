@@ -8,6 +8,7 @@ import {
 
 import DashboardLayout from "../layouts/DashboardLayout";
 import Dashboard from "../pages/Dashboard";
+import Incidents from "../pages/Incidents";
 import ApiSurface from "../pages/ApiSurface";
 
 function PlaceholderPage({ title, description }) {
@@ -33,31 +34,31 @@ export default function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route element={<DashboardLayout />}>
+          {/* Redirect the root URL to the dashboard */}
           <Route
             path="/"
             element={<Navigate to="/dashboard" replace />}
           />
 
+          {/* Dashboard */}
           <Route
             path="/dashboard"
             element={<Dashboard />}
           />
 
+          {/* Security Incidents with BOLA details modal */}
           <Route
             path="/incidents"
-            element={
-              <PlaceholderPage
-                title="Incidents"
-                description="The incident investigation page is pending. Reusable alert cards and severity badges are available for integration."
-              />
-            }
+            element={<Incidents />}
           />
 
+          {/* API Attack Surface */}
           <Route
             path="/api-surface"
             element={<ApiSurface />}
           />
 
+          {/* Settings placeholder */}
           <Route
             path="/settings"
             element={
@@ -68,6 +69,7 @@ export default function AppRouter() {
             }
           />
 
+          {/* Redirect unknown URLs to the dashboard */}
           <Route
             path="*"
             element={<Navigate to="/dashboard" replace />}

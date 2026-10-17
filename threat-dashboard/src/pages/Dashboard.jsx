@@ -73,7 +73,7 @@ export default function Dashboard() {
         </article>
       </div>
 
-      {/* Endpoint Transaction Table */}
+      {/* API Endpoint Activity */}
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">
@@ -88,9 +88,9 @@ export default function Dashboard() {
 
         <EndpointDataTable
           transactions={transactions}
-          loading={connectionStatus === "connecting"}
           connectionStatus={connectionStatus}
           isMockMode={isMockMode}
+          loading={connectionStatus === "connecting"}
         />
       </section>
 

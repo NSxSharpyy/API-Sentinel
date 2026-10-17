@@ -2,15 +2,20 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { X } from "lucide-react";
+
 import { useTelemetry } from "../hooks/useTelemetry";
 
 import TopNavigation from "../components/layout/TopNavigation.jsx";
 import Sidebar from "../components/layout/Sidebar.jsx";
 import SystemStatusBanner from "../components/layout/SystemStatusBanner.jsx";
+import NetworkErrorToast from "../components/ui/NetworkErrorToast.jsx";
 
 export default function DashboardLayout() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    useState(false);
+
+  const [mobileMenuOpen, setMobileMenuOpen] =
+    useState(false);
 
   const {
     connectionStatus,
@@ -18,6 +23,7 @@ export default function DashboardLayout() {
     lastError,
     isMockMode,
     transactions,
+    dismissError,
   } = useTelemetry();
 
   const toggleSidebar = () => {
@@ -34,6 +40,11 @@ export default function DashboardLayout() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <NetworkErrorToast
+        message={lastError}
+        onDismiss={dismissError}
+      />
+
       <TopNavigation
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
@@ -93,7 +104,7 @@ export default function DashboardLayout() {
               isMockMode={isMockMode}
             />
 
-            {/* Share existing telemetry state with child routes */}
+            {/* Share telemetry state with child routes */}
             <Outlet
               context={{
                 transactions,

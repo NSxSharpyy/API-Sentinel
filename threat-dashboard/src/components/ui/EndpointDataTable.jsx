@@ -1,8 +1,13 @@
 
 import HttpStatusBadge from "./HttpStatusBadge";
+import EndpointTableSkeleton from "./EndpointTableSkeleton";
 
 function formatLatency(value) {
-  if (value === null || value === undefined || value === "") {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return "—";
   }
 
@@ -28,7 +33,9 @@ function formatTimestamp(value) {
 }
 
 function MethodBadge({ method }) {
-  const normalized = String(method || "UNKNOWN").toUpperCase();
+  const normalized = String(
+    method || "UNKNOWN"
+  ).toUpperCase();
 
   const colors = {
     GET: "bg-blue-100 text-blue-800",
@@ -41,7 +48,8 @@ function MethodBadge({ method }) {
   return (
     <span
       className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${
-        colors[normalized] || "bg-slate-100 text-slate-700"
+        colors[normalized] ||
+        "bg-slate-100 text-slate-700"
       }`}
     >
       {normalized}
@@ -50,13 +58,16 @@ function MethodBadge({ method }) {
 }
 
 function ConnectionStatusBadge({ status }) {
-  const normalizedStatus = [
+  const validStatuses = [
     "connected",
     "mock",
     "connecting",
+    "reconnecting",
     "error",
     "disconnected",
-  ].includes(status)
+  ];
+
+  const normalizedStatus = validStatuses.includes(status)
     ? status
     : "disconnected";
 
@@ -64,6 +75,7 @@ function ConnectionStatusBadge({ status }) {
     connected: "bg-green-100 text-green-800",
     mock: "bg-amber-100 text-amber-800",
     connecting: "bg-blue-100 text-blue-800",
+    reconnecting: "bg-blue-100 text-blue-800",
     error: "bg-red-100 text-red-800",
     disconnected: "bg-slate-100 text-slate-700",
   };
@@ -72,6 +84,7 @@ function ConnectionStatusBadge({ status }) {
     connected: "Live stream connected",
     mock: "Mock stream",
     connecting: "Connecting...",
+    reconnecting: "Reconnecting...",
     error: "Stream error",
     disconnected: "Stream disconnected",
   };
@@ -92,7 +105,9 @@ export default function EndpointDataTable({
   connectionStatus = "disconnected",
   isMockMode = false,
 }) {
-  const rows = Array.isArray(transactions) ? transactions : [];
+  const rows = Array.isArray(transactions)
+    ? transactions
+    : [];
 
   return (
     <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -107,7 +122,6 @@ export default function EndpointDataTable({
             Recent HTTP requests received by the telemetry client
           </p>
 
-          {/* Clearly identify simulated traffic */}
           {isMockMode && (
             <p className="mt-2 text-xs font-medium text-amber-700">
               MOCK DATA — TEMPORARY. Transactions are simulated.
@@ -118,10 +132,14 @@ export default function EndpointDataTable({
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
             {rows.length}{" "}
-            {rows.length === 1 ? "transaction" : "transactions"}
+            {rows.length === 1
+              ? "transaction"
+              : "transactions"}
           </span>
 
-          <ConnectionStatusBadge status={connectionStatus} />
+          <ConnectionStatusBadge
+            status={connectionStatus}
+          />
         </div>
       </div>
 
@@ -155,11 +173,8 @@ export default function EndpointDataTable({
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td
-                  colSpan={5}
-                  className="px-5 py-10 text-center text-slate-500"
-                >
-                  Connecting to telemetry stream...
+                <td colSpan={5} className="p-0">
+                  <EndpointTableSkeleton rows={4} />
                 </td>
               </tr>
             ) : rows.length === 0 ? (
@@ -178,7 +193,9 @@ export default function EndpointDataTable({
                   className="hover:bg-slate-50"
                 >
                   <td className="px-5 py-4">
-                    <MethodBadge method={transaction.method} />
+                    <MethodBadge
+                      method={transaction.method}
+                    />
                   </td>
 
                   <td className="max-w-sm break-all px-5 py-4 font-mono text-xs text-slate-700">

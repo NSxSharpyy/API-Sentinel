@@ -44,12 +44,108 @@ export function createTelemetryClient({
 }) {
   let socket = null;
   let mockTimer = null;
-  let closed = false;
+  let reconnectTimer = null;
+  let closed = true;
+  let retryAttempt = 0;
 
-  function connect() {
-    if (socket || mockTimer !== null) {
+  const baseDelay = 1000;
+  const maxDelay = 30000;
+
+  function clearReconnectTimer() {
+    if (reconnectTimer !== null) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  }
+
+  function scheduleReconnect() {
+    if (closed || reconnectTimer !== null) return;
+
+    const delay = Math.min(
+      baseDelay * 2 ** retryAttempt,
+      maxDelay
+    );
+
+    retryAttempt += 1;
+
+    onStatus?.("reconnecting");
+    onError?.(
+      `Connection lost. Retrying in ${Math.ceil(
+        delay / 1000
+      )} second(s).`
+    );
+
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      openSocket();
+    }, delay);
+  }
+
+  function openSocket() {
+    if (closed) return;
+
+    if (!telemetryConfig.websocketUrl) {
+      onStatus?.("error");
+      onError?.("WebSocket URL is not configured.");
       return;
     }
+
+    onStatus?.(
+      retryAttempt > 0 ? "reconnecting" : "connecting"
+    );
+
+    let nextSocket;
+
+    try {
+      nextSocket = new WebSocket(
+        telemetryConfig.websocketUrl
+      );
+
+      socket = nextSocket;
+    } catch {
+      socket = null;
+      scheduleReconnect();
+      return;
+    }
+
+    nextSocket.addEventListener("open", () => {
+      if (closed || socket !== nextSocket) return;
+
+      retryAttempt = 0;
+      onStatus?.("connected");
+    });
+
+    nextSocket.addEventListener("message", (event) => {
+      if (closed || socket !== nextSocket) return;
+
+      try {
+        const message = JSON.parse(event.data);
+        onMessage?.(message);
+      } catch {
+        onError?.(
+          "Received a message that is not valid JSON."
+        );
+      }
+    });
+
+    nextSocket.addEventListener("error", () => {
+      if (closed || socket !== nextSocket) return;
+
+      onError?.("WebSocket connection error.");
+
+      // The close event handles automatic reconnection.
+    });
+
+    nextSocket.addEventListener("close", () => {
+      if (closed || socket !== nextSocket) return;
+
+      socket = null;
+      scheduleReconnect();
+    });
+  }
+
+  function connect() {
+    if (!closed) return;
 
     closed = false;
 
@@ -61,7 +157,8 @@ export function createTelemetryClient({
       const emitMockEvent = () => {
         if (closed) return;
 
-        const event = mockEvents[index % mockEvents.length];
+        const event =
+          mockEvents[index % mockEvents.length];
 
         onMessage?.({
           ...event,
@@ -75,77 +172,45 @@ export function createTelemetryClient({
       };
 
       emitMockEvent();
-      mockTimer = window.setInterval(emitMockEvent, 5000);
+
+      mockTimer = window.setInterval(
+        emitMockEvent,
+        5000
+      );
 
       return;
     }
 
-    if (!telemetryConfig.websocketUrl) {
-      onStatus?.("error");
-      onError?.("WebSocket URL is not configured.");
-      return;
-    }
-
-    onStatus?.("connecting");
-
-    try {
-      socket = new WebSocket(telemetryConfig.websocketUrl);
-
-      socket.addEventListener("open", () => {
-        if (!closed) {
-          onStatus?.("connected");
-        }
-      });
-
-      socket.addEventListener("message", (event) => {
-        if (closed) return;
-
-        try {
-          const message = JSON.parse(event.data);
-          onMessage?.(message);
-        } catch {
-          onError?.("Received a message that is not valid JSON.");
-        }
-      });
-
-      socket.addEventListener("error", () => {
-        if (!closed) {
-          onStatus?.("error");
-          onError?.("WebSocket connection error.");
-        }
-      });
-
-      socket.addEventListener("close", () => {
-        socket = null;
-
-        if (!closed) {
-          onStatus?.("disconnected");
-        }
-      });
-    } catch {
-      socket = null;
-      onStatus?.("error");
-      onError?.("Could not create the WebSocket connection.");
-    }
+    openSocket();
   }
 
   function disconnect() {
     closed = true;
+
+    clearReconnectTimer();
 
     if (mockTimer !== null) {
       window.clearInterval(mockTimer);
       mockTimer = null;
     }
 
-    if (socket) {
+    if (socket !== null) {
       const currentSocket = socket;
       socket = null;
 
-      if (currentSocket.readyState < WebSocket.CLOSING) {
+      if (
+        currentSocket.readyState < WebSocket.CLOSING
+      ) {
         currentSocket.close();
       }
     }
+
+    retryAttempt = 0;
+    onStatus?.("disconnected");
   }
 
-  return { connect, disconnect };
+  return {
+    connect,
+    disconnect,
+  };
 }

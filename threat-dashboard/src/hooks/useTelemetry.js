@@ -1,5 +1,10 @@
 
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
 import { createTelemetryClient } from "../services/websocketClient";
 import { telemetryConfig } from "../config/telemetry";
 
@@ -29,7 +34,9 @@ function normalizeTransaction(message) {
   return {
     id:
       candidate.id ??
-      `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
     method,
     endpoint,
     statusCode:
@@ -50,9 +57,16 @@ export function useTelemetry() {
   const [connectionStatus, setConnectionStatus] =
     useState("disconnected");
 
-  const [latestMessage, setLatestMessage] = useState(null);
+  const [latestMessage, setLatestMessage] =
+    useState(null);
+
   const [lastError, setLastError] = useState("");
+
   const [transactions, setTransactions] = useState([]);
+
+  const dismissError = useCallback(() => {
+    setLastError("");
+  }, []);
 
   useEffect(() => {
     const client = createTelemetryClient({
@@ -60,7 +74,6 @@ export function useTelemetry() {
         setConnectionStatus(status);
 
         if (
-          status === "connecting" ||
           status === "connected" ||
           status === "mock"
         ) {
@@ -71,7 +84,8 @@ export function useTelemetry() {
       onMessage: (message) => {
         setLatestMessage(message);
 
-        const transaction = normalizeTransaction(message);
+        const transaction =
+          normalizeTransaction(message);
 
         if (!transaction) {
           setLastError(
@@ -82,7 +96,7 @@ export function useTelemetry() {
 
         setLastError("");
 
-        // Newest transaction first; retain at most 100 records.
+        // Newest transaction first; retain at most 100.
         setTransactions((previous) =>
           [transaction, ...previous].slice(0, 100)
         );
@@ -106,5 +120,6 @@ export function useTelemetry() {
     lastError,
     isMockMode: telemetryConfig.mode === "mock",
     transactions,
+    dismissError,
   };
 }

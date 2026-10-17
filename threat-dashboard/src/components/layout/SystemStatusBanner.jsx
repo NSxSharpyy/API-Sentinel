@@ -8,6 +8,7 @@ export default function SystemStatusBanner({
   const statusLabels = {
     connected: "Connected to backend",
     connecting: "Connecting to backend...",
+    reconnecting: "Reconnecting to backend...",
     disconnected: "Backend disconnected",
     error: "Connection error",
     mock: "Mock telemetry active",
@@ -24,7 +25,10 @@ export default function SystemStatusBanner({
         ? "bg-amber-500"
         : connectionStatus === "error"
           ? "bg-red-500"
-          : "bg-slate-400";
+          : connectionStatus === "connecting" ||
+              connectionStatus === "reconnecting"
+            ? "bg-blue-500"
+            : "bg-slate-400";
 
   return (
     <section

@@ -1,5 +1,5 @@
 from unittest.mock import Mock
-
+import pytest
 import base64
 import json
 import socket
@@ -306,3 +306,33 @@ def test_pipeline_continues_publishing_when_persistence_fails(caplog):
     assert publisher.publish.call_count == 2
     assert len(pipeline.completed_transactions) == 1
     assert "Failed to persist HTTP transaction" in caplog.text
+def test_pipeline_rejects_new_connection_at_limit():
+    publisher = Mock()
+    pipeline = HTTPMessagePipeline(publisher, max_connections=2)
+
+    # The default parser already occupies one slot.
+    pipeline.feed(b"", connection_id="connection-1")
+
+    assert pipeline.open_connections == 2
+
+    with pytest.raises(
+        RuntimeError,
+        match="Maximum number of HTTP connections reached",
+    ):
+        pipeline.feed(b"", connection_id="connection-2")
+
+    assert pipeline.open_connections == 2
+    assert "connection-2" not in pipeline._parsers
+
+
+def test_pipeline_allows_existing_connection_at_limit():
+    publisher = Mock()
+    pipeline = HTTPMessagePipeline(publisher, max_connections=2)
+
+    pipeline.feed(b"", connection_id="connection-1")
+    assert pipeline.open_connections == 2
+
+    # Reusing an existing connection must not consume another slot.
+    pipeline.feed(b"", connection_id="connection-1")
+
+    assert pipeline.open_connections == 2

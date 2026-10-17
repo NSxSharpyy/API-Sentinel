@@ -126,6 +126,8 @@ def test_queue_status_endpoint():
         "accepted_packet_count": 0,
         "rejected_packet_count": 0,
         "dropped_packet_count": 0,
+        "tcp_stream_limit_rejection_count": 0,
+        "tcp_reassembly_buffer_overflow_count": 0,
         "capture_running": False,
     }
 

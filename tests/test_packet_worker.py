@@ -292,3 +292,99 @@ def test_cleanup_stale_streams_expires_only_inactive_connections(
 
     import time
     asyncio.run(run_test())
+
+def test_worker_counts_tcp_stream_limit_rejections(
+    packet_queue,
+    monkeypatch,
+):
+    async def run_test():
+        pipeline = Mock()
+        monkeypatch.setattr(worker_module, "MAX_TCP_STREAMS", 1)
+        monkeypatch.setattr(
+            worker_module.queues,
+            "tcp_stream_limit_rejection_count",
+            0,
+        )
+
+        first_syn = make_packet(
+            packet_id="syn-first",
+            source_port=49152,
+            payload=b"",
+            sequence_number=99,
+            tcp_flags=["SYN"],
+        )
+        second_syn = make_packet(
+            packet_id="syn-second",
+            source_port=49153,
+            payload=b"",
+            sequence_number=199,
+            tcp_flags=["SYN"],
+        )
+
+        await packet_queue.put(first_syn)
+        await packet_queue.put(second_syn)
+
+        task, stop_event = start_worker(packet_queue, pipeline)
+
+        try:
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+            assert (
+                worker_module.queues.tcp_stream_limit_rejection_count
+                == 1
+            )
+        finally:
+            await stop_worker(task, stop_event)
+
+    asyncio.run(run_test())
+
+def test_worker_counts_tcp_reassembly_buffer_overflows(
+    packet_queue,
+    monkeypatch,
+):
+    async def run_test():
+        pipeline = Mock()
+        monkeypatch.setattr(
+            worker_module.queues,
+            "tcp_reassembly_buffer_overflow_count",
+            0,
+        )
+
+        def raise_buffer_error(self, sequence_number, payload):
+            raise BufferError("test buffer overflow")
+
+        monkeypatch.setattr(
+            worker_module.TCPStreamReassembler,
+            "feed",
+            raise_buffer_error,
+        )
+
+        syn = make_packet(
+            packet_id="syn-overflow",
+            payload=b"",
+            sequence_number=99,
+            tcp_flags=["SYN"],
+        )
+        data = make_packet(
+            packet_id="data-overflow",
+            sequence_number=100,
+            payload=b"test",
+        )
+
+        await packet_queue.put(syn)
+        await packet_queue.put(data)
+
+        task, stop_event = start_worker(packet_queue, pipeline)
+
+        try:
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+            assert (
+                worker_module.queues.tcp_reassembly_buffer_overflow_count
+                == 1
+            )
+            pipeline.close_connection.assert_called_once_with(
+                build_connection_id(syn)
+            )
+        finally:
+            await stop_worker(task, stop_event)
+
+    asyncio.run(run_test())

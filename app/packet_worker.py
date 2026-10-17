@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from app import queues
 
 from app.http_pipeline import HTTPMessagePipeline
 from app.http_reassembly import HTTPParseError
@@ -139,6 +140,7 @@ async def packet_worker(
                             "TCP stream limit reached; skipping %s",
                             connection_id,
                         )
+                        queues.tcp_stream_limit_rejection_count += 1
                         continue
 
                     if packet.sequence_number is None:
@@ -183,6 +185,7 @@ async def packet_worker(
                             "TCP reassembly buffer exceeded for %s",
                             connection_id,
                         )
+                        queues.tcp_reassembly_buffer_overflow_count += 1
                         streams.pop(connection_id, None)
                         last_seen.pop(connection_id, None)
                         pipeline.close_connection(connection_id)

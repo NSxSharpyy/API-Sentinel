@@ -152,6 +152,7 @@ async def root():
         "status": "running",
     }
 
+
 @app.get("/queue-status")
 async def queue_status():
     capture_task = getattr(app.state, "capture_task", None)
@@ -164,9 +165,16 @@ async def queue_status():
         "accepted_packet_count": queues.accepted_packet_count,
         "rejected_packet_count": queues.rejected_packet_count,
         "dropped_packet_count": queues.dropped_packet_count,
+        "tcp_stream_limit_rejection_count": (
+            queues.tcp_stream_limit_rejection_count
+        ),
+        "tcp_reassembly_buffer_overflow_count": (
+            queues.tcp_reassembly_buffer_overflow_count
+        ),
         "capture_running": (
             capture_status == "running"
             and capture_task is not None
             and not capture_task.done()
         ),
     }
+

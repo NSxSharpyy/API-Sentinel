@@ -234,3 +234,61 @@ def test_worker_survives_http_parse_error(packet_queue):
             await stop_worker(task, stop_event)
 
     asyncio.run(run_test())
+
+
+def test_cleanup_stale_streams_expires_only_inactive_connections(
+    monkeypatch,
+):
+    async def run_test():
+        pipeline = Mock()
+        stop_event = asyncio.Event()
+
+        stale_id = "TCP|10.0.0.1:1000->10.0.0.2:80"
+        active_id = "TCP|10.0.0.3:2000->10.0.0.4:80"
+
+        stale_stream = Mock()
+        active_stream = Mock()
+        streams = {
+            stale_id: stale_stream,
+            active_id: active_stream,
+        }
+
+        now = time.monotonic()
+        last_seen = {
+            stale_id: now - 60,
+            active_id: now,
+        }
+
+        monkeypatch.setattr(
+            worker_module,
+            "TCP_GC_INTERVAL_SECONDS",
+            0.01,
+        )
+
+        task = asyncio.create_task(
+            worker_module._cleanup_stale_streams(
+                streams,
+                last_seen,
+                pipeline,
+                stop_event,
+            )
+        )
+
+        try:
+            for _ in range(50):
+                if stale_id not in streams:
+                    break
+                await asyncio.sleep(0.01)
+
+            assert stale_id not in streams
+            assert stale_id not in last_seen
+            assert active_id in streams
+            assert active_id in last_seen
+
+            pipeline.close_connection.assert_called_once_with(stale_id)
+        finally:
+            stop_event.set()
+            await asyncio.wait_for(task, timeout=1)
+
+    import time
+    asyncio.run(run_test())

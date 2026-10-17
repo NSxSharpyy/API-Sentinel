@@ -135,6 +135,63 @@ class TestContractDiffEngine(unittest.TestCase):
             result["official_only"],
         )
 
+    def test_deprecated_live_route_is_zombie(self):
+
+        official_spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Official API",
+                "version": "1.0.0",
+            },
+            "paths": {
+                "/api/v1/legacy": {
+                    "get": {
+                        "deprecated": True,
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    }
+                }
+            },
+        }
+
+        live_spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Live API",
+                "version": "1.0.0",
+            },
+            "paths": {
+                "/api/v1/legacy": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    }
+                }
+            },
+        }
+
+        engine = ContractDiffEngine(
+            official_spec,
+            live_spec,
+        )
+
+        result = engine.diff_routes()
+
+        self.assertIn(
+            {
+                "method": "GET",
+                "path": "/api/v1/legacy",
+                "status": "ZOMBIE_API",
+            },
+            result["zombie"],
+        )
+
     def test_summary_counts_are_correct(self):
 
         engine = ContractDiffEngine(

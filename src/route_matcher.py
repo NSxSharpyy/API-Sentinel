@@ -19,7 +19,7 @@ class RouteMatcher:
                     continue
 
     def match_route(self, method, observed_route):
-        """Check whether an observed route exists in the contract."""
+        """Check whether an observed API route exists in the contract."""
 
         normalized_method = method.strip().upper()
         normalized_route = normalize_route(observed_route)

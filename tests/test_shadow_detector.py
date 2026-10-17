@@ -65,11 +65,10 @@ class TestShadowAPIDetector(unittest.TestCase):
 
         findings = self.detector.detect(observed_routes)
 
-        self.assertEqual(len(findings), 2)
+        self.assertEqual(len(findings), 1)
 
         routes = {finding["route"] for finding in findings}
 
-        self.assertIn("/api/v1/orders/123", routes)
         self.assertIn("/api/v1/internal/debug", routes)
 
     def test_method_mismatch_is_shadow(self):

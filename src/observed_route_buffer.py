@@ -7,9 +7,10 @@ from src.route_normalizer import normalize_route
 class ObservedRouteBuffer:
     """Store unique API routes observed from HTTP transactions."""
 
-    def __init__(self):
+    def __init__(self, max_size=10000):
         self._routes = {}
         self._lock = Lock()
+        self.max_size = max_size
 
     def record(self, method: str, url: str) -> dict:
         """Record an observed HTTP method and normalized route."""
@@ -23,6 +24,12 @@ class ObservedRouteBuffer:
 
         with self._lock:
             if key not in self._routes:
+                # Prevent unbounded memory growth.
+                if len(self._routes) >= self.max_size:
+                    raise BufferError(
+                        "Observed route buffer is full."
+                    )
+
                 self._routes[key] = {
                     "method": method,
                     "route": route,
@@ -34,6 +41,7 @@ class ObservedRouteBuffer:
 
             return self._routes[key].copy()
 
+    
     def get_routes(self) -> list[dict]:
         """Return all unique observed routes."""
 

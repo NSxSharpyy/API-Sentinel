@@ -44,6 +44,49 @@ class ContractDiffEngine:
 
         return routes
 
+    @staticmethod
+    def _find_zombie_routes(spec):
+        """Return routes marked as deprecated in the official contract."""
+
+        zombie_routes = set()
+
+        paths = spec.get("paths", {})
+
+        if not isinstance(paths, dict):
+            return zombie_routes
+
+        for path, path_item in paths.items():
+
+            if not isinstance(path_item, dict):
+                continue
+
+            for method, details in path_item.items():
+
+                if method.lower() not in {
+                    "get",
+                    "post",
+                    "put",
+                    "patch",
+                    "delete",
+                    "head",
+                    "options",
+                    "trace",
+                }:
+                    continue
+
+                if not isinstance(details, dict):
+                    continue
+
+                if details.get("deprecated") is True:
+                    zombie_routes.add(
+                        (
+                            method.upper(),
+                            path,
+                        )
+                    )
+
+        return zombie_routes
+
     def diff_routes(self):
         """Compare official and live API routes."""
 
@@ -65,6 +108,12 @@ class ContractDiffEngine:
 
         common = sorted(
             official_routes & live_routes
+        )
+
+        zombie_routes = sorted(
+            self._find_zombie_routes(
+                self.official_spec
+            ) & live_routes
         )
 
         return {
@@ -89,6 +138,14 @@ class ContractDiffEngine:
                 }
                 for method, path in common
             ],
+            "zombie": [
+                {
+                    "method": method,
+                    "path": path,
+                    "status": "ZOMBIE_API",
+                }
+                for method, path in zombie_routes
+            ],
         }
 
     def diff(self):
@@ -112,6 +169,9 @@ class ContractDiffEngine:
                 ),
                 "common": len(
                     route_diff["common"]
+                ),
+                "zombie": len(
+                    route_diff["zombie"]
                 ),
             },
             "differences": route_diff,

@@ -21,11 +21,32 @@ def normalize_route(url: str) -> str:
 
     normalized_segments = []
 
+    # Patterns for dynamic identifiers
+    uuid_pattern = re.compile(
+        r"^[0-9a-fA-F]{8}-"
+        r"[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{12}$"
+    )
+
+    alphanumeric_pattern = re.compile(
+        r"^[a-zA-Z0-9_-]{10,}$"
+    )
+
     for segment in segments:
         if not segment:
             normalized_segments.append("")
+
         elif segment.isdigit():
             normalized_segments.append("{id}")
+
+        elif uuid_pattern.fullmatch(segment):
+            normalized_segments.append("{id}")
+
+        elif alphanumeric_pattern.fullmatch(segment):
+            normalized_segments.append("{id}")
+
         else:
             normalized_segments.append(segment)
 

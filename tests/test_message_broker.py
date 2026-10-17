@@ -245,6 +245,41 @@ def test_pipeline_persists_correlated_transaction():
     assert transaction.response.status_code == 200
     assert len(pipeline.completed_transactions) == 1
     assert publisher.publish.call_count == 2
+
+def test_pipeline_queues_correlated_transaction_for_background_persistence():
+    publisher = Mock()
+    store = Mock()
+
+    from app.persistence_worker import TransactionPersistenceWorker
+
+    persistence_worker = TransactionPersistenceWorker(store=store)
+    pipeline = HTTPMessagePipeline(
+        publisher=publisher,
+        persistence_worker=persistence_worker,
+    )
+
+    client_to_server = "TCP|10.0.0.10:49152->10.0.0.20:80"
+    server_to_client = "TCP|10.0.0.20:80->10.0.0.10:49152"
+
+    pipeline.feed(
+        b"GET /health HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        connection_id=client_to_server,
+    )
+    pipeline.feed(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK",
+        connection_id=server_to_client,
+    )
+
+    assert persistence_worker.queue.qsize() == 1
+    assert store.save.call_count == 0
+    assert len(pipeline.completed_transactions) == 1
+    assert publisher.publish.call_count == 2
+
+    job = persistence_worker.queue.get_nowait()
+    assert job.transaction.request.uri == "/health"
+    assert job.transaction.response.status_code == 200
+    persistence_worker.queue.task_done()
+
 def test_pipeline_continues_publishing_when_persistence_fails(caplog):
     publisher = Mock()
     store = Mock()

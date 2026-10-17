@@ -8,6 +8,7 @@ from app.http_reassembly import (
     HTTPStreamParser,
 )
 from app.message_broker import HTTPTransactionPublisher
+from app.persistence_worker import TransactionPersistenceWorker
 from app.transaction_correlator import (
     HTTPTransaction,
     HTTPTransactionCorrelator,
@@ -31,9 +32,15 @@ class HTTPMessagePipeline:
         max_connections: int = 10000,
         correlator: HTTPTransactionCorrelator | None = None,
         transaction_store: TransactionStore | None = None,
+        persistence_worker: TransactionPersistenceWorker | None = None,
     ):
         if max_connections <= 0:
             raise ValueError("max_connections must be positive")
+
+        if transaction_store is not None and persistence_worker is not None:
+            raise ValueError(
+                "Provide transaction_store or persistence_worker, not both"
+            )
 
         self.publisher = publisher
         self.parser_factory = parser_factory
@@ -44,6 +51,7 @@ class HTTPMessagePipeline:
             else HTTPTransactionCorrelator()
         )
         self.transaction_store = transaction_store
+        self.persistence_worker = persistence_worker
 
         self.completed_transactions: deque[HTTPTransaction] = deque(
             maxlen=MAX_COMPLETED_TRANSACTIONS
@@ -94,7 +102,7 @@ class HTTPMessagePipeline:
         messages: list[HTTPMessage],
         connection_id: str,
     ) -> None:
-        """Correlate messages, persist matches, and publish individual events."""
+        """Correlate messages, queue persistence, and publish events."""
         for message in messages:
             message.connection_id = connection_id
 
@@ -102,7 +110,12 @@ class HTTPMessagePipeline:
             if transaction is not None:
                 self.completed_transactions.append(transaction)
 
-                if self.transaction_store is not None:
+                if self.persistence_worker is not None:
+                    # Non-blocking enqueue; database I/O runs in the worker.
+                    self.persistence_worker.enqueue(transaction)
+
+                elif self.transaction_store is not None:
+                    # Compatibility fallback for existing synchronous callers.
                     try:
                         self.transaction_store.save(transaction)
                     except Exception:

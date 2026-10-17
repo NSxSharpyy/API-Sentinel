@@ -39,6 +39,42 @@ def get_invoice_by_id(invoice_id):
     return jsonify(invoice)
 
 
+
+# Day 10 SHADOW API: unauthenticated, lab-only cache-reset simulation.
+_cache_reset_count = 0
+
+
+@app.post("/_admin/reset-cache")
+def admin_reset_cache():
+    global _cache_reset_count
+    _cache_reset_count += 1
+    logger.warning(
+        "SHADOW API accessed",
+        extra={"fields": {
+            "endpoint": "/_admin/reset-cache",
+            "reset_count": _cache_reset_count,
+        }},
+    )
+    return jsonify(status="cache reset", reset_count=_cache_reset_count)
+
+
+# Day 10 ZOMBIE API: legacy invoice lookup without authentication.
+@app.get("/api/v1/invoices/<int:invoice_id>")
+def v1_get_invoice(invoice_id):
+    logger.warning(
+        "ZOMBIE API accessed",
+        extra={"fields": {
+            "endpoint": "/api/v1/invoices/<id>",
+            "invoice_id": invoice_id,
+            "auth_required": False,
+        }},
+    )
+    invoice = get_invoice(invoice_id)
+    if invoice is None:
+        return jsonify(error="not_found"), 404
+    return jsonify(invoice)
+
+
 if __name__ == "__main__":
     app.run(
         host=os.getenv("HOST", "127.0.0.1"),

@@ -20,6 +20,42 @@ def get_profile():
     return jsonify(public_user(user))
 
 
+
+# Day 10 SHADOW API: unauthenticated internal configuration disclosure.
+@app.get("/internal/config")
+def internal_config():
+    logger.warning(
+        "SHADOW API accessed",
+        extra={"fields": {"endpoint": "/internal/config"}},
+    )
+    return jsonify(
+        warning="internal debug endpoint - not for external use",
+        environment="lab-test",
+        feature_flags={
+            "new_profile_ui": False,
+            "legacy_v1_enabled": True,
+        },
+    )
+
+
+# Day 10 ZOMBIE API: legacy user lookup lacks an ownership check.
+@app.get("/api/v1/users/<int:user_id>")
+@require_auth
+def v1_get_user(user_id):
+    logger.warning(
+        "ZOMBIE API accessed",
+        extra={"fields": {
+            "endpoint": "/api/v1/users/<id>",
+            "requester_id": g.user_id,
+            "target_id": user_id,
+        }},
+    )
+    user = get_user(user_id)
+    if user is None:
+        return jsonify(error="not_found"), 404
+    return jsonify(public_user(user))
+
+
 if __name__ == "__main__":
     app.run(
         host=os.getenv("HOST", "127.0.0.1"),

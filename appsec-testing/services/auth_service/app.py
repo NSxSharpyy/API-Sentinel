@@ -44,6 +44,36 @@ def verify():
     return jsonify(valid=True, user_id=g.user_id)
 
 
+
+# Day 10 SHADOW API: unauthenticated diagnostic endpoint.
+@app.get("/debug/dump-tokens")
+def debug_dump_tokens():
+    logger.warning(
+        "SHADOW API accessed",
+        extra={"fields": {"endpoint": "/debug/dump-tokens"}},
+    )
+    return jsonify(
+        warning="deprecated debug endpoint",
+        active_token_ttl_seconds=3600,
+        token_algorithm="HMAC-SHA256",
+        server_time=__import__("time").time(),
+    )
+
+
+# Day 10 ZOMBIE API: legacy login status with no signature verification.
+@app.get("/api/v1/login-status")
+def v1_login_status():
+    logger.warning(
+        "ZOMBIE API accessed",
+        extra={"fields": {"endpoint": "/api/v1/login-status"}},
+    )
+    token = request.headers.get("X-Auth-Token", "")
+    return jsonify(
+        logged_in=bool(token) and "." in token,
+        api_version="v1 (deprecated)",
+    )
+
+
 if __name__ == "__main__":
     app.run(
         host=os.getenv("HOST", "127.0.0.1"),

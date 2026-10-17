@@ -1,37 +1,71 @@
 
 import { useMemo, useState } from "react";
 import {
-  Search,
-  ShieldCheck,
-  ScanSearch,
-  Layers3,
+  Archive,
   Database,
+  Search,
+  ScanSearch,
+  ShieldCheck,
+  Layers3,
+  Info,
 } from "lucide-react";
 
 import { mockApiEndpoints } from "../data/mockApiEndpoints";
 
-function SourceBadge({ source }) {
-  const isOfficial = source === "Official";
+// Classification badge: Official, Shadow, or Zombie
+function ClassificationBadge({ classification }) {
+  const styles = {
+    Official: "bg-green-100 text-green-800 ring-green-600/20",
+    Shadow: "bg-amber-100 text-amber-800 ring-amber-600/20",
+    Zombie: "bg-red-100 text-red-800 ring-red-600/20",
+  };
+
+  const icons = {
+    Official: ShieldCheck,
+    Shadow: ScanSearch,
+    Zombie: Archive,
+  };
+
+  const Icon = icons[classification] || Info;
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-        isOfficial
-          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-          : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+        styles[classification] ||
+        "bg-gray-100 text-gray-700 ring-gray-500/20"
       }`}
     >
-      {isOfficial ? "Official" : "Discovered"}
+      <Icon size={13} />
+      {classification || "Unclassified"}
     </span>
   );
 }
 
+// Source badge: where the endpoint entry came from
+function SourceBadge({ source }) {
+  const styles = {
+    Official: "bg-blue-50 text-blue-700",
+    Discovered: "bg-purple-50 text-purple-700",
+  };
+
+  return (
+    <span
+      className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${
+        styles[source] || "bg-gray-100 text-gray-700"
+      }`}
+    >
+      {source}
+    </span>
+  );
+}
+
+// HTTP method badge
 function MethodBadge({ method }) {
   const styles = {
     GET: "bg-blue-50 text-blue-700",
     POST: "bg-green-50 text-green-700",
     PUT: "bg-amber-50 text-amber-700",
-    PATCH: "bg-purple-50 text-purple-700",
+    PATCH: "bg-orange-50 text-orange-700",
     DELETE: "bg-red-50 text-red-700",
   };
 
@@ -46,6 +80,7 @@ function MethodBadge({ method }) {
   );
 }
 
+// Reusable summary card
 function SummaryCard({ title, value, description, icon: Icon }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -55,7 +90,7 @@ function SummaryCard({ title, value, description, icon: Icon }) {
             {title}
           </p>
 
-          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">
+          <p className="mt-2 text-3xl font-bold text-gray-900">
             {value}
           </p>
 
@@ -64,7 +99,7 @@ function SummaryCard({ title, value, description, icon: Icon }) {
           </p>
         </div>
 
-        <div className="rounded-lg bg-indigo-50 p-3 text-indigo-600">
+        <div className="rounded-lg bg-gray-100 p-2.5 text-gray-700">
           <Icon size={21} />
         </div>
       </div>
@@ -73,95 +108,123 @@ function SummaryCard({ title, value, description, icon: Icon }) {
 }
 
 export default function ApiSurface() {
-  const [activeFilter, setActiveFilter] = useState("All");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [search, setSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("All");
+  const [classificationFilter, setClassificationFilter] =
+    useState("All");
 
+  // Calculate classification totals for the full inventory
   const officialCount = mockApiEndpoints.filter(
-    (endpoint) => endpoint.source === "Official"
+    (endpoint) => endpoint.classification === "Official"
   ).length;
 
-  const discoveredCount = mockApiEndpoints.filter(
-    (endpoint) => endpoint.source === "Discovered"
+  const shadowCount = mockApiEndpoints.filter(
+    (endpoint) => endpoint.classification === "Shadow"
   ).length;
 
+  const zombieCount = mockApiEndpoints.filter(
+    (endpoint) => endpoint.classification === "Zombie"
+  ).length;
+
+  // Apply search, source filter, and classification filter
   const filteredEndpoints = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
 
     return mockApiEndpoints.filter((endpoint) => {
-      const matchesSource =
-        activeFilter === "All" ||
-        endpoint.source === activeFilter;
-
       const matchesSearch =
-        !query ||
         endpoint.path.toLowerCase().includes(query) ||
         endpoint.method.toLowerCase().includes(query) ||
         endpoint.description.toLowerCase().includes(query);
 
-      return matchesSource && matchesSearch;
+      const matchesSource =
+        sourceFilter === "All" ||
+        endpoint.source === sourceFilter;
+
+      const matchesClassification =
+        classificationFilter === "All" ||
+        endpoint.classification === classificationFilter;
+
+      return (
+        matchesSearch &&
+        matchesSource &&
+        matchesClassification
+      );
     });
-  }, [activeFilter, searchTerm]);
+  }, [search, sourceFilter, classificationFilter]);
 
   return (
     <div className="space-y-6">
       {/* Page heading */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <Layers3 className="text-indigo-600" size={25} />
-
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-              API Attack Surface
-            </h1>
+      <header>
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-indigo-100 p-3 text-indigo-700">
+            <Layers3 size={25} />
           </div>
 
-          <p className="mt-2 max-w-2xl text-sm text-gray-500">
-            Review documented endpoints and endpoints discovered
-            through observed API activity.
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              API Attack Surface
+            </h1>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Inventory and visual classification of API endpoints.
+            </p>
+          </div>
+        </div>
+      </header>
+
+      {/* Demo data warning */}
+      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <Info
+          className="mt-0.5 shrink-0 text-amber-700"
+          size={20}
+        />
+
+        <div>
+          <p className="font-semibold text-amber-900">
+            Demonstration data only
+          </p>
+
+          <p className="mt-1 text-sm text-amber-800">
+            Endpoint classifications are illustrative mock data,
+            not verified backend findings. Confirm ownership,
+            documentation, and deprecation status before classifying
+            real endpoints. A discovered endpoint is not automatically
+            vulnerable or a Shadow endpoint.
           </p>
         </div>
-
-        <span className="inline-flex w-fit items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-          <Database size={15} />
-          Demo data
-        </span>
-      </div>
-
-      {/* Mock data notice */}
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <p className="text-sm font-semibold text-amber-900">
-          Demonstration inventory — not connected to the backend
-        </p>
-
-        <p className="mt-1 text-sm text-amber-800">
-          The endpoints below are sample data for UI development.
-          A discovered endpoint is not automatically a vulnerability.
-        </p>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title="Total Endpoints"
           value={mockApiEndpoints.length}
-          description="All sample inventory entries"
-          icon={Layers3}
+          description="Endpoints in this demo inventory"
+          icon={Database}
         />
 
         <SummaryCard
-          title="Official Endpoints"
+          title="Official"
           value={officialCount}
-          description="Listed in the sample documented inventory"
+          description="Approved/documented examples"
           icon={ShieldCheck}
         />
 
         <SummaryCard
-          title="Discovered Endpoints"
-          value={discoveredCount}
-          description="Observed in sample activity; verification pending"
+          title="Shadow"
+          value={shadowCount}
+          description="Inventory verification pending"
           icon={ScanSearch}
         />
-      </div>
+
+        <SummaryCard
+          title="Zombie"
+          value={zombieCount}
+          description="Retired endpoint example"
+          icon={Archive}
+        />
+      </section>
 
       {/* Endpoint inventory */}
       <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -171,65 +234,81 @@ export default function ApiSurface() {
           </h2>
 
           <p className="mt-1 text-sm text-gray-500">
-            Compare endpoint sources and review their paths.
+            Search endpoints and inspect their classifications.
           </p>
 
-          {/* Search */}
-          <div className="mt-4 flex items-center gap-3 rounded-lg border border-gray-300 px-3 py-2 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
-            <Search
-              size={18}
-              className="shrink-0 text-gray-400"
-            />
+          {/* Search and filters */}
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
 
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search endpoint, method, or description..."
-              aria-label="Search API endpoints"
-              className="w-full bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
-            />
-          </div>
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search path, method, or description..."
+                aria-label="Search API endpoints"
+                className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
 
-          {/* Source filters */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {["All", "Official", "Discovered"].map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => setActiveFilter(filter)}
-                aria-pressed={activeFilter === filter}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                  activeFilter === filter
-                    ? "bg-indigo-600 text-white"
-                    : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {filter}
-                {filter === "All" &&
-                  ` (${mockApiEndpoints.length})`}
-                {filter === "Official" &&
-                  ` (${officialCount})`}
-                {filter === "Discovered" &&
-                  ` (${discoveredCount})`}
-              </button>
-            ))}
+            <select
+              value={sourceFilter}
+              onChange={(event) =>
+                setSourceFilter(event.target.value)
+              }
+              aria-label="Filter by source"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="All">All sources</option>
+              <option value="Official">Official source</option>
+              <option value="Discovered">Discovered source</option>
+            </select>
+
+            <select
+              value={classificationFilter}
+              onChange={(event) =>
+                setClassificationFilter(event.target.value)
+              }
+              aria-label="Filter by classification"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="All">All classifications</option>
+              <option value="Official">Official</option>
+              <option value="Shadow">Shadow</option>
+              <option value="Zombie">Zombie</option>
+            </select>
           </div>
         </div>
 
-        {/* Responsive table */}
+        {/* Responsive endpoint table */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[850px] text-left text-sm">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
-                <th className="px-5 py-3 font-semibold">Method</th>
+                <th className="px-5 py-3 font-semibold">
+                  Method
+                </th>
+
                 <th className="px-5 py-3 font-semibold">
                   Endpoint Path
                 </th>
-                <th className="px-5 py-3 font-semibold">Source</th>
+
+                <th className="px-5 py-3 font-semibold">
+                  Source
+                </th>
+
+                <th className="px-5 py-3 font-semibold">
+                  Classification
+                </th>
+
                 <th className="px-5 py-3 font-semibold">
                   Description
                 </th>
+
                 <th className="px-5 py-3 font-semibold">
                   Inventory Status
                 </th>
@@ -246,19 +325,27 @@ export default function ApiSurface() {
                     <MethodBadge method={endpoint.method} />
                   </td>
 
-                  <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-medium text-gray-800">
-                    {endpoint.path}
+                  <td className="whitespace-nowrap px-5 py-4">
+                    <code className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-800">
+                      {endpoint.path}
+                    </code>
                   </td>
 
                   <td className="whitespace-nowrap px-5 py-4">
                     <SourceBadge source={endpoint.source} />
                   </td>
 
+                  <td className="whitespace-nowrap px-5 py-4">
+                    <ClassificationBadge
+                      classification={endpoint.classification}
+                    />
+                  </td>
+
                   <td className="max-w-xs px-5 py-4 text-gray-600">
                     {endpoint.description}
                   </td>
 
-                  <td className="whitespace-nowrap px-5 py-4 text-gray-500">
+                  <td className="whitespace-nowrap px-5 py-4 text-gray-600">
                     {endpoint.lastSeen}
                   </td>
                 </tr>
@@ -266,11 +353,19 @@ export default function ApiSurface() {
 
               {filteredEndpoints.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-5 py-12 text-center text-sm text-gray-500"
-                  >
-                    No endpoints match your search.
+                  <td colSpan={6} className="px-5 py-12 text-center">
+                    <Search
+                      size={28}
+                      className="mx-auto mb-3 text-gray-400"
+                    />
+
+                    <p className="font-medium text-gray-800">
+                      No endpoints found
+                    </p>
+
+                    <p className="mt-1 text-sm text-gray-500">
+                      Try another search or change your filters.
+                    </p>
                   </td>
                 </tr>
               )}
@@ -278,9 +373,10 @@ export default function ApiSurface() {
           </table>
         </div>
 
-        <div className="border-t border-gray-200 px-5 py-3 text-xs text-gray-500">
+        {/* Inventory result count */}
+        <div className="border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
           Showing {filteredEndpoints.length} of{" "}
-          {mockApiEndpoints.length} sample endpoints
+          {mockApiEndpoints.length} endpoints
         </div>
       </section>
     </div>

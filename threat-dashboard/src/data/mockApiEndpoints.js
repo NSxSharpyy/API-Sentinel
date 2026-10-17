@@ -1,7 +1,10 @@
 
 /*
- * DAY 8 — API Attack Surface Inventory
- * MOCK DATA ONLY — Not connected to the backend.
+ * DAY 8 + DAY 10
+ * API Attack Surface Inventory and Visual Classification
+ *
+ * DEMO DATA ONLY — Not connected to the backend.
+ * Classifications are illustrative examples, not verified findings.
  */
 
 export const mockApiEndpoints = [
@@ -10,6 +13,7 @@ export const mockApiEndpoints = [
     method: "GET",
     path: "/api/v1/users",
     source: "Official",
+    classification: "Official",
     description: "Retrieve user records",
     lastSeen: "Documented",
   },
@@ -18,6 +22,7 @@ export const mockApiEndpoints = [
     method: "POST",
     path: "/api/v1/auth/login",
     source: "Official",
+    classification: "Official",
     description: "Authenticate a user",
     lastSeen: "Documented",
   },
@@ -26,6 +31,7 @@ export const mockApiEndpoints = [
     method: "GET",
     path: "/api/v1/products",
     source: "Official",
+    classification: "Official",
     description: "Retrieve product records",
     lastSeen: "Documented",
   },
@@ -34,7 +40,9 @@ export const mockApiEndpoints = [
     method: "GET",
     path: "/api/internal/debug",
     source: "Discovered",
-    description: "Observed endpoint; documentation not verified",
+    classification: "Shadow",
+    description:
+      "Observed endpoint; approval and documentation need verification",
     lastSeen: "Recently observed",
   },
   {
@@ -42,7 +50,9 @@ export const mockApiEndpoints = [
     method: "POST",
     path: "/api/v1/reports/export",
     source: "Discovered",
-    description: "Observed endpoint; documentation not verified",
+    classification: "Shadow",
+    description:
+      "Observed endpoint; inventory status needs verification",
     lastSeen: "Recently observed",
   },
   {
@@ -50,7 +60,9 @@ export const mockApiEndpoints = [
     method: "GET",
     path: "/legacy/api/accounts",
     source: "Discovered",
-    description: "Observed legacy endpoint; ownership unverified",
+    classification: "Zombie",
+    description:
+      "Example of a retired or deprecated endpoint still being observed",
     lastSeen: "Recently observed",
   },
 ];

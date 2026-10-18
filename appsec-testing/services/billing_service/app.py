@@ -40,6 +40,29 @@ def get_invoice_by_id(invoice_id):
 
 
 
+# Day 16 compatibility route: authenticated but intentionally missing
+# object-level authorization. LOCAL LAB ONLY.
+@app.get("/api/v1/billing/<int:billing_id>")
+@require_auth
+def get_billing_by_id(billing_id):
+    # Authentication is required by the decorator; ownership is not checked.
+    record = get_invoice(billing_id)
+    if record is None:
+        return jsonify(error="not_found"), 404
+
+    logger.warning(
+        "INTENTIONAL BOLA accessed",
+        extra={"fields": {
+            "endpoint": "/api/v1/billing/<billing_id>",
+            "billing_id": billing_id,
+            "requester_id": g.user_id,
+            "owner_id": record["owner_id"],
+            "cross_user_access": record["owner_id"] != g.user_id,
+        }},
+    )
+    return jsonify(record)
+
+
 # Day 10 SHADOW API: unauthenticated, lab-only cache-reset simulation.
 _cache_reset_count = 0
 

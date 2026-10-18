@@ -11,6 +11,7 @@ Do not provide it to the discovery-engine operator before their scan.
 |---|---|---|---|---|
 | auth-service | GET | /debug/dump-tokens | None | Diagnostic information disclosure |
 | user-service | GET | /internal/config | None | Internal configuration and feature-flag disclosure |
+| user-service | GET | /api/v1/debug/metrics | None | Undocumented synthetic debug metrics |
 | billing-service | POST | /_admin/reset-cache | None | Unauthenticated state-changing admin-style action |
 
 ## Zombie APIs
@@ -21,11 +22,13 @@ Do not provide it to the discovery-engine operator before their scan.
 | user-service | GET | /api/v1/users/<id> | Valid token required | Missing object ownership check |
 | order-service | GET | /api/v1/orders/<id> | Any non-empty Authorization header | Authentication bypass and cross-user object disclosure |
 | billing-service | GET | /api/v1/invoices/<id> | No authentication required | Unauthenticated invoice disclosure; BOLA also remains in v2 |
+| billing-service | GET | /api/v1/billing/<id> | Valid token required | Missing object-level authorization check |
+| user-service | GET | /api/v0/users/export | None | Deprecated synthetic export endpoint |
 
 ## Day 12 verification checklist
 
-- [ ] Discovery engine finds all 3 shadow endpoints.
-- [ ] Discovery engine flags all 4 v1 routes as deprecated/zombie.
+- [ ] Discovery engine finds all 4 shadow endpoints.
+- [ ] Discovery engine flags all 6 legacy/deprecated zombie routes, including the v0 export route.
 - [ ] Discovery engine does not misclassify documented v2 routes as shadow or zombie.
 - [ ] Each finding is supported by evidence from the scan.
 

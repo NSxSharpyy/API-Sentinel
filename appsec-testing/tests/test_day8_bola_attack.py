@@ -128,6 +128,44 @@ def test_targeted_repeated_requests_log_verified_bola(tmp_path):
     assert all(item["traffic_label"] == "ATTACK" for item in records)
 
 
+
+def test_sweep_reuses_the_same_attacker_token_without_reauthentication(tmp_path):
+    session = FakeSession([
+        FakeResponse(200, {"owner_id": 2, "id": 3}),
+        FakeResponse(200, {"owner_id": 3, "id": 4}),
+        FakeResponse(200, {"owner_id": 1, "id": 5}),
+    ])
+    attack = BOLAAttack(session=session, output_dir=tmp_path, delay=0)
+    attacker_headers = {"Authorization": "Bearer single-attacker-token"}
+
+    try:
+        results = attack.run_sweep(
+            attacker_id=1,
+            headers=attacker_headers,
+            start_id=3,
+            end_id=5,
+        )
+        calls = list(session.calls)
+    finally:
+        attack.close()
+
+    # The sweep must issue one GET per invoice and must not log in again.
+    assert len(calls) == 3
+    assert all(method == "GET" for method, _, _ in calls)
+    assert [url.rsplit("/", 1)[-1] for _, url, _ in calls] == ["3", "4", "5"]
+
+    # Every request must carry the exact same attacker's bearer token.
+    assert all(
+        kwargs["headers"]["Authorization"] == "Bearer single-attacker-token"
+        for _, _, kwargs in calls
+    )
+
+    assert [item["label"] for item in results] == [
+        "BOLA_SUCCESS",
+        "BOLA_SUCCESS",
+        "OWN_DATA",
+    ]
+
 def test_own_invoice_is_not_reported_as_bola(tmp_path):
     session = FakeSession([FakeResponse(200, {"owner_id": 1, "id": 3})])
     attack = BOLAAttack(session=session, output_dir=tmp_path, delay=0)

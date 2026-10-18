@@ -372,9 +372,9 @@ def main():
         # 5. Full test suite
         command(
             "Full pytest suite",
-            [sys.executable, "-m", "pytest", "-q", "appsec-testing/tests"],
+            [sys.executable, "-m", "pytest", "-q", "tests"],
             RUN_DIR / "pytest.log",
-            cwd=ROOT,
+            cwd=APPSEC,
             timeout=240,
         )
 

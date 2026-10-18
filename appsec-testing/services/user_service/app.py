@@ -56,6 +56,28 @@ def v1_get_user(user_id):
     return jsonify(public_user(user))
 
 
+# Assignment-specific Day 16 ZOMBIE API: deprecated export endpoint.
+# LOCAL LAB ONLY; returns synthetic data and exports no real user records.
+@app.get("/api/v0/users/export")
+def zombie_export_users():
+    logger.warning(
+        "ZOMBIE API accessed",
+        extra={"fields": {"endpoint": "/api/v0/users/export"}},
+    )
+    return jsonify(status="deprecated", data="synthetic-lab-data")
+
+
+# Assignment-specific Day 16 SHADOW API: undocumented debug metrics.
+# LOCAL LAB ONLY; values are synthetic and disclose no host metrics.
+@app.get("/api/v1/debug/metrics")
+def shadow_debug_metrics():
+    logger.warning(
+        "SHADOW API accessed",
+        extra={"fields": {"endpoint": "/api/v1/debug/metrics"}},
+    )
+    return jsonify(cpu="42%", mem="1GB")
+
+
 if __name__ == "__main__":
     app.run(
         host=os.getenv("HOST", "127.0.0.1"),

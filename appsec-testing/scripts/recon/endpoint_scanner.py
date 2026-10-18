@@ -123,6 +123,92 @@ def phase2_version_sibling_probe(session, handle, delay):
 
 
 
+def phase2_legacy_shape_probe(session, handle, delay):
+    """Probe generic versioned wordlist and legacy route-shape candidates."""
+    discovered = {name: set() for name in SERVICES}
+    candidates_by_service = {name: set() for name in SERVICES}
+
+    # Probe wordlist candidates under versioned API prefixes.
+    # This can discover routes such as /api/v1/login-status without
+    # hardcoding that endpoint into the scanner.
+    for service in SERVICES:
+        for candidate in load_wordlist():
+            candidate = candidate.strip("/")
+            for version in ("v1", "v3"):
+                candidates_by_service[service].add(
+                    f"/api/{version}/{candidate}"
+                )
+
+    # Derive alternative legacy shapes from known public v2 patterns.
+    for service, patterns in KNOWN_V2_PATTERNS.items():
+        for v2_path in patterns:
+            for version in ("v1", "v3"):
+                sibling = v2_path.replace(
+                    "/api/v2/", f"/api/{version}/"
+                )
+                candidates_by_service[service].add(sibling)
+
+                parts = sibling.strip("/").split("/")
+                route_parts = parts[2:]  # segments after api/<version>
+
+                # Try replacing a self-service route with a numeric ID.
+                if route_parts and route_parts[-1] == "me":
+                    candidates_by_service[service].add(
+                        "/" + "/".join(parts[:-1] + ["1"])
+                    )
+
+                # Try removing the first route namespace segment.
+                # Example: /api/v1/billing/invoices/1 ->
+                #          /api/v1/invoices/1
+                if len(route_parts) >= 2:
+                    shortened = parts[:2] + route_parts[1:]
+                    candidates_by_service[service].add(
+                        "/" + "/".join(shortened)
+                    )
+
+    print("\n[Phase 2b] Legacy route-shape probes")
+
+    for service, candidates in candidates_by_service.items():
+        for path in sorted(candidates):
+            status = probe(session, SERVICES[service], path)
+            found = status is not None and status != 404
+
+            log_probe(
+                handle,
+                phase="legacy_shape",
+                service=service,
+                path=path,
+                method="GET",
+                status=status,
+                discovered=found,
+            )
+
+            if found:
+                discovered[service].add(path)
+                print(f"  FOUND: {service}{path} -> {status}")
+
+            time.sleep(max(0, delay))
+
+    return discovered
+
+def classify_endpoint(service, path):
+    """Heuristically classify discoveries against the documented v2 baseline."""
+    if path in KNOWN_V2_PATTERNS.get(service, []):
+        return "documented_v2"
+
+    # Debug/metrics routes are shadow candidates even when version-prefixed.
+    if path.startswith("/api/v1/debug/"):
+        return "shadow_candidate"
+
+    # v0 is treated as legacy/deprecated; v1 routes are zombie candidates.
+    if path.startswith("/api/v0/") or path.startswith("/api/v1/"):
+        return "zombie_candidate"
+
+    if path.startswith("/api/"):
+        return "versioned_undocumented_candidate"
+
+    return "shadow_candidate"
+
 def phase3_method_enumeration(session, handle, paths_by_service, delay):
     results = {}
     print("\n[Phase 3] Method enumeration")
@@ -201,17 +287,26 @@ def main():
     # Open in write mode to keep each run's evidence self-contained.
     with LOG_PATH.open("w", encoding="utf-8") as handle:
         with requests.Session() as session:
+
             wordlist_found = phase1_wordlist_probe(
                 session, handle, args.delay
             )
             version_found = phase2_version_sibling_probe(
                 session, handle, args.delay
             )
+            legacy_found = phase2_legacy_shape_probe(
+                session, handle, args.delay
+            )
 
             all_discovered = {
-                name: wordlist_found[name] | version_found[name]
+                name: (
+                    wordlist_found[name]
+                    | version_found[name]
+                    | legacy_found[name]
+                )
                 for name in SERVICES
             }
+
 
             if args.skip_method_enum:
                 method_results = {}
@@ -226,6 +321,13 @@ def main():
         "total_discovered": total,
         "by_service": {
             name: sorted(paths) for name, paths in all_discovered.items()
+        },
+        "endpoint_classification": {
+            service: {
+                path: classify_endpoint(service, path)
+                for path in sorted(paths)
+            }
+            for service, paths in all_discovered.items()
         },
         "methods_by_endpoint": method_results,
     }

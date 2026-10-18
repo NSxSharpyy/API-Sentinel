@@ -172,3 +172,28 @@ def test_billing_bola_vulnerability_is_present(clients):
     body = response.get_json()
     assert body["owner_id"] == 2
     assert body["card_last4"] == "1881"
+
+
+def test_billing_v1_compatibility_route_requires_authentication(clients):
+    response = clients["billing"].get("/api/v1/billing/3")
+    assert response.status_code == 401
+
+
+def test_billing_v1_compatibility_route_has_intentional_bola(clients):
+    response = clients["billing"].get(
+        "/api/v1/billing/3",
+        headers=login_headers(clients, "alice"),
+    )
+    assert response.status_code == 200
+    assert response.get_json()["owner_id"] == 2
+
+
+def test_assignment_specific_user_routes_are_registered(clients):
+    zombie = clients["user"].get("/api/v0/users/export")
+    assert zombie.status_code == 200
+    assert zombie.get_json()["status"] == "deprecated"
+
+    shadow = clients["user"].get("/api/v1/debug/metrics")
+    assert shadow.status_code == 200
+    assert shadow.get_json()["cpu"] == "42%"
+    assert shadow.get_json()["mem"] == "1GB"

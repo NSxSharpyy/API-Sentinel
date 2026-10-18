@@ -31,3 +31,6 @@ dump
 export
 users-dump
 login-status
+api/v1/billing/1
+api/v0/users/export
+api/v1/debug/metrics

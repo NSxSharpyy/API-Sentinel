@@ -149,3 +149,45 @@ def test_documented_v2_routes_are_not_added_as_version_sibling_findings(
     assert result == {"auth": set()}
     assert "/api/v2/auth/verify" not in probed
     assert all("/api/v2/" not in path for path in result["auth"])
+
+def test_endpoint_classification_uses_documented_baseline():
+    assert scanner.classify_endpoint(
+        "auth", "/api/v2/auth/verify"
+    ) == "documented_v2"
+
+    assert scanner.classify_endpoint(
+        "auth", "/api/v1/login-status"
+    ) == "zombie_candidate"
+
+    assert scanner.classify_endpoint(
+        "user", "/internal/config"
+    ) == "shadow_candidate"
+
+    assert scanner.classify_endpoint(
+        "billing", "/_admin/reset-cache"
+    ) == "shadow_candidate"
+
+    assert scanner.classify_endpoint(
+        "auth", "/api/v3/auth/unknown"
+    ) == "versioned_undocumented_candidate"
+
+
+def test_assignment_specific_routes_get_expected_candidate_classification():
+    assert scanner.classify_endpoint(
+        "billing", "/api/v1/billing/1"
+    ) == "zombie_candidate"
+
+    assert scanner.classify_endpoint(
+        "user", "/api/v0/users/export"
+    ) == "zombie_candidate"
+
+    assert scanner.classify_endpoint(
+        "user", "/api/v1/debug/metrics"
+    ) == "shadow_candidate"
+
+
+def test_wordlist_includes_assignment_specific_routes():
+    candidates = scanner.load_wordlist()
+    assert "api/v1/billing/1" in candidates
+    assert "api/v0/users/export" in candidates
+    assert "api/v1/debug/metrics" in candidates

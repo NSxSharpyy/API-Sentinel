@@ -9,7 +9,29 @@ import {
   FileSearch,
 } from "lucide-react";
 
-export default function BolaIncidentModal({ incident, onClose }) {
+function getText(value, fallback) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return fallback;
+  }
+
+  if (
+    typeof value === "string" ||
+    typeof value === "number"
+  ) {
+    return String(value);
+  }
+
+  return fallback;
+}
+
+export default function BolaIncidentModal({
+  incident,
+  onClose = () => {},
+}) {
   useEffect(() => {
     if (!incident) return;
 
@@ -26,9 +48,12 @@ export default function BolaIncidentModal({ incident, onClose }) {
     };
   }, [incident, onClose]);
 
-  if (!incident) return null;
+  if (!incident || typeof incident !== "object") {
+    return null;
+  }
 
-  const severity = incident.severity || "High";
+  const severity = getText(incident.severity, "High");
+  const normalizedSeverity = severity.toLowerCase();
 
   const severityStyles = {
     critical: "bg-red-100 text-red-800",
@@ -38,16 +63,55 @@ export default function BolaIncidentModal({ incident, onClose }) {
   };
 
   const severityClass =
-    severityStyles[severity.toLowerCase()] ||
+    severityStyles[normalizedSeverity] ||
     "bg-gray-100 text-gray-800";
 
+  const incidentId = getText(incident.id, "DEMO-BOLA-001");
+  const method = getText(incident.method, "GET");
+  const endpoint = getText(
+    incident.endpoint,
+    "/api/v1/accounts/{id}"
+  );
+  const timestamp = getText(
+    incident.timestamp,
+    "Sample event"
+  );
+  const status = getText(
+    incident.status,
+    "Under investigation"
+  );
+
   const details = [
-    ["Incident ID", incident.id || "DEMO-BOLA-001"],
-    ["HTTP Method", incident.method || "GET"],
-    ["Endpoint", incident.endpoint || "/api/v1/accounts/{id}"],
-    ["Detected At", incident.timestamp || "Sample event"],
-    ["Status", incident.status || "Under investigation"],
+    ["Incident ID", incidentId],
+    ["HTTP Method", method],
+    ["Endpoint", endpoint],
+    ["Detected At", timestamp],
+    ["Status", status],
   ];
+
+  const payload =
+    incident.payload &&
+    typeof incident.payload === "object" &&
+    !Array.isArray(incident.payload)
+      ? incident.payload
+      : {};
+
+  const headers =
+    payload.headers &&
+    typeof payload.headers === "object" &&
+    !Array.isArray(payload.headers)
+      ? payload.headers
+      : {};
+
+  const targetUser = getText(
+    payload.target_user_id,
+    "Unknown User"
+  );
+
+  // Never render the authorization header or token itself.
+  const hasAuthorizationHeader = Object.keys(headers).some(
+    (key) => key.toLowerCase() === "authorization"
+  );
 
   return (
     <div
@@ -109,7 +173,7 @@ export default function BolaIncidentModal({ incident, onClose }) {
             </span>
 
             <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-              {incident.status || "Under investigation"}
+              {status}
             </span>
 
             <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -217,7 +281,7 @@ export default function BolaIncidentModal({ incident, onClose }) {
                 </p>
 
                 <p className="mt-1 font-mono text-sm text-gray-900">
-                  {incident.method || "GET"}
+                  {method}
                 </p>
 
                 <p className="mt-3 text-xs font-medium text-gray-500">
@@ -225,7 +289,28 @@ export default function BolaIncidentModal({ incident, onClose }) {
                 </p>
 
                 <p className="mt-1 break-all font-mono text-sm text-gray-900">
-                  {incident.endpoint || "/api/v1/accounts/{id}"}
+                  {endpoint}
+                </p>
+              </div>
+
+              {/* Safe payload details */}
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-medium text-gray-500">
+                  Target user ID
+                </p>
+
+                <p className="mt-1 break-words font-mono text-sm text-gray-900">
+                  {targetUser}
+                </p>
+
+                <p className="mt-3 text-xs font-medium text-gray-500">
+                  Authorization header
+                </p>
+
+                <p className="mt-1 text-sm text-gray-800">
+                  {hasAuthorizationHeader
+                    ? "Present (value hidden for security)"
+                    : "Not available"}
                 </p>
               </div>
             </div>

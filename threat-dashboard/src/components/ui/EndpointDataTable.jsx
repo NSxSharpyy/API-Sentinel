@@ -3,11 +3,7 @@ import HttpStatusBadge from "./HttpStatusBadge";
 import EndpointTableSkeleton from "./EndpointTableSkeleton";
 
 function formatLatency(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
+  if (value === null || value === undefined || value === "") {
     return "—";
   }
 
@@ -33,9 +29,7 @@ function formatTimestamp(value) {
 }
 
 function MethodBadge({ method }) {
-  const normalized = String(
-    method || "UNKNOWN"
-  ).toUpperCase();
+  const normalized = String(method || "UNKNOWN").toUpperCase();
 
   const colors = {
     GET: "bg-blue-100 text-blue-800",
@@ -48,8 +42,7 @@ function MethodBadge({ method }) {
   return (
     <span
       className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${
-        colors[normalized] ||
-        "bg-slate-100 text-slate-700"
+        colors[normalized] || "bg-slate-100 text-slate-700"
       }`}
     >
       {normalized}
@@ -111,7 +104,6 @@ export default function EndpointDataTable({
 
   return (
     <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
-      {/* Table heading and stream status */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">
@@ -132,18 +124,13 @@ export default function EndpointDataTable({
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
             {rows.length}{" "}
-            {rows.length === 1
-              ? "transaction"
-              : "transactions"}
+            {rows.length === 1 ? "transaction" : "transactions"}
           </span>
 
-          <ConnectionStatusBadge
-            status={connectionStatus}
-          />
+          <ConnectionStatusBadge status={connectionStatus} />
         </div>
       </div>
 
-      {/* Transaction table */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
@@ -151,19 +138,15 @@ export default function EndpointDataTable({
               <th className="px-5 py-3 font-semibold">
                 HTTP Method
               </th>
-
               <th className="px-5 py-3 font-semibold">
                 Endpoint Path
               </th>
-
               <th className="px-5 py-3 font-semibold">
                 HTTP Status Code
               </th>
-
               <th className="px-5 py-3 font-semibold">
                 Round-Trip Latency
               </th>
-
               <th className="px-5 py-3 font-semibold">
                 Received At
               </th>
@@ -189,31 +172,29 @@ export default function EndpointDataTable({
             ) : (
               rows.map((transaction, index) => (
                 <tr
-                  key={`${transaction.id ?? "transaction"}-${index}`}
+                  key={`${transaction?.id ?? "transaction"}-${index}`}
                   className="hover:bg-slate-50"
                 >
                   <td className="px-5 py-4">
-                    <MethodBadge
-                      method={transaction.method}
-                    />
+                    <MethodBadge method={transaction?.method} />
                   </td>
 
                   <td className="max-w-sm break-all px-5 py-4 font-mono text-xs text-slate-700">
-                    {transaction.endpoint || "—"}
+                    {transaction?.endpoint || "—"}
                   </td>
 
                   <td className="px-5 py-4">
                     <HttpStatusBadge
-                      statusCode={transaction.statusCode}
+                      statusCode={transaction?.statusCode ?? null}
                     />
                   </td>
 
                   <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                    {formatLatency(transaction.latencyMs)}
+                    {formatLatency(transaction?.latencyMs)}
                   </td>
 
                   <td className="whitespace-nowrap px-5 py-4 text-slate-500">
-                    {formatTimestamp(transaction.timestamp)}
+                    {formatTimestamp(transaction?.timestamp)}
                   </td>
                 </tr>
               ))

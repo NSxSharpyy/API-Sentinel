@@ -1,9 +1,5 @@
 
-import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { createTelemetryClient } from "../services/websocketClient";
 import { telemetryConfig } from "../config/telemetry";
@@ -11,45 +7,68 @@ import { telemetryConfig } from "../config/telemetry";
 function normalizeTransaction(message) {
   const candidate = message?.data ?? message;
 
-  if (!candidate || typeof candidate !== "object") {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     return null;
   }
 
   const method =
     typeof candidate.method === "string"
-      ? candidate.method.toUpperCase()
+      ? candidate.method.trim().toUpperCase()
       : "";
 
-  const endpoint =
+  const rawEndpoint =
     typeof candidate.endpoint === "string"
       ? candidate.endpoint
       : typeof candidate.path === "string"
         ? candidate.path
         : "";
 
+  const endpoint = rawEndpoint.trim();
+
   if (!method || !endpoint) {
     return null;
   }
 
+  const rawStatusCode =
+    candidate.statusCode ?? candidate.status_code ?? null;
+
+  const rawLatency =
+    candidate.latencyMs ?? candidate.latency_ms ?? null;
+
+  const parsedStatusCode =
+    rawStatusCode === null || rawStatusCode === ""
+      ? null
+      : Number(rawStatusCode);
+
+  const parsedLatency =
+    rawLatency === null || rawLatency === ""
+      ? null
+      : Number(rawLatency);
+
+  const timestamp =
+    typeof candidate.timestamp === "string" ||
+    typeof candidate.timestamp === "number"
+      ? candidate.timestamp
+      : new Date().toISOString();
+
   return {
     id:
       candidate.id ??
-      `${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`,
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     method,
     endpoint,
     statusCode:
-      candidate.statusCode ??
-      candidate.status_code ??
-      null,
+      parsedStatusCode !== null &&
+      Number.isFinite(parsedStatusCode)
+        ? parsedStatusCode
+        : null,
     latencyMs:
-      candidate.latencyMs ??
-      candidate.latency_ms ??
-      null,
-    timestamp:
-      candidate.timestamp ??
-      new Date().toISOString(),
+      parsedLatency !== null &&
+      Number.isFinite(parsedLatency) &&
+      parsedLatency >= 0
+        ? parsedLatency
+        : null,
+    timestamp,
   };
 }
 
@@ -57,11 +76,8 @@ export function useTelemetry() {
   const [connectionStatus, setConnectionStatus] =
     useState("disconnected");
 
-  const [latestMessage, setLatestMessage] =
-    useState(null);
-
+  const [latestMessage, setLatestMessage] = useState(null);
   const [lastError, setLastError] = useState("");
-
   const [transactions, setTransactions] = useState([]);
 
   const dismissError = useCallback(() => {
@@ -69,23 +85,25 @@ export function useTelemetry() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
     const client = createTelemetryClient({
       onStatus: (status) => {
+        if (!active) return;
+
         setConnectionStatus(status);
 
-        if (
-          status === "connected" ||
-          status === "mock"
-        ) {
+        if (status === "connected" || status === "mock") {
           setLastError("");
         }
       },
 
       onMessage: (message) => {
+        if (!active) return;
+
         setLatestMessage(message);
 
-        const transaction =
-          normalizeTransaction(message);
+        const transaction = normalizeTransaction(message);
 
         if (!transaction) {
           setLastError(
@@ -96,20 +114,27 @@ export function useTelemetry() {
 
         setLastError("");
 
-        // Newest transaction first; retain at most 100.
+        // Add newest transactions first and retain at most 100.
         setTransactions((previous) =>
           [transaction, ...previous].slice(0, 100)
         );
       },
 
       onError: (message) => {
-        setLastError(message);
+        if (!active) return;
+
+        setLastError(
+          typeof message === "string"
+            ? message
+            : "An unexpected telemetry error occurred."
+        );
       },
     });
 
     client.connect();
 
     return () => {
+      active = false;
       client.disconnect();
     };
   }, []);

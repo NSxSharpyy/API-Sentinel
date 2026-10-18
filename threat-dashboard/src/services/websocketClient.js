@@ -10,7 +10,6 @@ const mockEvents = [
       endpoint: "/api/v1/users",
       statusCode: 200,
       latencyMs: 42,
-      timestamp: new Date().toISOString(),
     },
   },
   {
@@ -21,7 +20,6 @@ const mockEvents = [
       endpoint: "/api/v1/auth/login",
       statusCode: 401,
       latencyMs: 86,
-      timestamp: new Date().toISOString(),
     },
   },
   {
@@ -32,7 +30,6 @@ const mockEvents = [
       endpoint: "/api/v1/orders",
       statusCode: 429,
       latencyMs: 31,
-      timestamp: new Date().toISOString(),
     },
   },
 ];
@@ -77,7 +74,10 @@ export function createTelemetryClient({
 
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null;
-      openSocket();
+
+      if (!closed) {
+        openSocket();
+      }
     }, delay);
   }
 
@@ -87,6 +87,15 @@ export function createTelemetryClient({
     if (!telemetryConfig.websocketUrl) {
       onStatus?.("error");
       onError?.("WebSocket URL is not configured.");
+      return;
+    }
+
+    // Avoid opening another socket while one is connecting or open.
+    if (
+      socket &&
+      (socket.readyState === WebSocket.CONNECTING ||
+        socket.readyState === WebSocket.OPEN)
+    ) {
       return;
     }
 
@@ -133,7 +142,7 @@ export function createTelemetryClient({
 
       onError?.("WebSocket connection error.");
 
-      // The close event handles automatic reconnection.
+      // The close event is responsible for reconnecting.
     });
 
     nextSocket.addEventListener("close", () => {
@@ -145,9 +154,11 @@ export function createTelemetryClient({
   }
 
   function connect() {
+    // Prevent duplicate intervals or WebSocket connections.
     if (!closed) return;
 
     closed = false;
+    clearReconnectTimer();
 
     if (telemetryConfig.mode === "mock") {
       onStatus?.("mock");
@@ -157,8 +168,7 @@ export function createTelemetryClient({
       const emitMockEvent = () => {
         if (closed) return;
 
-        const event =
-          mockEvents[index % mockEvents.length];
+        const event = mockEvents[index % mockEvents.length];
 
         onMessage?.({
           ...event,
@@ -198,8 +208,10 @@ export function createTelemetryClient({
       const currentSocket = socket;
       socket = null;
 
+      // Close both CONNECTING and OPEN sockets.
       if (
-        currentSocket.readyState < WebSocket.CLOSING
+        currentSocket.readyState === WebSocket.CONNECTING ||
+        currentSocket.readyState === WebSocket.OPEN
       ) {
         currentSocket.close();
       }

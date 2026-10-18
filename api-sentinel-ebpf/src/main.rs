@@ -7,7 +7,7 @@ use api_sentinel_ebpf_common::{
     NetworkEvent,
 };
 use aya::{
-    maps::RingBuf,
+    maps::{HashMap, RingBuf},
     programs::{KProbe, SchedClassifier, TcAttachType, TracePoint, tc},
 };
 use log::{debug, warn};
@@ -66,9 +66,10 @@ fn print_event(event: &NetworkEvent) {
         let uri = String::from_utf8_lossy(&event.uri_prefix[..len]);
 
         println!(
-            "HTTP_REQUEST method={} uri_prefix={} direction={} \
+            "HTTP_REQUEST method={} client_id={} uri_prefix={} direction={} \
              src={}.{}.{}.{}:{} dst={}.{}.{}.{}:{}",
             method_name(event.http_method),
+            event.client_id,
             uri,
             direction_name(event.traffic_direction),
             event.source_ipv4[0],
@@ -163,6 +164,31 @@ async fn main() -> anyhow::Result<()> {
         program.load()?;
         program.attach(INTERFACE, TcAttachType::Egress)?;
         println!("HTTP classifier attached to {INTERFACE} egress");
+    }
+
+    // Day 10: userspace-to-kernel client-map smoke test.
+    // 192.0.2.10 is a documentation-only example address.
+    {
+        let mut clients = HashMap::<_, u32, u32>::try_from(
+            ebpf.map_mut("CLIENT_IDENTIFIERS")
+                .ok_or_else(|| anyhow::anyhow!("CLIENT_IDENTIFIERS map not found"))?,
+        )?;
+
+        let test_ip = u32::from_ne_bytes([192, 168, 235, 142]);
+        let test_client_id = 1001u32;
+
+        clients.insert(test_ip, test_client_id, 0)?;
+
+        let stored_id = clients.get(&test_ip, 0)?;
+
+        if stored_id != test_client_id {
+            anyhow::bail!("Client map read-back mismatch");
+        }
+
+        println!(
+            "CLIENT_IDENTIFIERS map verified: 192.168.235.142 -> {}",
+            stored_id
+        );
     }
 
     let event_map = ebpf

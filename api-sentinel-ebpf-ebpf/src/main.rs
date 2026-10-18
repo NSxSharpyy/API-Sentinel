@@ -20,6 +20,10 @@ use api_sentinel_ebpf_common::{
 #[map]
 static SOCKET_TGID: HashMap<u64, u32> = HashMap::with_max_entries(10240, 0);
 
+// IPv4 address -> client identifier supplied by userspace.
+#[map]
+static CLIENT_IDENTIFIERS: HashMap<u32, u32> = HashMap::with_max_entries(1024, 0);
+
 // Ring buffer: kernel -> userspace network events.
 #[map]
 static EVENTS: RingBuf = RingBuf::with_byte_size(1 << 24, 0);
@@ -101,6 +105,7 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
         source_ipv4,
         destination_ipv4,
         attribution_known,
+        client_id: 0,
         traffic_direction,
         event_type: EVENT_TYPE_TCP_STATE,
         http_method: HTTP_METHOD_UNKNOWN,
@@ -228,6 +233,19 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
         return TC_ACT_PIPE;
     }
 
+    // Validate the length declared by IPv4, not only the skb length.
+    let ip_total_len = u16::from_be_bytes([ip[2], ip[3]]) as usize;
+    if ip_total_len < ip_header_len + HTTP_TCP_LEN {
+        return TC_ACT_PIPE;
+    }
+
+    // Skip IPv4 fragments (MF flag or non-zero fragment offset).
+    // This parser does not reassemble fragments.
+    let fragment_field = u16::from_be_bytes([ip[6], ip[7]]);
+    if fragment_field & 0x3fff != 0 {
+        return TC_ACT_PIPE;
+    }
+
     let tcp_offset = HTTP_ETH_LEN + ip_header_len;
     if packet_len < tcp_offset + HTTP_TCP_LEN {
         return TC_ACT_PIPE;
@@ -254,7 +272,12 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
 
     let payload_offset = tcp_offset + tcp_header_len;
 
-    // This initial version inspects payloads only when 64 bytes are present.
+    // Ensure the IPv4 packet itself contains the full inspected prefix.
+    if ip_total_len < ip_header_len + tcp_header_len + HTTP_READ_LEN {
+        return TC_ACT_PIPE;
+    }
+
+    // Also ensure those bytes exist in the skb.
     if packet_len < payload_offset + HTTP_READ_LEN {
         return TC_ACT_PIPE;
     }
@@ -297,6 +320,13 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
     let src = [ip[12], ip[13], ip[14], ip[15]];
     let dst = [ip[16], ip[17], ip[18], ip[19]];
 
+    // Userspace supplies a client ID keyed by the source IPv4 address.
+    let client_key = u32::from_ne_bytes(src);
+    let client_id = match unsafe { CLIENT_IDENTIFIERS.get(&client_key) } {
+        Some(id) => *id,
+        None => 0,
+    };
+
     let event = NetworkEvent {
         tgid: 0,
         family: 2,
@@ -308,6 +338,7 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
         source_ipv4: src,
         destination_ipv4: dst,
         attribution_known: 0,
+        client_id,
         traffic_direction: classify_traffic_direction(src, dst),
         event_type: EVENT_TYPE_HTTP_REQUEST,
         http_method: method,

@@ -25,6 +25,7 @@ pub struct NetworkEvent {
     pub source_ipv4: [u8; 4],
     pub destination_ipv4: [u8; 4],
     pub attribution_known: u8,
+    pub client_id: u32,
     pub traffic_direction: u8,
     pub event_type: u8,
     pub http_method: u8,

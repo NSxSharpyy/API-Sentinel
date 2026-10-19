@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-10-19T06:49:41.862430-04:00",
+  "input_report": "/home/ld/API-Sentinel/appsec-testing/scripts/recon/mock_member3_discovery_output.json",
+  "manifest": "/home/ld/API-Sentinel/appsec-testing/docs/shadow_zombie_manifest.md",
+  "verdict": "FAIL",
+  "exit_code": 1,
+  "ground_truth_endpoints": 7,
+  "valid_unique_findings": 7,
+  "matched_endpoints": 6,
+  "recall": 0.8571428571428571,
+  "false_positive_count": 1,
+  "false_positives": [
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/api/v2/users/me",
+      "documented_route": true
+    }
+  ],
+  "precision": 0.8571428571428571,
+  "classification_error_count": 0,
+  "classification_errors": [],
+  "validation_error_count": 0,
+  "validation_errors": [],
+  "missed_endpoints": [
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/api/v1/users/1",
+      "expected_classification": "zombie"
+    }
+  ],
+  "per_endpoint": [
+    {
+      "service": "auth",
+      "method": "GET",
+      "path": "/api/v1/login-status",
+      "expected_classification": "zombie",
+      "found": true,
+      "reported_classification": "zombie",
+      "classification_correct": true
+    },
+    {
+      "service": "auth",
+      "method": "GET",
+      "path": "/debug/dump-tokens",
+      "expected_classification": "shadow",
+      "found": true,
+      "reported_classification": "shadow",
+      "classification_correct": true
+    },
+    {
+      "service": "billing",
+      "method": "GET",
+      "path": "/api/v1/invoices/1",
+      "expected_classification": "zombie",
+      "found": true,
+      "reported_classification": "zombie",
+      "classification_correct": true
+    },
+    {
+      "service": "billing",
+      "method": "POST",
+      "path": "/_admin/reset-cache",
+      "expected_classification": "shadow",
+      "found": true,
+      "reported_classification": "shadow",
+      "classification_correct": true
+    },
+    {
+      "service": "order",
+      "method": "GET",
+      "path": "/api/v1/orders/1",
+      "expected_classification": "zombie",
+      "found": true,
+      "reported_classification": "zombie",
+      "classification_correct": true
+    },
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/api/v1/users/1",
+      "expected_classification": "zombie",
+      "found": false,
+      "reported_classification": null,
+      "classification_correct": false
+    },
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/internal/config",
+      "expected_classification": "shadow",
+      "found": true,
+      "reported_classification": "shadow",
+      "classification_correct": true
+    }
+  ]
+}

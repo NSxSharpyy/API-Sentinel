@@ -44,3 +44,28 @@ are tracked separately.
 - Obtain the required project-owner/team sign-off.
 - Review the intended change set, including untracked backup files.
 - Commit and push the approved change set only when explicitly authorized.
+
+### Day 14 — Phase 2 audit harness
+
+- Added `appsec-testing/scripts/validate_phase2.py` as the end-to-end Phase 2 validation harness.
+- Added argument parsing so `--help` exits without launching the audit.
+- Added fail-fast dependency handling: runtime-dependent checks are skipped when stack rebuild or health validation fails, and skipped checks are reported separately.
+- Added the Phase 2 freeze summary at `docs/phase2-freeze.md`.
+- Added the audit-harness reference index at `docs/audit-harness-index.md`.
+
+### Day 14 validation evidence
+
+- Date: 2026-10-20
+- Result: PASS
+- Checks passed: 9
+- Checks failed: 0
+- Checks skipped: 0
+- Report: `appsec-testing/logs/phase2_freeze_report.json`
+- Run evidence: `appsec-testing/logs/phase2-run-20261020T180547Z`
+
+### Outstanding Phase 2 discovery requirement
+
+- Member 3's real discovery engine remains pending.
+- The mock discovery-verification check confirms grader behavior against the deliberately imperfect fixture; it does not establish 100% recall for the real engine.
+- Validate the real engine against `appsec-testing/docs/shadow_zombie_manifest.md` before claiming the discovery milestone is complete.
+- Project-owner/team sign-off and change-set review remain outstanding.

@@ -453,8 +453,8 @@ class TrafficGenerator:
                     RuntimeError,
                 ) as exc:
                     logging.warning(
-                        "Worker %s customer cycle failed for %s: %s",
-                        worker_id, customer.username, exc,
+                        "Worker %s customer cycle failed for %s (%s): %s",
+                        worker_id, customer.username, type(exc).__name__, exc,
                     )
 
                 if deadline is not None and asyncio.get_running_loop().time() >= deadline:

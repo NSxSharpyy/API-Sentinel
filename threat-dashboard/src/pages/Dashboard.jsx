@@ -4,6 +4,7 @@ import { useOutletContext } from "react-router-dom";
 import { mockIncidents } from "../data/mockIncidents";
 import IncidentAlertGrid from "../components/ui/IncidentAlertGrid";
 import EndpointDataTable from "../components/ui/EndpointDataTable";
+import AttackDistributionChart from "../components/ui/AttackDistributionChart";
 
 export default function Dashboard() {
   const {
@@ -72,6 +73,9 @@ export default function Dashboard() {
           </p>
         </article>
       </div>
+
+      {/* Day 11 — Attack Distribution Over Time */}
+      <AttackDistributionChart />
 
       {/* API Endpoint Activity */}
       <section className="space-y-4">

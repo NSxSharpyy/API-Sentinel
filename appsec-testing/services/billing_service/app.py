@@ -5,7 +5,7 @@ LOCAL LAB ONLY. Never deploy this service outside the isolated test environment.
 """
 import os
 
-from flask import g, jsonify
+from flask import g, jsonify, request
 
 from mock_data import get_invoice, list_invoices_for_user
 from security import require_auth
@@ -30,6 +30,9 @@ def get_invoice_by_id(invoice_id):
 
     # INTENTIONAL BOLA: no comparison between invoice owner and g.user_id.
     logger.info("invoice accessed", extra={"fields": {
+        "request_id": g.request_id,
+        "method": request.method,
+        "path": request.path,
         "invoice_id": invoice_id,
         "owner_id": invoice["owner_id"],
         "requester_id": g.user_id,
@@ -53,6 +56,9 @@ def get_billing_by_id(billing_id):
     logger.warning(
         "INTENTIONAL BOLA accessed",
         extra={"fields": {
+            "request_id": g.request_id,
+            "method": request.method,
+            "path": request.path,
             "endpoint": "/api/v1/billing/<billing_id>",
             "billing_id": billing_id,
             "requester_id": g.user_id,

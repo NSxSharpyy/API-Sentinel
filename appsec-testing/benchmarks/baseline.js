@@ -26,6 +26,8 @@ const profileSamples = new Counter('profile_samples');
 const ordersSamples = new Counter('orders_samples');
 const invoiceSamples = new Counter('invoice_samples');
 
+// Each k6 VU has its own JS runtime, so this cache is per virtual user.
+let cachedAuth = null;
 
 export const options = {
     summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
@@ -72,40 +74,51 @@ function recordCheck(response, name, expectedStatus = 200) {
 export default function () {
   const username = USERNAMES[(__VU - 1) % USERNAMES.length];
 
-  const login = http.post(
-    `${AUTH_URL}/api/v2/auth/login`,
-    JSON.stringify({ username, password: PASSWORD }),
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
+  if (!cachedAuth) {
+    const login = http.post(
+      `${AUTH_URL}/api/v2/auth/login`,
+      JSON.stringify({ username, password: PASSWORD }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: '10s',
+        tags: { endpoint: 'login' },
       },
-      timeout: '10s',
-      tags: { endpoint: 'login' },
-    },
-  );
+    );
 
-  loginDuration.add(login.timings.duration);
-  loginSamples.add(1);
+    loginDuration.add(login.timings.duration);
+    loginSamples.add(1);
 
-  if (!recordCheck(login, 'login')) {
-    fail(`Login failed with HTTP ${login.status}`);
+    if (!recordCheck(login, 'login')) {
+      fail(`Login failed with HTTP ${login.status}`);
+    }
+
+    let loginData;
+
+    try {
+      loginData = login.json();
+    } catch (_) {
+      fail('Login response was not valid JSON');
+    }
+
+    if (
+      !loginData.token ||
+      loginData.user_id === undefined ||
+      loginData.user_id === null
+    ) {
+      fail('Login response did not contain token and user_id');
+    }
+
+    cachedAuth = {
+      token: loginData.token,
+      userId: loginData.user_id,
+    };
   }
 
-  let loginData;
-
-  try {
-    loginData = login.json();
-  } catch (_) {
-    fail('Login response was not valid JSON');
-  }
-
-  const token = loginData.token;
-  const userId = loginData.user_id;
-
-  if (!token || userId === undefined || userId === null) {
-    fail('Login response did not contain token and user_id');
-  }
+  const token = cachedAuth.token;
+  const userId = cachedAuth.userId;
 
   const verify = http.get(
     `${AUTH_URL}/api/v2/auth/verify`,

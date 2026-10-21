@@ -114,6 +114,8 @@ export default function Incidents() {
         />
 
         <input
+          id="incident-search"
+          name="incidentSearch"
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}

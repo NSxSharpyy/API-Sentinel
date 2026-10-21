@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Layers3,
   Info,
+  RotateCcw,
 } from "lucide-react";
 
 import { mockApiEndpoints } from "../data/mockApiEndpoints";
@@ -108,10 +109,14 @@ function SummaryCard({ title, value, description, icon: Icon }) {
 }
 
 export default function ApiSurface() {
+  // Day 10: Existing search, source, and classification filters
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("All");
   const [classificationFilter, setClassificationFilter] =
     useState("All");
+
+  // Day 12: HTTP method filter
+  const [methodFilter, setMethodFilter] = useState("All");
 
   // Calculate classification totals for the full inventory
   const officialCount = mockApiEndpoints.filter(
@@ -126,15 +131,15 @@ export default function ApiSurface() {
     (endpoint) => endpoint.classification === "Zombie"
   ).length;
 
-  // Apply search, source filter, and classification filter
+  // Day 12: Combine search and all three dropdown filters
   const filteredEndpoints = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return mockApiEndpoints.filter((endpoint) => {
       const matchesSearch =
-        endpoint.path.toLowerCase().includes(query) ||
-        endpoint.method.toLowerCase().includes(query) ||
-        endpoint.description.toLowerCase().includes(query);
+        (endpoint.path || "").toLowerCase().includes(query) ||
+        (endpoint.method || "").toLowerCase().includes(query) ||
+        (endpoint.description || "").toLowerCase().includes(query);
 
       const matchesSource =
         sourceFilter === "All" ||
@@ -144,13 +149,31 @@ export default function ApiSurface() {
         classificationFilter === "All" ||
         endpoint.classification === classificationFilter;
 
+      const matchesMethod =
+        methodFilter === "All" ||
+        endpoint.method === methodFilter;
+
       return (
         matchesSearch &&
         matchesSource &&
-        matchesClassification
+        matchesClassification &&
+        matchesMethod
       );
     });
-  }, [search, sourceFilter, classificationFilter]);
+  }, [
+    search,
+    sourceFilter,
+    classificationFilter,
+    methodFilter,
+  ]);
+
+  // Day 12: Reset every filter
+  const clearFilters = () => {
+    setSearch("");
+    setSourceFilter("All");
+    setClassificationFilter("All");
+    setMethodFilter("All");
+  };
 
   return (
     <div className="space-y-6">
@@ -237,8 +260,9 @@ export default function ApiSurface() {
             Search endpoints and inspect their classifications.
           </p>
 
-          {/* Search and filters */}
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {/* Day 12: Search and four filter controls */}
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {/* Search input */}
             <div className="relative">
               <Search
                 size={18}
@@ -255,32 +279,78 @@ export default function ApiSurface() {
               />
             </div>
 
+            {/* Source filter */}
             <select
               value={sourceFilter}
               onChange={(event) =>
                 setSourceFilter(event.target.value)
               }
               aria-label="Filter by source"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               <option value="All">All sources</option>
               <option value="Official">Official source</option>
               <option value="Discovered">Discovered source</option>
             </select>
 
+            {/* Classification filter */}
             <select
               value={classificationFilter}
               onChange={(event) =>
                 setClassificationFilter(event.target.value)
               }
               aria-label="Filter by classification"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               <option value="All">All classifications</option>
               <option value="Official">Official</option>
               <option value="Shadow">Shadow</option>
               <option value="Zombie">Zombie</option>
             </select>
+
+            {/* Day 12: HTTP method filter */}
+            <select
+              value={methodFilter}
+              onChange={(event) =>
+                setMethodFilter(event.target.value)
+              }
+              aria-label="Filter by HTTP method"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="All">All methods</option>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+          </div>
+
+          {/* Day 12: Clear filters and live result count */}
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p
+              className="text-sm text-gray-500"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              Showing {filteredEndpoints.length} of{" "}
+              {mockApiEndpoints.length} endpoints
+            </p>
+
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={
+                search === "" &&
+                sourceFilter === "All" &&
+                classificationFilter === "All" &&
+                methodFilter === "All"
+              }
+              className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+            >
+              <RotateCcw size={16} />
+              Clear filters
+            </button>
           </div>
         </div>
 
@@ -351,6 +421,7 @@ export default function ApiSurface() {
                 </tr>
               ))}
 
+              {/* Empty state */}
               {filteredEndpoints.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center">
@@ -371,12 +442,6 @@ export default function ApiSurface() {
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* Inventory result count */}
-        <div className="border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
-          Showing {filteredEndpoints.length} of{" "}
-          {mockApiEndpoints.length} endpoints
         </div>
       </section>
     </div>

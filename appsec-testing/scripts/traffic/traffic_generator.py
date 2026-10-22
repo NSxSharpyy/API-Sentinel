@@ -92,6 +92,7 @@ class TrafficGenerator:
         max_delay=1.4,
         seed=None,
         concurrency=10,
+        use_proxy=False,
     ):
         if min_delay < 0 or max_delay < min_delay:
             raise ValueError("Delay values must satisfy 0 <= min <= max")
@@ -99,6 +100,7 @@ class TrafficGenerator:
             raise ValueError("Concurrency must be a positive integer")
 
         self.base_url = base_url.rstrip("/")
+        self.use_proxy = bool(use_proxy)
         self.min_delay = min_delay
         self.max_delay = max_delay
         self.concurrency = concurrency
@@ -112,8 +114,8 @@ class TrafficGenerator:
         self.current_customer = None
         self.action_count = 0
 
-    def request(self, method, path, action, **kwargs):
-        """Send and log a request, including network errors."""
+    def _service_port(self, path):
+        """Return the service port, optionally using local proxy ports."""
         if path.startswith("/api/v2/auth/"):
             port = 5001
         elif path.startswith("/api/v2/users/"):
@@ -124,7 +126,11 @@ class TrafficGenerator:
             port = 5004
         else:
             raise ValueError(f"Unknown API service path: {path}")
+        return port + 2000 if self.use_proxy else port
 
+    def request(self, method, path, action, **kwargs):
+        """Send and log a request, including network errors."""
+        port = self._service_port(path)
         url = f"{self.base_url}:{port}{path}"
         request_id = self.sent_logger.new_request_id()
         headers = dict(kwargs.pop("headers", {}) or {})
@@ -289,17 +295,7 @@ class TrafficGenerator:
 
     async def async_request(self, session, customer, method, path, action, token=None, **kwargs):
         """Send one asynchronous request and log it with explicit customer identity."""
-        if path.startswith("/api/v2/auth/"):
-            port = 5001
-        elif path.startswith("/api/v2/users/"):
-            port = 5002
-        elif path.startswith("/api/v2/orders"):
-            port = 5003
-        elif path.startswith("/api/v2/billing/"):
-            port = 5004
-        else:
-            raise ValueError(f"Unknown API service path: {path}")
-
+        port = self._service_port(path)
         url = f"{self.base_url}:{port}{path}"
         request_id = self.sent_logger.new_request_id()
         headers = dict(kwargs.pop("headers", {}) or {})
@@ -546,6 +542,11 @@ def parse_args():
         default=10,
         help="Number of concurrent traffic workers (default: 10)",
     )
+    parser.add_argument(
+        "--use-proxy",
+        action="store_true",
+        help="Route through local mock rate-limit proxies on ports 7001-7004.",
+    )
     return parser.parse_args()
 
 
@@ -560,6 +561,7 @@ def main():
             max_delay=args.max_delay,
             seed=args.seed,
             concurrency=args.concurrency,
+            use_proxy=args.use_proxy,
         )
         generator.run(args.duration)
     except (ValueError, OSError) as exc:

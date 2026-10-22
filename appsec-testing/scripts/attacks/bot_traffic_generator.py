@@ -35,19 +35,24 @@ COMMON_PASSWORD_GUESSES = (
 )
 
 
-def validate_local_url(url):
-    """Reject non-loopback targets and unexpected service ports."""
+def validate_local_url(url, allow_proxy=False):
+    """Reject non-loopback targets and unexpected ports by default."""
     parsed = urlparse(url)
+    allowed_ports = {5001, 5003}
+    if allow_proxy:
+        allowed_ports.update({7001, 7003})
     if (
         parsed.scheme != "http"
         or parsed.hostname not in {"127.0.0.1", "localhost"}
-        or parsed.port not in {5001, 5003}
+        or parsed.port not in allowed_ports
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("Target must be a local API-Sentinel URL on port 5001 or 5003.")
+        raise ValueError(
+            "Target must be a local API-Sentinel URL on an explicitly allowed port."
+        )
     return url.rstrip("/")
 
 
@@ -152,7 +157,9 @@ def run_flood(target_url, method, concurrency, duration, logger,
     return total
 
 
-def creds_stuff_worker(worker_id, attempts, customers, logger, run_id, seed):
+def creds_stuff_worker(
+    worker_id, attempts, customers, logger, run_id, seed, auth_url=AUTH_URL
+):
     """Use deterministic mixtures; include valid and invalid credential pairs."""
     rng = random.Random(seed + worker_id)
     real = [customer.username for customer in customers]
@@ -176,7 +183,7 @@ def creds_stuff_worker(worker_id, attempts, customers, logger, run_id, seed):
             outcome = request_and_log(
                 session, logger,
                 run_id=run_id, mode="creds_stuff", worker_id=worker_id,
-                method="POST", url=f"{AUTH_URL}/api/v2/auth/login",
+                method="POST", url=f"{auth_url}/api/v2/auth/login",
                 payload={"username": username, "password": password},
                 username=username,
             )
@@ -186,8 +193,10 @@ def creds_stuff_worker(worker_id, attempts, customers, logger, run_id, seed):
 
 
 
-def run_creds_stuff(concurrency, attempts_per_worker, customers, logger,
-                    run_id, seed):
+def run_creds_stuff(
+    concurrency, attempts_per_worker, customers, logger, run_id, seed,
+    auth_url=AUTH_URL,
+):
     """Run bounded credential-stuffing workers and collect their outcomes."""
     if not customers:
         raise ValueError("Customer pool is empty; cannot run credential simulation.")
@@ -203,6 +212,7 @@ def run_creds_stuff(concurrency, attempts_per_worker, customers, logger,
                 logger,
                 run_id,
                 seed,
+                auth_url,
             )
             for worker_id in range(concurrency)
         ]
@@ -241,9 +251,16 @@ def main(argv=None):
         default=10,
     )
     parser.add_argument("--target", choices=["orders", "login"], default="orders")
+    parser.add_argument(
+        "--use-proxy",
+        action="store_true",
+        help="Explicitly route attack traffic through local mock rate-limit proxies.",
+    )
     parser.add_argument("--seed", type=int, default=1701)
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args(argv)
+    auth_url = "http://127.0.0.1:7001" if args.use_proxy else AUTH_URL
+    order_url = "http://127.0.0.1:7003" if args.use_proxy else ORDER_URL
 
     run_id = str(uuid.uuid4())
     logger = SafeAttackLogger(AttackLogger("bot_traffic", output_dir=args.output_dir))
@@ -255,7 +272,7 @@ def main(argv=None):
             if args.target == "orders":
                 customers = build_customer_pool()
                 login = requests.post(
-                    f"{AUTH_URL}/api/v2/auth/login",
+                    f"{auth_url}/api/v2/auth/login",
                     json={
                         "username": customers[0].username,
                         "password": customers[0].password,
@@ -270,11 +287,15 @@ def main(argv=None):
                 if not token:
                     raise RuntimeError("Login response did not contain a token.")
 
-                target = validate_local_url(f"{ORDER_URL}/api/v2/orders")
+                target = validate_local_url(
+                    f"{order_url}/api/v2/orders", allow_proxy=args.use_proxy
+                )
                 method, payload = "GET", None
             else:
                 token = None
-                target = validate_local_url(f"{AUTH_URL}/api/v2/auth/login")
+                target = validate_local_url(
+                    f"{auth_url}/api/v2/auth/login", allow_proxy=args.use_proxy
+                )
                 # Intentionally invalid credentials: unauthenticated login flood.
                 method = "POST"
                 payload = {"username": "invalid-bot@mail.test", "password": "wrong"}
@@ -294,7 +315,7 @@ def main(argv=None):
             customers = build_customer_pool()
             results = run_creds_stuff(
                 args.concurrency, args.attempts_per_worker,
-                customers, logger, run_id, args.seed,
+                customers, logger, run_id, args.seed, auth_url=auth_url,
             )
             elapsed = max(time.monotonic() - start, 0.001)
             successes = sum(item["success"] for item in results)

@@ -7,10 +7,14 @@ import {
 } from "react-router-dom";
 
 import DashboardLayout from "../layouts/DashboardLayout";
+
 import Dashboard from "../pages/Dashboard";
 import Incidents from "../pages/Incidents";
 import ApiSurface from "../pages/ApiSurface";
 
+import OpenApiContractViewer from "../components/ui/OpenApiContractViewer";
+
+// Reusable placeholder page for features scheduled for later.
 function PlaceholderPage({ title, description }) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-6">
@@ -33,8 +37,9 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Shared layout for all application pages */}
         <Route element={<DashboardLayout />}>
-          {/* Redirect the root URL to the dashboard */}
+          {/* Redirect the home page to the dashboard */}
           <Route
             path="/"
             element={<Navigate to="/dashboard" replace />}
@@ -46,7 +51,7 @@ export default function AppRouter() {
             element={<Dashboard />}
           />
 
-          {/* Security Incidents with BOLA details modal */}
+          {/* Incidents */}
           <Route
             path="/incidents"
             element={<Incidents />}
@@ -56,6 +61,12 @@ export default function AppRouter() {
           <Route
             path="/api-surface"
             element={<ApiSurface />}
+          />
+
+          {/* Day 13: OpenAPI Contract Viewer */}
+          <Route
+            path="/openapi-contract"
+            element={<OpenApiContractViewer />}
           />
 
           {/* Settings placeholder */}

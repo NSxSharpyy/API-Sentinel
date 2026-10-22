@@ -1,384 +1,519 @@
 
 import { useMemo, useState } from "react";
-import {
-  Archive,
-  Database,
-  Search,
-  ScanSearch,
-  ShieldCheck,
-  Layers3,
-  Info,
-} from "lucide-react";
-
+import { Search, X, ShieldAlert } from "lucide-react";
 import { mockApiEndpoints } from "../data/mockApiEndpoints";
 
-// Classification badge: Official, Shadow, or Zombie
+const EMPTY_ENDPOINTS = [];
+
+const classificationOptions = [
+  "All classifications",
+  "Official",
+  "Shadow",
+  "Zombie",
+];
+
+const sourceOptions = [
+  "All sources",
+  "Gateway",
+  "Code scan",
+  "Traffic analysis",
+];
+
+const methodOptions = [
+  "All methods",
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+];
+
+function getClassificationClasses(classification) {
+  switch (classification) {
+    case "Official":
+      return "bg-green-50 text-green-700 ring-green-600/20";
+    case "Shadow":
+      return "bg-amber-50 text-amber-700 ring-amber-600/20";
+    case "Zombie":
+      return "bg-red-50 text-red-700 ring-red-600/20";
+    default:
+      return "bg-gray-50 text-gray-700 ring-gray-600/20";
+  }
+}
+
 function ClassificationBadge({ classification }) {
-  const styles = {
-    Official: "bg-green-100 text-green-800 ring-green-600/20",
-    Shadow: "bg-amber-100 text-amber-800 ring-amber-600/20",
-    Zombie: "bg-red-100 text-red-800 ring-red-600/20",
-  };
-
-  const icons = {
-    Official: ShieldCheck,
-    Shadow: ScanSearch,
-    Zombie: Archive,
-  };
-
-  const Icon = icons[classification] || Info;
-
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
-        styles[classification] ||
-        "bg-gray-100 text-gray-700 ring-gray-500/20"
-      }`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${getClassificationClasses(
+        classification
+      )}`}
     >
-      <Icon size={13} />
-      {classification || "Unclassified"}
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {classification || "Unknown"}
     </span>
   );
 }
 
-// Source badge: where the endpoint entry came from
-function SourceBadge({ source }) {
-  const styles = {
-    Official: "bg-blue-50 text-blue-700",
-    Discovered: "bg-purple-50 text-purple-700",
-  };
-
-  return (
-    <span
-      className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${
-        styles[source] || "bg-gray-100 text-gray-700"
-      }`}
-    >
-      {source}
-    </span>
-  );
-}
-
-// HTTP method badge
 function MethodBadge({ method }) {
-  const styles = {
+  const colors = {
     GET: "bg-blue-50 text-blue-700",
     POST: "bg-green-50 text-green-700",
     PUT: "bg-amber-50 text-amber-700",
-    PATCH: "bg-orange-50 text-orange-700",
+    PATCH: "bg-purple-50 text-purple-700",
     DELETE: "bg-red-50 text-red-700",
   };
 
   return (
     <span
       className={`inline-flex min-w-16 justify-center rounded-md px-2 py-1 text-xs font-bold ${
-        styles[method] || "bg-gray-100 text-gray-700"
+        colors[method] || "bg-gray-100 text-gray-700"
       }`}
     >
-      {method}
+      {method || "N/A"}
     </span>
-  );
-}
-
-// Reusable summary card
-function SummaryCard({ title, value, description, icon: Icon }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-gray-500">
-            {title}
-          </p>
-
-          <p className="mt-2 text-3xl font-bold text-gray-900">
-            {value}
-          </p>
-
-          <p className="mt-1 text-xs text-gray-500">
-            {description}
-          </p>
-        </div>
-
-        <div className="rounded-lg bg-gray-100 p-2.5 text-gray-700">
-          <Icon size={21} />
-        </div>
-      </div>
-    </div>
   );
 }
 
 export default function ApiSurface() {
   const [search, setSearch] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("All");
-  const [classificationFilter, setClassificationFilter] =
-    useState("All");
+  const [selectedSource, setSelectedSource] = useState("All sources");
+  const [selectedClassification, setSelectedClassification] =
+    useState("All classifications");
+  const [selectedMethod, setSelectedMethod] = useState("All methods");
 
-  // Calculate classification totals for the full inventory
-  const officialCount = mockApiEndpoints.filter(
-    (endpoint) => endpoint.classification === "Official"
-  ).length;
+  const endpoints = Array.isArray(mockApiEndpoints)
+    ? mockApiEndpoints
+    : EMPTY_ENDPOINTS;
 
-  const shadowCount = mockApiEndpoints.filter(
-    (endpoint) => endpoint.classification === "Shadow"
-  ).length;
-
-  const zombieCount = mockApiEndpoints.filter(
-    (endpoint) => endpoint.classification === "Zombie"
-  ).length;
-
-  // Apply search, source filter, and classification filter
   const filteredEndpoints = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return mockApiEndpoints.filter((endpoint) => {
+    return endpoints.filter((endpoint) => {
+      const endpointPath = String(
+        endpoint.path ?? endpoint.endpoint ?? endpoint.url ?? ""
+      );
+
+      const endpointMethod = String(
+        endpoint.method ?? ""
+      ).toUpperCase();
+
+      const endpointSource = String(
+        endpoint.source ?? endpoint.discoverySource ?? ""
+      );
+
+      const endpointClassification = String(
+        endpoint.classification ?? endpoint.type ?? ""
+      );
+
       const matchesSearch =
-        endpoint.path.toLowerCase().includes(query) ||
-        endpoint.method.toLowerCase().includes(query) ||
-        endpoint.description.toLowerCase().includes(query);
+        !query ||
+        endpointPath.toLowerCase().includes(query) ||
+        endpointMethod.toLowerCase().includes(query) ||
+        endpointSource.toLowerCase().includes(query) ||
+        endpointClassification.toLowerCase().includes(query);
 
       const matchesSource =
-        sourceFilter === "All" ||
-        endpoint.source === sourceFilter;
+        selectedSource === "All sources" ||
+        endpointSource.toLowerCase() === selectedSource.toLowerCase();
 
       const matchesClassification =
-        classificationFilter === "All" ||
-        endpoint.classification === classificationFilter;
+        selectedClassification === "All classifications" ||
+        endpointClassification.toLowerCase() ===
+          selectedClassification.toLowerCase();
+
+      const matchesMethod =
+        selectedMethod === "All methods" ||
+        endpointMethod === selectedMethod;
 
       return (
         matchesSearch &&
         matchesSource &&
-        matchesClassification
+        matchesClassification &&
+        matchesMethod
       );
     });
-  }, [search, sourceFilter, classificationFilter]);
+  }, [
+    endpoints,
+    search,
+    selectedSource,
+    selectedClassification,
+    selectedMethod,
+  ]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedSource("All sources");
+    setSelectedClassification("All classifications");
+    setSelectedMethod("All methods");
+  };
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    selectedSource !== "All sources" ||
+    selectedClassification !== "All classifications" ||
+    selectedMethod !== "All methods";
+
+  const officialCount = endpoints.filter(
+    (endpoint) =>
+      String(
+        endpoint.classification ?? endpoint.type ?? ""
+      ).toLowerCase() === "official"
+  ).length;
+
+  const shadowCount = endpoints.filter(
+    (endpoint) =>
+      String(
+        endpoint.classification ?? endpoint.type ?? ""
+      ).toLowerCase() === "shadow"
+  ).length;
+
+  const zombieCount = endpoints.filter(
+    (endpoint) =>
+      String(
+        endpoint.classification ?? endpoint.type ?? ""
+      ).toLowerCase() === "zombie"
+  ).length;
 
   return (
-    <div className="space-y-6">
-      {/* Page heading */}
+    <main className="space-y-6 p-4 sm:p-6 lg:p-8">
       <header>
         <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-indigo-100 p-3 text-indigo-700">
-            <Layers3 size={25} />
+          <div className="rounded-xl bg-indigo-50 p-3 text-indigo-600">
+            <ShieldAlert size={24} aria-hidden="true" />
           </div>
 
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
               API Attack Surface
             </h1>
 
             <p className="mt-1 text-sm text-gray-500">
-              Inventory and visual classification of API endpoints.
+              Discover and review API endpoints across your environment.
             </p>
           </div>
         </div>
       </header>
 
-      {/* Demo data warning */}
-      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <Info
-          className="mt-0.5 shrink-0 text-amber-700"
-          size={20}
-        />
-
-        <div>
-          <p className="font-semibold text-amber-900">
-            Demonstration data only
-          </p>
-
-          <p className="mt-1 text-sm text-amber-800">
-            Endpoint classifications are illustrative mock data,
-            not verified backend findings. Confirm ownership,
-            documentation, and deprecation status before classifying
-            real endpoints. A discovered endpoint is not automatically
-            vulnerable or a Shadow endpoint.
-          </p>
-        </div>
-      </div>
-
-      {/* Summary cards */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        aria-label="API endpoint summary"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <SummaryCard
-          title="Total Endpoints"
-          value={mockApiEndpoints.length}
-          description="Endpoints in this demo inventory"
-          icon={Database}
+          label="Total endpoints"
+          value={endpoints.length}
         />
 
         <SummaryCard
-          title="Official"
+          label="Official endpoints"
           value={officialCount}
-          description="Approved/documented examples"
-          icon={ShieldCheck}
         />
 
         <SummaryCard
-          title="Shadow"
+          label="Shadow APIs"
           value={shadowCount}
-          description="Inventory verification pending"
-          icon={ScanSearch}
         />
 
         <SummaryCard
-          title="Zombie"
+          label="Zombie APIs"
           value={zombieCount}
-          description="Retired endpoint example"
-          icon={Archive}
         />
       </section>
 
-      {/* Endpoint inventory */}
-      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 p-5">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Endpoint Inventory
-          </h2>
+      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="flex items-start gap-3">
+          <ShieldAlert
+            size={20}
+            className="mt-0.5 shrink-0 text-amber-700"
+            aria-hidden="true"
+          />
 
-          <p className="mt-1 text-sm text-gray-500">
-            Search endpoints and inspect their classifications.
-          </p>
+          <div>
+            <h2 className="text-sm font-semibold text-amber-900">
+              Demo data — not connected to live telemetry
+            </h2>
 
-          {/* Search and filters */}
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="relative">
-              <Search
-                size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
+            <p className="mt-1 text-sm text-amber-800">
+              These endpoints are sample data for the frontend. They do not
+              represent a live API discovery scan.
+            </p>
+          </div>
+        </div>
+      </section>
 
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search path, method, or description..."
-                aria-label="Search API endpoints"
-                className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
+      <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Discovered endpoints
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Search and combine filters to narrow the endpoint inventory.
+            </p>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              <X size={16} aria-hidden="true" />
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="relative sm:col-span-2 xl:col-span-1">
+            <label
+              htmlFor="api-endpoint-search"
+              className="mb-1.5 block text-sm font-medium text-gray-700"
+            >
+              Search endpoints
+            </label>
+
+            <Search
+              size={17}
+              className="pointer-events-none absolute left-3 top-[42px] text-gray-400"
+              aria-hidden="true"
+            />
+
+            <input
+              id="api-endpoint-search"
+              name="apiEndpointSearch"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search path, method..."
+              autoComplete="off"
+              className="min-h-10 w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="api-endpoint-source"
+              className="mb-1.5 block text-sm font-medium text-gray-700"
+            >
+              Discovery source
+            </label>
 
             <select
-              value={sourceFilter}
-              onChange={(event) =>
-                setSourceFilter(event.target.value)
-              }
-              aria-label="Filter by source"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              id="api-endpoint-source"
+              name="apiEndpointSource"
+              value={selectedSource}
+              onChange={(event) => setSelectedSource(event.target.value)}
+              className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
-              <option value="All">All sources</option>
-              <option value="Official">Official source</option>
-              <option value="Discovered">Discovered source</option>
+              {sourceOptions.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="api-endpoint-classification"
+              className="mb-1.5 block text-sm font-medium text-gray-700"
+            >
+              Classification
+            </label>
 
             <select
-              value={classificationFilter}
+              id="api-endpoint-classification"
+              name="apiEndpointClassification"
+              value={selectedClassification}
               onChange={(event) =>
-                setClassificationFilter(event.target.value)
+                setSelectedClassification(event.target.value)
               }
-              aria-label="Filter by classification"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
-              <option value="All">All classifications</option>
-              <option value="Official">Official</option>
-              <option value="Shadow">Shadow</option>
-              <option value="Zombie">Zombie</option>
+              {classificationOptions.map((classification) => (
+                <option key={classification} value={classification}>
+                  {classification}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="api-endpoint-method"
+              className="mb-1.5 block text-sm font-medium text-gray-700"
+            >
+              HTTP method
+            </label>
+
+            <select
+              id="api-endpoint-method"
+              name="apiEndpointMethod"
+              value={selectedMethod}
+              onChange={(event) => setSelectedMethod(event.target.value)}
+              className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              {methodOptions.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
-        {/* Responsive endpoint table */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
-            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <div className="flex flex-col gap-1 border-t border-gray-100 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-gray-600" aria-live="polite">
+            Showing{" "}
+            <span className="font-semibold text-gray-900">
+              {filteredEndpoints.length}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-gray-900">
+              {endpoints.length}
+            </span>{" "}
+            endpoints
+          </p>
+
+          {hasActiveFilters && (
+            <p className="text-xs text-gray-500">
+              Filters are applied together.
+            </p>
+          )}
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="w-full min-w-[760px] divide-y divide-gray-200 text-left text-sm">
+            <thead className="bg-gray-50">
               <tr>
-                <th className="px-5 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-gray-600"
+                >
+                  Endpoint
+                </th>
+
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-gray-600"
+                >
                   Method
                 </th>
 
-                <th className="px-5 py-3 font-semibold">
-                  Endpoint Path
-                </th>
-
-                <th className="px-5 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-gray-600"
+                >
                   Source
                 </th>
 
-                <th className="px-5 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-gray-600"
+                >
                   Classification
-                </th>
-
-                <th className="px-5 py-3 font-semibold">
-                  Description
-                </th>
-
-                <th className="px-5 py-3 font-semibold">
-                  Inventory Status
                 </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-100">
-              {filteredEndpoints.map((endpoint) => (
-                <tr
-                  key={endpoint.id}
-                  className="transition hover:bg-gray-50"
-                >
-                  <td className="whitespace-nowrap px-5 py-4">
-                    <MethodBadge method={endpoint.method} />
-                  </td>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {filteredEndpoints.map((endpoint, index) => {
+                const path =
+                  endpoint.path ??
+                  endpoint.endpoint ??
+                  endpoint.url ??
+                  "—";
 
-                  <td className="whitespace-nowrap px-5 py-4">
-                    <code className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-800">
-                      {endpoint.path}
-                    </code>
-                  </td>
+                const method = String(
+                  endpoint.method ?? "N/A"
+                ).toUpperCase();
 
-                  <td className="whitespace-nowrap px-5 py-4">
-                    <SourceBadge source={endpoint.source} />
-                  </td>
+                const source =
+                  endpoint.source ??
+                  endpoint.discoverySource ??
+                  "Unknown";
 
-                  <td className="whitespace-nowrap px-5 py-4">
-                    <ClassificationBadge
-                      classification={endpoint.classification}
-                    />
-                  </td>
+                const classification =
+                  endpoint.classification ??
+                  endpoint.type ??
+                  "Unknown";
 
-                  <td className="max-w-xs px-5 py-4 text-gray-600">
-                    {endpoint.description}
-                  </td>
+                return (
+                  <tr
+                    key={`${method}-${path}-${index}`}
+                    className="transition hover:bg-gray-50"
+                  >
+                    <td className="max-w-[420px] break-all px-4 py-3 font-mono text-xs text-gray-800 sm:text-sm">
+                      {path}
+                    </td>
 
-                  <td className="whitespace-nowrap px-5 py-4 text-gray-600">
-                    {endpoint.lastSeen}
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-4 py-3">
+                      <MethodBadge method={method} />
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-600">
+                      {source}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <ClassificationBadge
+                        classification={classification}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filteredEndpoints.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
-                    <Search
-                      size={28}
-                      className="mx-auto mb-3 text-gray-400"
-                    />
+                  <td colSpan={4} className="px-4 py-12 text-center">
+                    <div className="mx-auto flex max-w-sm flex-col items-center">
+                      <Search
+                        size={24}
+                        className="mb-3 text-gray-400"
+                        aria-hidden="true"
+                      />
 
-                    <p className="font-medium text-gray-800">
-                      No endpoints found
-                    </p>
+                      <p className="font-medium text-gray-900">
+                        No endpoints found
+                      </p>
 
-                    <p className="mt-1 text-sm text-gray-500">
-                      Try another search or change your filters.
-                    </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Try changing your search or clearing the filters.
+                      </p>
+
+                      {hasActiveFilters && (
+                        <button
+                          type="button"
+                          onClick={clearFilters}
+                          className="mt-4 rounded-lg px-3 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          Clear all filters
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-
-        {/* Inventory result count */}
-        <div className="border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
-          Showing {filteredEndpoints.length} of{" "}
-          {mockApiEndpoints.length} endpoints
-        </div>
       </section>
-    </div>
+    </main>
+  );
+}
+
+function SummaryCard({ label, value }) {
+  return (
+    <article className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <p className="text-sm font-medium text-gray-500">
+        {label}
+      </p>
+
+      <p className="mt-2 text-2xl font-bold tracking-tight text-gray-900">
+        {value}
+      </p>
+    </article>
   );
 }

@@ -5,12 +5,14 @@ import { mockIncidents } from "../data/mockIncidents";
 import IncidentAlertGrid from "../components/ui/IncidentAlertGrid";
 import EndpointDataTable from "../components/ui/EndpointDataTable";
 import AttackDistributionChart from "../components/ui/AttackDistributionChart";
+import SystemLatencyWidget from "../components/ui/SystemLatencyWidget";
 
 export default function Dashboard() {
   const {
     transactions = [],
     connectionStatus = "disconnected",
     isMockMode = false,
+    latestLatencyMs = null,
   } = useOutletContext();
 
   const incidents = mockIncidents;
@@ -24,6 +26,12 @@ export default function Dashboard() {
     (incident) =>
       incident.severity?.toLowerCase() === "high"
   ).length;
+
+  const latencySource = isMockMode
+    ? "Demo data"
+    : latestLatencyMs !== null
+      ? "Backend telemetry"
+      : "";
 
   return (
     <section className="space-y-6">
@@ -73,6 +81,13 @@ export default function Dashboard() {
           </p>
         </article>
       </div>
+
+      {/* Day 15 — System Latency */}
+      <SystemLatencyWidget
+        latencyMs={latestLatencyMs}
+        isMock={isMockMode}
+        source={latencySource}
+      />
 
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />

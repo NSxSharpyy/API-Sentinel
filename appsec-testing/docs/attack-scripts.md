@@ -176,3 +176,72 @@ Run the tests:
 pytest -v tests/test_day9_privesc_attack.py
 pytest -q
 ```
+
+---
+
+# Day 17 — High-Concurrency Bot Traffic Generator
+
+## Purpose and authorized scope
+
+`bot_traffic_generator.py` generates bounded concurrent traffic against
+the local API-Sentinel mock services to test resource-consumption
+controls and authentication defenses. Targets must use localhost or
+127.0.0.1 on service port 5001 or 5003.
+
+## Flood mode
+
+Flood the authenticated orders endpoint:
+
+```bash
+python scripts/attacks/bot_traffic_generator.py \
+  --mode flood --target orders --concurrency 10 --duration 5
+```
+
+Flood the login endpoint using deliberately invalid credentials:
+
+```bash
+python scripts/attacks/bot_traffic_generator.py \
+  --mode flood --target login --concurrency 10 --duration 5
+```
+
+## Credential-stuffing simulation
+
+Use a deterministic mixture of seeded usernames, fabricated usernames,
+the known lab password, and incorrect password guesses:
+
+```bash
+python scripts/attacks/bot_traffic_generator.py \
+  --mode creds_stuff --concurrency 5 \
+  --attempts-per-worker 10 --seed 1701
+```
+
+The default maximums are 50 concurrent workers, 60 seconds per flood,
+and 100 attempts per worker in credential-stuffing mode.
+
+## Evidence
+
+Records are appended to `logs/bot_traffic.jsonl`. Each record includes
+the run ID, attack mode, worker ID, timestamp, endpoint, HTTP status,
+duration, success flag, and request error where applicable. Credential
+attempt records also include the username.
+
+The `success` field indicates an HTTP 200 response; interpret it in
+combination with the mode and endpoint. Review connection errors and
+non-200 responses separately when measuring service resilience.
+
+## Automated tests
+
+Run the Day 17 tests:
+
+```bash
+pytest -v tests/test_day17_bot_traffic.py
+```
+
+Run the complete regression suite:
+
+```bash
+pytest -q
+```
+
+Use only the local mock stack. Preserve existing evidence and do not
+run high-volume tests against systems without explicit authorization.

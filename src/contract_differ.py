@@ -1,4 +1,3 @@
-
 class ContractDiffEngine:
     """Compare dynamically generated live API schemas
     against official OpenAPI contract schemas.
@@ -13,16 +12,19 @@ class ContractDiffEngine:
         """Return a set of (HTTP method, path) pairs."""
 
         routes = set()
+
         paths = spec.get("paths", {})
 
         if not isinstance(paths, dict):
             return routes
 
         for path, path_item in paths.items():
+
             if not isinstance(path_item, dict):
                 continue
 
             for method in path_item:
+
                 if method.lower() in {
                     "get",
                     "post",
@@ -33,7 +35,12 @@ class ContractDiffEngine:
                     "options",
                     "trace",
                 }:
-                    routes.add((method.upper(), path))
+                    routes.add(
+                        (
+                            method.upper(),
+                            path,
+                        )
+                    )
 
         return routes
 
@@ -42,16 +49,19 @@ class ContractDiffEngine:
         """Return routes marked as deprecated in the official contract."""
 
         zombie_routes = set()
+
         paths = spec.get("paths", {})
 
         if not isinstance(paths, dict):
             return zombie_routes
 
         for path, path_item in paths.items():
+
             if not isinstance(path_item, dict):
                 continue
 
             for method, details in path_item.items():
+
                 if method.lower() not in {
                     "get",
                     "post",
@@ -68,35 +78,64 @@ class ContractDiffEngine:
                     continue
 
                 if details.get("deprecated") is True:
-                    zombie_routes.add((method.upper(), path))
+                    zombie_routes.add(
+                        (
+                            method.upper(),
+                            path,
+                        )
+                    )
 
         return zombie_routes
 
     def diff_routes(self):
         """Compare official and live API routes."""
 
-        official_routes = self._extract_routes(self.official_spec)
-        live_routes = self._extract_routes(self.live_spec)
+        official_routes = self._extract_routes(
+            self.official_spec
+        )
 
-        live_only = sorted(live_routes - official_routes)
-        official_only = sorted(official_routes - live_routes)
-        common = sorted(official_routes & live_routes)
+        live_routes = self._extract_routes(
+            self.live_spec
+        )
+
+        live_only = sorted(
+            live_routes - official_routes
+        )
+
+        official_only = sorted(
+            official_routes - live_routes
+        )
+
+        common = sorted(
+            official_routes & live_routes
+        )
 
         zombie_routes = sorted(
-            self._find_zombie_routes(self.official_spec) & live_routes
+            self._find_zombie_routes(
+                self.official_spec
+            ) & live_routes
         )
 
         return {
             "live_only": [
-                {"method": method, "path": path}
+                {
+                    "method": method,
+                    "path": path,
+                }
                 for method, path in live_only
             ],
             "official_only": [
-                {"method": method, "path": path}
+                {
+                    "method": method,
+                    "path": path,
+                }
                 for method, path in official_only
             ],
             "common": [
-                {"method": method, "path": path}
+                {
+                    "method": method,
+                    "path": path,
+                }
                 for method, path in common
             ],
             "zombie": [
@@ -117,33 +156,52 @@ class ContractDiffEngine:
         return {
             "summary": {
                 "official_routes": len(
-                    self._extract_routes(self.official_spec)
+                    self._extract_routes(
+                        self.official_spec
+                    )
                 ),
                 "live_routes": len(
-                    self._extract_routes(self.live_spec)
+                    self._extract_routes(
+                        self.live_spec
+                    )
                 ),
-                "live_only": len(route_diff["live_only"]),
-                "official_only": len(route_diff["official_only"]),
-                "common": len(route_diff["common"]),
-                "zombie": len(route_diff["zombie"]),
+                "live_only": len(
+                    route_diff["live_only"]
+                ),
+                "official_only": len(
+                    route_diff["official_only"]
+                ),
+                "common": len(
+                    route_diff["common"]
+                ),
+                "zombie": len(
+                    route_diff["zombie"]
+                ),
             },
             "differences": route_diff,
         }
 
-def compare_route_to_contract(observed_route, official_contract):
+
+def compare_route_to_contract(route, official_contract):
     """
-    Compare an observed API route against the official OpenAPI contract.
+    Classify an observed runtime route against an
+    official OpenAPI contract.
 
     Returns:
-        SHADOW_API  -> route is not declared in the contract
-        ZOMBIE_API  -> route is declared but deprecated
-        OFFICIAL_API -> route is declared and active
+        OFFICIAL_API
+        SHADOW_API
+        ZOMBIE_API
     """
 
-    if not isinstance(observed_route, str):
+    if not isinstance(route, str):
         return "SHADOW_API"
 
     if not isinstance(official_contract, dict):
+        return "SHADOW_API"
+
+    normalized_route = route.strip()
+
+    if not normalized_route:
         return "SHADOW_API"
 
     paths = official_contract.get("paths", {})
@@ -151,38 +209,34 @@ def compare_route_to_contract(observed_route, official_contract):
     if not isinstance(paths, dict):
         return "SHADOW_API"
 
-    # Route is completely undocumented.
-    if observed_route not in paths:
+    # Check whether the route exists in the official contract.
+    if normalized_route not in paths:
         return "SHADOW_API"
 
-    endpoint_details = paths[observed_route]
+    path_item = paths.get(normalized_route)
 
-    if not isinstance(endpoint_details, dict):
+    if not isinstance(path_item, dict):
         return "SHADOW_API"
 
-    # OpenAPI stores HTTP method details under the route.
-    http_methods = {
-        "get",
-        "post",
-        "put",
-        "patch",
-        "delete",
-        "head",
-        "options",
-        "trace",
-    }
+    # Check all HTTP methods for this route.
+    for method, details in path_item.items():
 
-    for method, details in endpoint_details.items():
-
-        if method.lower() not in http_methods:
+        if method.lower() not in {
+            "get",
+            "post",
+            "put",
+            "patch",
+            "delete",
+            "head",
+            "options",
+            "trace",
+        }:
             continue
 
         if not isinstance(details, dict):
             continue
 
-        # Deprecated endpoint receiving traffic = Zombie API.
         if details.get("deprecated") is True:
             return "ZOMBIE_API"
 
-    # Route exists and is not deprecated.
     return "OFFICIAL_API"

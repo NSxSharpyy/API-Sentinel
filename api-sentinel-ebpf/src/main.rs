@@ -7,7 +7,7 @@ use api_sentinel_ebpf_common::{
     NetworkEvent,
 };
 use aya::{
-    maps::{HashMap, RingBuf},
+    maps::{HashMap, PerCpuArray, RingBuf},
     programs::{KProbe, SchedClassifier, TcAttachType, TracePoint, tc},
 };
 use log::{debug, warn};
@@ -58,6 +58,13 @@ fn ensure_clsact(interface: &str) -> anyhow::Result<()> {
     tc::qdisc_add_clsact(interface)?;
     println!("Added clsact to {interface}");
     Ok(())
+}
+
+fn read_total_drops(
+    drops_map: &PerCpuArray<&mut aya::maps::MapData, u64>,
+) -> anyhow::Result<u64> {
+    let values = drops_map.get(&0, 0)?;
+    Ok(values.iter().copied().fold(0u64, u64::wrapping_add))
 }
 
 fn print_event(event: &NetworkEvent) {
@@ -199,6 +206,11 @@ async fn main() -> anyhow::Result<()> {
     let mut ring_buf =
         tokio::io::unix::AsyncFd::with_interest(ring_buf, tokio::io::Interest::READABLE)?;
 
+    let drops_map = ebpf
+        .map_mut("EVENT_DROPS")
+        .context("EVENT_DROPS per-CPU map not found")?;
+    let drops_map = PerCpuArray::<_, u64>::try_from(drops_map)?;
+
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
 
@@ -234,6 +246,11 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 guard.clear_ready();
+
+                match read_total_drops(&drops_map) {
+                    Ok(total) => println!("METRIC ring_buffer_dropped_events={total}"),
+                    Err(error) => warn!("Could not read EVENT_DROPS counter: {error}"),
+                }
             }
         }
     }

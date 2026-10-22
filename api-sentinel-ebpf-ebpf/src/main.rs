@@ -6,7 +6,7 @@ use aya_ebpf::{
     cty::c_void,
     helpers::{bpf_get_current_pid_tgid, generated::bpf_skb_load_bytes},
     macros::{classifier, kprobe, map, tracepoint},
-    maps::{HashMap, RingBuf},
+    maps::{HashMap, PerCpuArray, RingBuf},
     programs::{ProbeContext, TcContext, TracePointContext},
 };
 
@@ -27,6 +27,19 @@ static CLIENT_IDENTIFIERS: HashMap<u32, u32> = HashMap::with_max_entries(1024, 0
 // Ring buffer: kernel -> userspace network events.
 #[map]
 static EVENTS: RingBuf = RingBuf::with_byte_size(1 << 24, 0);
+
+/* Per-CPU counter for events that could not be submitted to EVENTS. */
+#[map]
+static EVENT_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[inline(always)]
+fn count_event_drop() {
+    if let Some(counter) = EVENT_DROPS.get_ptr_mut(0) {
+        unsafe {
+            *counter = (*counter).wrapping_add(1);
+        }
+    }
+}
 
 // Traffic direction values:
 // 0 = Unknown / Other
@@ -116,7 +129,9 @@ fn try_api_sentinel_ebpf(ctx: TracePointContext) -> Result<u32, u32> {
 
     // Send the structured event to userspace.
     // The event may be dropped if the ring buffer is full.
-    let _ = EVENTS.output::<NetworkEvent>(&event, 0);
+    if EVENTS.output::<NetworkEvent>(&event, 0).is_err() {
+        count_event_drop();
+    }
 
     // TCP_CLOSE = state 7.
     if new_state == 7 {
@@ -347,7 +362,9 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
         uri_prefix: uri,
     };
 
-    let _ = EVENTS.output::<NetworkEvent>(&event, 0);
+    if EVENTS.output::<NetworkEvent>(&event, 0).is_err() {
+        count_event_drop();
+    }
 
     // Passive inspection: let the packet continue.
     TC_ACT_PIPE

@@ -146,9 +146,7 @@ class TestSchemaAuditReport(unittest.TestCase):
                 1,
             )
 
-        def test_real_contract_diff_integration(self):
-            from src.contract_differ import ContractDiffEngine
-
+    def test_real_contract_diff_integration(self):
         official_spec = {
             "openapi": "3.0.0",
             "paths": {
@@ -206,6 +204,7 @@ class TestSchemaAuditReport(unittest.TestCase):
             report["findings"]["zombie_apis"][0]["path"],
             "/old-api",
         )
+
 
 if __name__ == "__main__":
     unittest.main()

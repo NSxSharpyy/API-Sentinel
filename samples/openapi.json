@@ -8,21 +8,47 @@
     "/users": {
       "get": {
         "summary": "Get all users",
-        "operationId": "getUsers"
+        "operationId": "getUsers",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       },
       "post": {
         "summary": "Create a user",
-        "operationId": "createUser"
+        "operationId": "createUser",
+        "responses": {
+          "201": {
+            "description": "User created successfully"
+          }
+        }
       }
     },
     "/users/{id}": {
       "get": {
         "summary": "Get user by ID",
-        "operationId": "getUserById"
+        "operationId": "getUserById",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
       },
       "delete": {
         "summary": "Delete a user",
-        "operationId": "deleteUser"
+        "operationId": "deleteUser",
+        "responses": {
+          "204": {
+            "description": "User deleted successfully"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
       }
     }
   }

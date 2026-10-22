@@ -4,10 +4,48 @@ import { useCallback, useEffect, useState } from "react";
 import { createTelemetryClient } from "../services/websocketClient";
 import { telemetryConfig } from "../config/telemetry";
 
-function normalizeTransaction(message) {
+function getTelemetryPayload(message) {
   const candidate = message?.data ?? message;
 
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+  if (
+    !candidate ||
+    typeof candidate !== "object" ||
+    Array.isArray(candidate)
+  ) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function normalizeLatency(message) {
+  const candidate = getTelemetryPayload(message);
+
+  if (!candidate) {
+    return null;
+  }
+
+  const rawLatency = candidate.latencyMs ?? candidate.latency_ms;
+
+  if (
+    rawLatency === null ||
+    rawLatency === undefined ||
+    rawLatency === ""
+  ) {
+    return null;
+  }
+
+  const latency = Number(rawLatency);
+
+  return Number.isFinite(latency) && latency >= 0
+    ? latency
+    : null;
+}
+
+function normalizeTransaction(message) {
+  const candidate = getTelemetryPayload(message);
+
+  if (!candidate) {
     return null;
   }
 
@@ -32,18 +70,12 @@ function normalizeTransaction(message) {
   const rawStatusCode =
     candidate.statusCode ?? candidate.status_code ?? null;
 
-  const rawLatency =
-    candidate.latencyMs ?? candidate.latency_ms ?? null;
-
   const parsedStatusCode =
     rawStatusCode === null || rawStatusCode === ""
       ? null
       : Number(rawStatusCode);
 
-  const parsedLatency =
-    rawLatency === null || rawLatency === ""
-      ? null
-      : Number(rawLatency);
+  const latencyMs = normalizeLatency(message);
 
   const timestamp =
     typeof candidate.timestamp === "string" ||
@@ -62,12 +94,7 @@ function normalizeTransaction(message) {
       Number.isFinite(parsedStatusCode)
         ? parsedStatusCode
         : null,
-    latencyMs:
-      parsedLatency !== null &&
-      Number.isFinite(parsedLatency) &&
-      parsedLatency >= 0
-        ? parsedLatency
-        : null,
+    latencyMs,
     timestamp,
   };
 }
@@ -77,6 +104,7 @@ export function useTelemetry() {
     useState("disconnected");
 
   const [latestMessage, setLatestMessage] = useState(null);
+  const [latestLatencyMs, setLatestLatencyMs] = useState(null);
   const [lastError, setLastError] = useState("");
   const [transactions, setTransactions] = useState([]);
 
@@ -102,6 +130,9 @@ export function useTelemetry() {
         if (!active) return;
 
         setLatestMessage(message);
+
+        // Keep only validated latency values from received telemetry.
+        setLatestLatencyMs(normalizeLatency(message));
 
         const transaction = normalizeTransaction(message);
 
@@ -142,6 +173,7 @@ export function useTelemetry() {
   return {
     connectionStatus,
     latestMessage,
+    latestLatencyMs,
     lastError,
     isMockMode: telemetryConfig.mode === "mock",
     transactions,

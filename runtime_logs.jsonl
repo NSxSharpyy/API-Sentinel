@@ -1,0 +1,5 @@
+{"method": "GET", "path": "/users"}
+{"method": "POST", "path": "/users"}
+{"method": "DELETE", "path": "/users/42"}
+{"method": "GET", "path": "/internal/debug"}
+{"method": "GET", "path": "/users/123"}

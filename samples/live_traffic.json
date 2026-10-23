@@ -1,0 +1,18 @@
+[
+  {
+    "method": "GET",
+    "path": "/users"
+  },
+  {
+    "method": "GET",
+    "path": "/orders"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/debug"
+  },
+  {
+    "method": "GET",
+    "path": "/old-api"
+  }
+]

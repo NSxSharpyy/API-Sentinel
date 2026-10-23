@@ -1,4 +1,5 @@
 
+import { useCallback, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 
 import { mockIncidents } from "../data/mockIncidents";
@@ -6,6 +7,8 @@ import IncidentAlertGrid from "../components/ui/IncidentAlertGrid";
 import EndpointDataTable from "../components/ui/EndpointDataTable";
 import AttackDistributionChart from "../components/ui/AttackDistributionChart";
 import SystemLatencyWidget from "../components/ui/SystemLatencyWidget";
+import AlertResponsivenessMonitor from "../components/ui/AlertResponsivenessMonitor";
+import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
 
 export default function Dashboard() {
   const {
@@ -15,6 +18,10 @@ export default function Dashboard() {
     latestLatencyMs = null,
   } = useOutletContext();
 
+  const [renderMeasurement, setRenderMeasurement] =
+    useState(null);
+
+  // These are existing demo incidents, not live telemetry alerts.
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
@@ -32,6 +39,44 @@ export default function Dashboard() {
     : latestLatencyMs !== null
       ? "Backend telemetry"
       : "";
+
+  // Transactions are stored newest first by useTelemetry.
+  const latestEvent = transactions[0] ?? null;
+
+  const handleEventRendered = useCallback(
+    (eventId, receivedAtMs, latencyMs, source) => {
+      setRenderMeasurement({
+        eventId,
+        receivedAtMs,
+        latencyMs,
+        source,
+      });
+    },
+    []
+  );
+
+  // Never show a measurement from an older event as if it
+  // belonged to the latest event.
+  const measurementMatchesLatestEvent =
+    latestEvent !== null &&
+    latestEvent.receivedAtMs !== null &&
+    renderMeasurement?.eventId === latestEvent.id &&
+    renderMeasurement?.receivedAtMs ===
+      latestEvent.receivedAtMs;
+
+  const displayedRenderLatency =
+    measurementMatchesLatestEvent
+      ? renderMeasurement.latencyMs
+      : null;
+
+  const measurementSource =
+    measurementMatchesLatestEvent
+      ? renderMeasurement.source === "mock"
+        ? "Mock telemetry: receipt-to-render measurement"
+        : "Live telemetry: browser receipt-to-render measurement"
+      : latestEvent
+        ? "Measuring the latest telemetry event"
+        : "Waiting for telemetry timing";
 
   return (
     <section className="space-y-6">
@@ -89,6 +134,18 @@ export default function Dashboard() {
         source={latencySource}
       />
 
+      {/* Day 16 — Receipt-to-render measurement */}
+      <AlertResponsivenessMonitor
+        latestLatencyMs={displayedRenderLatency}
+        measurementSource={measurementSource}
+      />
+
+      {/* Day 16 — Render the same event being measured */}
+      <TelemetryRenderProbe
+        event={latestEvent}
+        onRendered={handleEventRendered}
+      />
+
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />
 
@@ -113,7 +170,7 @@ export default function Dashboard() {
         />
       </section>
 
-      {/* Recent Security Alerts */}
+      {/* Existing Recent Security Alerts */}
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">

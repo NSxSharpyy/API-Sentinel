@@ -90,7 +90,6 @@ export function createTelemetryClient({
       return;
     }
 
-    // Avoid opening another socket while one is connecting or open.
     if (
       socket &&
       (socket.readyState === WebSocket.CONNECTING ||
@@ -127,9 +126,16 @@ export function createTelemetryClient({
     nextSocket.addEventListener("message", (event) => {
       if (closed || socket !== nextSocket) return;
 
+      // Record receipt time before parsing and React state updates.
+      const receivedAtMs = performance.now();
+
       try {
         const message = JSON.parse(event.data);
-        onMessage?.(message);
+
+        onMessage?.(message, {
+          receivedAtMs,
+          source: "live",
+        });
       } catch {
         onError?.(
           "Received a message that is not valid JSON."
@@ -141,8 +147,6 @@ export function createTelemetryClient({
       if (closed || socket !== nextSocket) return;
 
       onError?.("WebSocket connection error.");
-
-      // The close event is responsible for reconnecting.
     });
 
     nextSocket.addEventListener("close", () => {
@@ -154,7 +158,6 @@ export function createTelemetryClient({
   }
 
   function connect() {
-    // Prevent duplicate intervals or WebSocket connections.
     if (!closed) return;
 
     closed = false;
@@ -170,12 +173,20 @@ export function createTelemetryClient({
 
         const event = mockEvents[index % mockEvents.length];
 
-        onMessage?.({
+        const message = {
           ...event,
           data: {
             ...event.data,
             timestamp: new Date().toISOString(),
           },
+        };
+
+        // Use the same browser clock for the timing baseline.
+        const receivedAtMs = performance.now();
+
+        onMessage?.(message, {
+          receivedAtMs,
+          source: "mock",
         });
 
         index += 1;
@@ -208,7 +219,6 @@ export function createTelemetryClient({
       const currentSocket = socket;
       socket = null;
 
-      // Close both CONNECTING and OPEN sockets.
       if (
         currentSocket.readyState === WebSocket.CONNECTING ||
         currentSocket.readyState === WebSocket.OPEN

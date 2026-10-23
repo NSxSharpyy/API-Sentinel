@@ -126,12 +126,15 @@ export function useTelemetry() {
         }
       },
 
-      onMessage: (message) => {
+      onMessage: (message, metadata = {}) => {
         if (!active) return;
+
+        const receivedAtMs = metadata.receivedAtMs;
+        const telemetrySource =
+          metadata.source === "mock" ? "mock" : "live";
 
         setLatestMessage(message);
 
-        // Keep only validated latency values from received telemetry.
         setLatestLatencyMs(normalizeLatency(message));
 
         const transaction = normalizeTransaction(message);
@@ -143,11 +146,22 @@ export function useTelemetry() {
           return;
         }
 
+        // Preserve the receipt time and source with this event.
+        const timedTransaction = {
+          ...transaction,
+          receivedAtMs:
+            typeof receivedAtMs === "number" &&
+            Number.isFinite(receivedAtMs)
+              ? receivedAtMs
+              : null,
+          telemetrySource,
+        };
+
         setLastError("");
 
-        // Add newest transactions first and retain at most 100.
+        // Newest transactions first; retain at most 100.
         setTransactions((previous) =>
-          [transaction, ...previous].slice(0, 100)
+          [timedTransaction, ...previous].slice(0, 100)
         );
       },
 

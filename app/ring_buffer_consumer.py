@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -36,6 +37,7 @@ async def consume_events(
             logger.warning("Rejected an invalid packet event")
             continue
         try:
+            packet._queue_enqueued_at_ns = time.perf_counter_ns()
             queues.raw_packet_queue.put_nowait(packet)
         except asyncio.QueueFull:
             queues.dropped_packet_count += 1

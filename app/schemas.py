@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class RawPacketChunk(BaseModel):
@@ -20,6 +20,7 @@ class RawPacketChunk(BaseModel):
     protocol: Optional[str] = None
     sequence_number: Optional[int] = Field(default=None, ge=0)
     tcp_flags: Optional[list[str]] = None
+    _queue_enqueued_at_ns: int | None = PrivateAttr(default=None)
 
 
 class HeaderData(BaseModel):

@@ -162,6 +162,12 @@ async def packet_worker(
             except asyncio.TimeoutError:
                 continue
 
+            queued_at_ns = packet._queue_enqueued_at_ns
+            if queued_at_ns is not None:
+                queues.raw_packet_queue_wait_metrics.record(
+                    time.perf_counter_ns() - queued_at_ns
+                )
+
             try:
                 protocol = (packet.protocol or "TCP").upper()
 

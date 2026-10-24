@@ -176,6 +176,9 @@ def test_metrics_expose_database_and_alert_bus_counts(api_client):
     assert body["alerts"]["open_incidents"] == 1
     assert body["alerts"]["published_count"] == 0
     assert "accepted_packet_count" in body["ingestion"]
+    packet_wait = body["ingestion"]["raw_packet_queue_wait"]
+    assert packet_wait["queue_wait_count"] >= 0
+    assert "p95_queue_wait_ms" in packet_wait
     assert "persisted_count" in body["persistence"]
     assert "queue_wait_count" in body["persistence"]
     assert "queue_wait_sample_count" in body["persistence"]

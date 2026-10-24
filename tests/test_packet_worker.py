@@ -1,10 +1,12 @@
 import asyncio
+import time
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
 import pytest
 
 import app.packet_worker as worker_module
+from app import queues
 from app.http_reassembly import HTTPParseError
 from app.packet_worker import build_connection_id
 from app.schemas import RawPacketChunk
@@ -402,3 +404,44 @@ def test_worker_counts_tcp_reassembly_buffer_overflows(
             await stop_worker(task, stop_event)
 
     asyncio.run(run_test())
+
+
+def test_worker_records_raw_packet_queue_wait(packet_queue, monkeypatch):
+    async def run_test():
+        metrics = queues.QueueWaitMetrics()
+        monkeypatch.setattr(queues, "raw_packet_queue_wait_metrics", metrics)
+
+        # UDP is consumed and skipped by the existing worker. It still must
+        # contribute a queue-wait observation before protocol handling.
+        packet = make_packet(protocol="UDP")
+        packet._queue_enqueued_at_ns = time.perf_counter_ns() - 2_000_000
+        await packet_queue.put(packet)
+
+        pipeline = Mock()
+        task, stop_event = start_worker(packet_queue, pipeline)
+        try:
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+            snapshot = metrics.snapshot()
+            assert snapshot["queue_wait_count"] == 1
+            assert snapshot["queue_wait_sample_count"] == 1
+            assert snapshot["last_queue_wait_ms"] > 0
+            assert snapshot["p95_queue_wait_ms"] > 0
+            pipeline.feed.assert_not_called()
+        finally:
+            await stop_worker(task, stop_event)
+
+    asyncio.run(run_test())
+
+
+def test_raw_packet_queue_wait_metrics_keep_bounded_samples():
+    metrics = queues.QueueWaitMetrics(sample_capacity=2)
+    metrics.record(1_000_000)
+    metrics.record(2_000_000)
+    metrics.record(3_000_000)
+
+    snapshot = metrics.snapshot()
+    assert snapshot["queue_wait_count"] == 3
+    assert snapshot["queue_wait_sample_count"] == 2
+    assert snapshot["average_queue_wait_ms"] == pytest.approx(2.0)
+    assert snapshot["max_queue_wait_ms"] == pytest.approx(3.0)
+    assert snapshot["p95_queue_wait_ms"] == pytest.approx(3.0)

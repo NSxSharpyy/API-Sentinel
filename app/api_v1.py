@@ -175,6 +175,7 @@ def get_metrics(request: Request):
             "raw_packet_queue": raw_packet_queue.qsize(),
             "header_queue": header_queue.qsize(),
             "metadata_queue": metadata_queue.qsize(),
+            "raw_packet_queue_wait": queues.raw_packet_queue_wait_metrics.snapshot(),
             "accepted_packet_count": queues.accepted_packet_count,
             "accepted_tcp_event_count": queues.accepted_tcp_event_count,
             "accepted_udp_event_count": queues.accepted_udp_event_count,

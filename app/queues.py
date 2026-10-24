@@ -1,7 +1,54 @@
 
 import asyncio
+import math
+from collections import deque
 
 from app.schemas import HeaderData, PacketMetadata, RawPacketChunk
+
+class QueueWaitMetrics:
+    """Track enqueue-to-dequeue latency with bounded recent samples."""
+
+    def __init__(self, sample_capacity: int = 10_000) -> None:
+        if sample_capacity <= 0:
+            raise ValueError("sample_capacity must be positive")
+        self.queue_wait_count = 0
+        self.total_queue_wait_ns = 0
+        self.last_queue_wait_ms = 0.0
+        self.max_queue_wait_ms = 0.0
+        self._samples_ns: deque[int] = deque(maxlen=sample_capacity)
+
+    def record(self, elapsed_ns: int) -> None:
+        """Record one wait duration in nanoseconds."""
+        elapsed_ns = max(0, elapsed_ns)
+        elapsed_ms = elapsed_ns / 1_000_000
+        self.queue_wait_count += 1
+        self.total_queue_wait_ns += elapsed_ns
+        self.last_queue_wait_ms = elapsed_ms
+        self.max_queue_wait_ms = max(self.max_queue_wait_ms, elapsed_ms)
+        self._samples_ns.append(elapsed_ns)
+
+    def snapshot(self) -> dict[str, int | float]:
+        """Return lifetime counters and recent-window p95 latency."""
+        sample_count = len(self._samples_ns)
+        p95_ms = 0.0
+        if sample_count:
+            ordered = sorted(self._samples_ns)
+            index = max(0, math.ceil(0.95 * sample_count) - 1)
+            p95_ms = ordered[index] / 1_000_000
+
+        average_ms = (
+            self.total_queue_wait_ns / self.queue_wait_count / 1_000_000
+            if self.queue_wait_count else 0.0
+        )
+        return {
+            "queue_wait_count": self.queue_wait_count,
+            "queue_wait_sample_count": sample_count,
+            "last_queue_wait_ms": self.last_queue_wait_ms,
+            "average_queue_wait_ms": average_ms,
+            "max_queue_wait_ms": self.max_queue_wait_ms,
+            "p95_queue_wait_ms": p95_ms,
+        }
+
 
 QUEUE_MAX_SIZE = 10000
 BLOCK_VERDICT_QUEUE_MAX_SIZE = 1024
@@ -21,6 +68,8 @@ header_queue: asyncio.Queue[HeaderData] = asyncio.Queue(
 metadata_queue: asyncio.Queue[PacketMetadata] = asyncio.Queue(
     maxsize=QUEUE_MAX_SIZE
 )
+
+raw_packet_queue_wait_metrics = QueueWaitMetrics()
 
 # Packet-event counters
 dropped_packet_count = 0

@@ -58,6 +58,7 @@ def test_consumer_accepts_valid_and_rejects_invalid_events():
         raw_packet_queue.task_done()
 
         assert packet.packet_id == "pkt-day2-001"
+        assert isinstance(packet._queue_enqueued_at_ns, int)
         assert packet.destination_port == 80
         assert packet.payload.startswith(b"GET")
 

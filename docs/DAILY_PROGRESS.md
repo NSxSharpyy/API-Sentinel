@@ -32,7 +32,7 @@ actual completion dates.
 | 12 | Oct 19 | Sliding-window alert deduplication | Verified in tests | Alert bus suppresses repeated fingerprints within a 60-second default sliding window; expiry, distinct patterns, bounded cache and suppression metrics tested. Database incidents remain persisted. |
 | 13 | Oct 20 | Standardized multi-module incident schema | Partial | Shared SecurityIncidentSchema is used across the implemented BOLA, persistence, alert-event and API paths. Other planned detection modules still need verification. |
 | 14 | Oct 21 | Ingestion documentation/OpenAPI and Phase 2 freeze | Partial | API documentation, route references and OpenAPI contract test are committed in b5be48f. Targeted API/OpenAPI tests: 5 passed; full suite: 167 passed. A separate Phase 2 acceptance review is still pending. |
-| 15 | Oct 22 | Queue latency audit and sub-millisecond serialization | Partial | Two independent serialization benchmark runs showed aggregate p95 below 1 ms across four synthetic body sizes. Persistence queue enqueue-to-dequeue wait and bounded-queue rejection were measured in a preloaded synthetic burst; real-database, sustained-load and raw-packet queue validation remain outstanding. See docs/DAY15_SERIALIZATION_BENCHMARK.md and docs/DAY15_QUEUE_AUDIT.md. |
+| 15 | Oct 22 | Queue latency audit and sub-millisecond serialization | Partial | Two serialization benchmark runs showed aggregate p95 below 1 ms across four synthetic body sizes. Persistence queue wait and bounded-queue rejection were measured with a synthetic store. Raw packet queue wait was measured in three preloaded-burst runs; p95 was 1.188, 0.997 and 0.973 ms. Real-database, sustained-load and overflow validation remain outstanding. See the three Day 15 audit reports in docs/. |
 | 16 | Oct 23 | End-to-end BOLA detection telemetry | Verified for controlled lab scenario | Live eBPF capture, HTTP processing, persistence, BOLA incident creation, redaction checks and legitimate-access control were demonstrated. Observed capture-to-detection latency: 49.223 ms in one run. |
 | 17 | Oct 24 | Kernel blocklist synchronization | Partial — core path verified | Map creation, Python writer, loopback verdict receiver, application worker, live block/unblock, and cleanup were tested. Actual upstream heuristics/policy integration and packet-drop enforcement remain outstanding. |
 
@@ -48,7 +48,7 @@ actual completion dates.
 
 - Earlier full suite after receiver integration: 140 passed, 1 Starlette deprecation warning.
 - Historical full suite after Days 10–12 work: 164 passed, 1 Starlette deprecation warning in 8.01 seconds.
-- Latest full suite on Oct 25: 168 passed, 1 Starlette deprecation warning in 8.05 seconds.
+- Latest full suite on Oct 25: 170 passed, 1 Starlette deprecation warning in 8.64 seconds.
 - Day 15 serialization benchmark: two independent runs, each with 300 warm-up calls and 5 repeats of 2,000 calls per payload size. Aggregate p95 values were 5.336/5.302 us (0-byte body), 8.870/9.162 us (1 KiB), 33.567/33.191 us (8 KiB), and 127.214/157.764 us (32 KiB). The benchmark measures serialization only.
 - Latest focused API/OpenAPI contract tests: 5 passed, 1 Starlette deprecation warning in 2.64 seconds.
 - Day 11 API tests: 4 passed; exercised endpoint pagination, alert filters/pagination, invalid query bounds, and metrics with an isolated SQLite database.
@@ -61,7 +61,7 @@ actual completion dates.
 ## Outstanding priorities
 
 1. Day 14: conduct and record the Phase 2 acceptance review; documentation and OpenAPI contract tests are now evidenced, but the overall freeze is not yet declared complete.
-2. Day 15: validate persistence queue wait with a real database, measure raw packet queue wait, and test sustained producer-consumer load. Synthetic preloaded-burst results are documented, but overall Day 15 remains partial.
+2. Day 15: validate persistence queue timing with a real database, test sustained producer-consumer load, and measure raw-packet queue overflow behavior. Current queue results are synthetic preloaded bursts, so overall Day 15 remains partial.
 3. Day 13: verify schema compatibility with any additional planned detection modules not covered by the current tested path.
 4. Connect the actual heuristics/policy service to BlocklistVerdictSender.
 5. Keep packet-drop enforcement disabled until a compatible enforcement program is separately implemented and tested.

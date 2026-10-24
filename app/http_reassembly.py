@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 _TOKEN_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
@@ -28,6 +29,7 @@ class HTTPMessage:
     status_code: int | None = None
     reason_phrase: str | None = None
     connection_id: str | None = None
+    captured_at: datetime | None = None
 
 
 class HTTPParseError(ValueError):
@@ -180,6 +182,7 @@ class HTTPStreamParser:
             raise ValueError("max_body_bytes cannot be negative")
 
         self.buffer = bytearray()
+        self._timestamp_spans: list[tuple[int, datetime | None]] = []
         self.max_header_bytes = max_header_bytes
         self.max_body_bytes = max_body_bytes
         self.pending_head_responses = 0
@@ -195,19 +198,66 @@ class HTTPStreamParser:
     ) -> None:
         """Clear malformed buffered data and preserve completed messages."""
         self.buffer.clear()
+        self._timestamp_spans.clear()
         raise HTTPParseError(message, messages)
 
-    def feed(self, data: bytes) -> list[HTTPMessage]:
+    def _append_timestamp_span(
+        self,
+        length: int,
+        captured_at: datetime | None,
+    ) -> None:
+        """Track capture times for bytes appended to the parser buffer."""
+        if length <= 0:
+            return
+        if (
+            self._timestamp_spans
+            and self._timestamp_spans[-1][1] == captured_at
+        ):
+            previous_length, _ = self._timestamp_spans[-1]
+            self._timestamp_spans[-1] = (
+                previous_length + length,
+                captured_at,
+            )
+        else:
+            self._timestamp_spans.append((length, captured_at))
+
+    def _timestamp_at_start(self) -> datetime | None:
+        """Return the capture time of the first buffered byte."""
+        if not self._timestamp_spans:
+            return None
+        return self._timestamp_spans[0][1]
+
+    def _consume_timestamp_bytes(self, length: int) -> None:
+        """Consume timestamp metadata alongside bytes removed from the buffer."""
+        while length > 0 and self._timestamp_spans:
+            span_length, captured_at = self._timestamp_spans[0]
+            consumed = min(length, span_length)
+            length -= consumed
+            if consumed == span_length:
+                self._timestamp_spans.pop(0)
+            else:
+                self._timestamp_spans[0] = (
+                    span_length - consumed,
+                    captured_at,
+                )
+
+    def feed(
+        self,
+        data: bytes,
+        captured_at: datetime | None = None,
+    ) -> list[HTTPMessage]:
         """Buffer bytes and return all complete HTTP messages."""
         if not isinstance(data, bytes):
             raise TypeError("data must be bytes")
 
         self.buffer.extend(data)
+        self._append_timestamp_span(len(data), captured_at)
         messages: list[HTTPMessage] = []
 
         while True:
             while self.buffer.startswith(b"\r\n"):
                 del self.buffer[:2]
+                self._consume_timestamp_bytes(2)
 
             header_end = self.buffer.find(b"\r\n\r\n")
             if header_end == -1:
@@ -356,9 +406,11 @@ class HTTPStreamParser:
                 uri=uri,
                 status_code=status_code,
                 reason_phrase=reason_phrase,
+                captured_at=self._timestamp_at_start(),
             )
             messages.append(message)
             del self.buffer[:message_end]
+            self._consume_timestamp_bytes(message_end)
 
             if message_type == "request" and method == "HEAD":
                 self.expect_head_response()

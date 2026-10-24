@@ -115,6 +115,7 @@ def test_root_endpoint():
     assert "day" not in response.json()
 
 
+
 def test_queue_status_endpoint():
     response = client.get("/queue-status")
 
@@ -123,14 +124,39 @@ def test_queue_status_endpoint():
         "raw_packet_queue": 0,
         "header_queue": 0,
         "metadata_queue": 0,
+        "persistence_queue_size": 0,
+        "persistence_persisted_count": 0,
+        "persistence_failed_count": 0,
+        "persistence_rejected_count": 0,
+        "persistence_worker_running": False,
+        "http_completed_transaction_count": 0,
+"transaction_processing_count": 0,
+"last_transaction_processing_latency_ms": 0.0,
+"average_transaction_processing_latency_ms": 0.0,
+"max_transaction_processing_latency_ms": 0.0,
+        "capture_to_publish_count": 0,
+        "last_capture_to_publish_latency_ms": 0.0,
+        "average_capture_to_publish_latency_ms": 0.0,
+        "max_capture_to_publish_latency_ms": 0.0,
+        "http_pending_request_count": 0,
+        "http_unmatched_response_count": 0,
+        "http_open_connection_count": 0,
         "accepted_packet_count": 0,
+        "accepted_tcp_event_count": 0,
+        "accepted_udp_event_count": 0,
         "rejected_packet_count": 0,
         "dropped_packet_count": 0,
         "tcp_stream_limit_rejection_count": 0,
         "tcp_reassembly_buffer_overflow_count": 0,
+        "tcp_packets_processed_count": 0,
+        "tcp_syn_packets_count": 0,
+        "tcp_payload_packets_count": 0,
+        "tcp_payload_bytes_count": 0,
+        "tcp_packets_without_stream_count": 0,
+        "tcp_payload_delivered_to_http_count": 0,
+        "tcp_payload_bytes_delivered_to_http_count": 0,
         "capture_running": False,
     }
-
 
 def test_unknown_endpoint_returns_404():
     response = client.get("/does-not-exist")

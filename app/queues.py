@@ -15,13 +15,24 @@ metadata_queue: asyncio.Queue[PacketMetadata] = asyncio.Queue(
     maxsize=QUEUE_MAX_SIZE
 )
 
-# Number of raw packets rejected because the queue was full.
+# Packet-event counters
 dropped_packet_count = 0
-# Cumulative packet-event counters for this application process.
 accepted_packet_count = 0
 rejected_packet_count = 0
-# TCP streams rejected because the active-stream limit was reached.
-tcp_stream_limit_rejection_count = 0
+accepted_tcp_event_count = 0
+accepted_udp_event_count = 0
 
-# TCP streams discarded because their reassembly buffer exceeded its limit.
+# TCP stream rejection and reassembly counters
+tcp_stream_limit_rejection_count = 0
 tcp_reassembly_buffer_overflow_count = 0
+
+# TCP packet-processing diagnostic counters
+tcp_packets_processed_count = 0
+tcp_syn_packets_count = 0
+tcp_payload_packets_count = 0
+tcp_payload_bytes_count = 0
+tcp_packets_without_stream_count = 0
+
+# TCP payload delivery to the HTTP pipeline
+tcp_payload_delivered_to_http_count = 0
+tcp_payload_bytes_delivered_to_http_count = 0

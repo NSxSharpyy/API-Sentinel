@@ -2,6 +2,7 @@
 
 import base64
 import json
+from datetime import timezone
 
 import zmq
 
@@ -16,6 +17,11 @@ def serialize_http_message(message: HTTPMessage) -> bytes:
         "event_type": "http.transaction",
         "message_type": message.message_type,
         "connection_id": message.connection_id,
+        "captured_at": (
+            message.captured_at.astimezone(timezone.utc).isoformat()
+            if message.captured_at is not None
+            else None
+        ),
         "method": message.method,
         "uri": message.uri,
         "status_code": message.status_code,

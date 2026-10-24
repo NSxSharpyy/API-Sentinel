@@ -101,3 +101,22 @@ def test_overlapping_segments_with_different_start_positions():
     assert stream.feed(108, b"IJKL") == b""
     assert stream.feed(106, b"GHIJ") == b""
     assert stream.feed(100, b"ABCDEF") == b"ABCDEFGHIJKL"
+
+
+def test_out_of_order_segments_preserve_capture_timestamps():
+    from datetime import datetime, timezone
+
+    stream = new_stream(initial_sequence=100)
+    earlier = datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc)
+    later = datetime(2026, 10, 24, 10, 1, tzinfo=timezone.utc)
+
+    # The later bytes arrive first and must wait for the sequence gap.
+    assert stream.feed_with_timestamps(106, b"World", later) == []
+
+    # Filling the gap releases both segments with their own timestamps.
+    chunks = stream.feed_with_timestamps(100, b"Hello ", earlier)
+
+    assert chunks == [
+        (b"Hello ", earlier),
+        (b"World", later),
+    ]

@@ -1,6 +1,8 @@
 import logging
+import time
 from collections import deque
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from app.http_reassembly import (
     HTTPMessage,
@@ -22,7 +24,7 @@ MAX_COMPLETED_TRANSACTIONS = 1000
 
 
 class HTTPMessagePipeline:
-    """Parse HTTP messages, publish events, and persist transactions."""
+    """Parse HTTP messages, correlate transactions, and persist events."""
 
     def __init__(
         self,
@@ -53,6 +55,22 @@ class HTTPMessagePipeline:
         self.transaction_store = transaction_store
         self.persistence_worker = persistence_worker
 
+        # HTTP message counters.
+        self.parsed_request_count = 0
+        self.parsed_response_count = 0
+
+        # Transaction processing latency metrics.
+        self.transaction_processing_count = 0
+        self.last_transaction_processing_latency_ms = 0.0
+        self.max_transaction_processing_latency_ms = 0.0
+        self.total_transaction_processing_latency_ms = 0.0
+
+        # Capture-to-publish latency for timestamped HTTP messages.
+        self.capture_to_publish_count = 0
+        self.last_capture_to_publish_latency_ms = 0.0
+        self.max_capture_to_publish_latency_ms = 0.0
+        self.total_capture_to_publish_latency_ms = 0.0
+
         self.completed_transactions: deque[HTTPTransaction] = deque(
             maxlen=MAX_COMPLETED_TRANSACTIONS
         )
@@ -72,6 +90,71 @@ class HTTPMessagePipeline:
     def open_connections(self) -> int:
         """Return the number of parser instances currently retained."""
         return len(self._parsers)
+
+    @property
+    def average_transaction_processing_latency_ms(self) -> float:
+        """Return average measured transaction processing latency."""
+        if self.transaction_processing_count == 0:
+            return 0.0
+
+        return (
+            self.total_transaction_processing_latency_ms
+            / self.transaction_processing_count
+        )
+
+    @property
+    def average_capture_to_publish_latency_ms(self) -> float:
+        """Return average capture-to-publish latency for valid timestamps."""
+        if self.capture_to_publish_count == 0:
+            return 0.0
+        return (
+            self.total_capture_to_publish_latency_ms
+            / self.capture_to_publish_count
+        )
+
+    def _record_transaction_processing_latency(
+        self,
+        started_at_ns: int,
+    ) -> None:
+        """Record processing time using the monotonic performance clock."""
+        elapsed_ms = (
+            time.perf_counter_ns() - started_at_ns
+        ) / 1_000_000
+
+        self.transaction_processing_count += 1
+        self.last_transaction_processing_latency_ms = elapsed_ms
+        self.total_transaction_processing_latency_ms += elapsed_ms
+        self.max_transaction_processing_latency_ms = max(
+            self.max_transaction_processing_latency_ms,
+            elapsed_ms,
+        )
+
+    def _record_capture_to_publish_latency(
+        self,
+        captured_at: datetime | None,
+        published_at: datetime,
+    ) -> None:
+        """Record approximate capture-to-publish latency for one message."""
+        if captured_at is None or captured_at.utcoffset() is None:
+            return
+
+        elapsed_ms = (
+            published_at - captured_at.astimezone(timezone.utc)
+        ).total_seconds() * 1000
+
+        if elapsed_ms < 0:
+            logger.warning(
+                "Skipping capture-to-publish latency: capture time is in the future"
+            )
+            return
+
+        self.capture_to_publish_count += 1
+        self.last_capture_to_publish_latency_ms = elapsed_ms
+        self.total_capture_to_publish_latency_ms += elapsed_ms
+        self.max_capture_to_publish_latency_ms = max(
+            self.max_capture_to_publish_latency_ms,
+            elapsed_ms,
+        )
 
     def _get_parser(self, connection_id: str) -> HTTPStreamParser:
         """Get or create a parser for a connection."""
@@ -102,45 +185,78 @@ class HTTPMessagePipeline:
         messages: list[HTTPMessage],
         connection_id: str,
     ) -> None:
-        """Correlate messages, queue persistence, and publish events."""
+        """Correlate, measure, persist, and publish complete HTTP messages."""
         for message in messages:
             message.connection_id = connection_id
 
+            if message.message_type == "request":
+                self.parsed_request_count += 1
+            elif message.message_type == "response":
+                self.parsed_response_count += 1
+
+            # Measure transaction completion processing, not network latency.
+            processing_started_ns = (
+                time.perf_counter_ns()
+                if message.message_type == "response"
+                else None
+            )
+
             transaction = self.correlator.process(message)
+
             if transaction is not None:
                 self.completed_transactions.append(transaction)
 
-                if self.persistence_worker is not None:
-                    # Non-blocking enqueue; database I/O runs in the worker.
-                    self.persistence_worker.enqueue(transaction)
+                try:
+                    if self.persistence_worker is not None:
+                        # Database I/O happens in the background worker.
+                        self.persistence_worker.enqueue(transaction)
 
-                elif self.transaction_store is not None:
-                    # Compatibility fallback for existing synchronous callers.
-                    try:
+                    elif self.transaction_store is not None:
+                        # Compatibility path for synchronous callers.
                         self.transaction_store.save(transaction)
-                    except Exception:
-                        logger.exception(
-                            "Failed to persist HTTP transaction; "
-                            "continuing message publishing"
+
+                except Exception:
+                    logger.exception(
+                        "Failed to persist HTTP transaction; "
+                        "continuing message publishing"
+                    )
+
+                finally:
+                    if processing_started_ns is not None:
+                        self._record_transaction_processing_latency(
+                            processing_started_ns
                         )
 
             # Preserve the existing ZeroMQ per-message event contract.
             self.publisher.publish(message)
+            self._record_capture_to_publish_latency(
+                message.captured_at,
+                datetime.now(timezone.utc),
+            )
 
     def feed(
         self,
         data: bytes,
         connection_id: str = DEFAULT_CONNECTION_ID,
+        captured_at: datetime | None = None,
     ) -> list[HTTPMessage]:
-        """Parse, correlate, persist, and publish complete HTTP messages."""
+        """Parse and publish messages with their capture timestamps."""
         parser = self._get_parser(connection_id)
 
         try:
-            messages = parser.feed(data)
+            messages = parser.feed(data, captured_at=captured_at)
         except HTTPParseError as exc:
+            for message in exc.messages:
+                if message.captured_at is None:
+                    message.captured_at = captured_at
+
             self._publish_all(exc.messages, connection_id)
             self.close_connection(connection_id)
             raise
+
+        for message in messages:
+            if message.captured_at is None:
+                message.captured_at = captured_at
 
         self._publish_all(messages, connection_id)
         return messages

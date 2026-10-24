@@ -1,8 +1,9 @@
+
 import asyncio
 import logging
 import time
-from app import queues
 
+from app import queues
 from app.http_pipeline import HTTPMessagePipeline
 from app.http_reassembly import HTTPParseError
 from app.queues import raw_packet_queue
@@ -15,6 +16,7 @@ MAX_TCP_STREAMS = 10_000
 MAX_TCP_BUFFERED_BYTES = 1_048_576
 TCP_STREAM_TTL_SECONDS = 30.0
 TCP_GC_INTERVAL_SECONDS = 5.0
+MAX_DIAGNOSTIC_STREAMS = 100
 
 
 def build_connection_id(packet: RawPacketChunk) -> str | None:
@@ -39,6 +41,49 @@ def build_connection_id(packet: RawPacketChunk) -> str | None:
 def _flags(packet: RawPacketChunk) -> set[str]:
     """Normalize TCP flag names."""
     return {flag.strip().upper() for flag in (packet.tcp_flags or [])}
+
+
+def _publish_tcp_stream_diagnostics(
+    streams: dict[str, TCPStreamReassembler],
+    last_seen: dict[str, float],
+) -> None:
+    """Publish a bounded, read-only snapshot of active TCP stream state."""
+    stream_details = []
+
+    for connection_id, stream in list(streams.items())[
+        :MAX_DIAGNOSTIC_STREAMS
+    ]:
+        pending = getattr(stream, "pending", {})
+        if not isinstance(pending, dict):
+            pending = {}
+
+        next_sequence = getattr(stream, "next_sequence", None)
+        buffered_bytes = getattr(stream, "buffered_bytes", 0)
+
+        stream_details.append(
+            {
+                "connection_id": connection_id,
+                "next_expected_sequence": (
+                    next_sequence
+                    if isinstance(next_sequence, int)
+                    else None
+                ),
+                "buffered_bytes": (
+                    buffered_bytes
+                    if isinstance(buffered_bytes, int)
+                    else 0
+                ),
+                "pending_segment_count": len(pending),
+                "pending_sequence_numbers": sorted(pending.keys())[:20],
+                "last_seen_monotonic": last_seen.get(connection_id),
+            }
+        )
+
+    queues.tcp_stream_diagnostics = {
+        "active_streams": len(streams),
+        "reported_streams": len(stream_details),
+        "streams": stream_details,
+    }
 
 
 async def _cleanup_stale_streams(
@@ -79,6 +124,9 @@ async def _cleanup_stale_streams(
 
             logger.debug("Expired inactive TCP stream: %s", connection_id)
 
+        _publish_tcp_stream_diagnostics(streams, last_seen)
+
+
 async def packet_worker(
     pipeline: HTTPMessagePipeline,
     stop_event: asyncio.Event,
@@ -86,6 +134,12 @@ async def packet_worker(
     """Reassemble ordered TCP payloads before passing them to the HTTP parser."""
     streams: dict[str, TCPStreamReassembler] = {}
     last_seen: dict[str, float] = {}
+
+    queues.tcp_stream_diagnostics = {
+        "active_streams": 0,
+        "reported_streams": 0,
+        "streams": [],
+    }
 
     gc_task = asyncio.create_task(
         _cleanup_stale_streams(
@@ -119,6 +173,8 @@ async def packet_worker(
                     )
                     continue
 
+                queues.tcp_packets_processed_count += 1
+
                 connection_id = build_connection_id(packet)
 
                 if connection_id is None:
@@ -132,6 +188,8 @@ async def packet_worker(
                 stream = streams.get(connection_id)
 
                 if "SYN" in flags:
+                    queues.tcp_syn_packets_count += 1
+
                     if (
                         len(streams) >= MAX_TCP_STREAMS
                         and connection_id not in streams
@@ -161,24 +219,28 @@ async def packet_worker(
                     last_seen[connection_id] = time.monotonic()
 
                 if stream is None:
+                    queues.tcp_packets_without_stream_count += 1
                     logger.debug(
                         "Skipping packet %s: no stream initialized by SYN",
                         packet.packet_id,
                     )
                     continue
 
-                # Refresh activity for every packet on an initialized stream.
                 last_seen[connection_id] = time.monotonic()
 
                 if packet.payload and packet.sequence_number is not None:
+                    queues.tcp_payload_packets_count += 1
+                    queues.tcp_payload_bytes_count += len(packet.payload)
+
                     payload_sequence = packet.sequence_number + (
                         1 if "SYN" in flags else 0
                     )
 
                     try:
-                        contiguous_payload = stream.feed(
+                        timestamped_chunks = stream.feed_with_timestamps(
                             payload_sequence,
                             packet.payload,
+                            packet.captured_at,
                         )
                     except BufferError:
                         logger.warning(
@@ -189,14 +251,25 @@ async def packet_worker(
                         streams.pop(connection_id, None)
                         last_seen.pop(connection_id, None)
                         pipeline.close_connection(connection_id)
+                        _publish_tcp_stream_diagnostics(streams, last_seen)
                         continue
 
-                    if contiguous_payload:
+                    if timestamped_chunks:
+                        contiguous_payload = b"".join(
+                            chunk for chunk, _ in timestamped_chunks
+                        )
+                        queues.tcp_payload_delivered_to_http_count += 1
+                        queues.tcp_payload_bytes_delivered_to_http_count += (
+                            len(contiguous_payload)
+                        )
+
                         try:
-                            pipeline.feed(
-                                contiguous_payload,
-                                connection_id=connection_id,
-                            )
+                            for chunk, captured_at in timestamped_chunks:
+                                pipeline.feed(
+                                    chunk,
+                                    connection_id=connection_id,
+                                    captured_at=captured_at,
+                                )
                         except HTTPParseError as exc:
                             logger.warning(
                                 "Malformed HTTP stream for connection %s: %s",
@@ -209,6 +282,8 @@ async def packet_worker(
                     last_seen.pop(connection_id, None)
                     pipeline.close_connection(connection_id)
 
+                _publish_tcp_stream_diagnostics(streams, last_seen)
+
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -220,7 +295,6 @@ async def packet_worker(
                 raw_packet_queue.task_done()
 
     finally:
-        # Stop the background cleanup task before clearing shared state.
         gc_task.cancel()
 
         try:
@@ -228,7 +302,6 @@ async def packet_worker(
         except asyncio.CancelledError:
             pass
 
-        # Close all remaining parser/reassembly state on shutdown.
         for connection_id in list(streams):
             try:
                 pipeline.close_connection(connection_id)
@@ -240,4 +313,5 @@ async def packet_worker(
 
         streams.clear()
         last_seen.clear()
+        _publish_tcp_stream_diagnostics(streams, last_seen)
         logger.info("Packet worker stopped")

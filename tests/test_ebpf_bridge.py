@@ -3,7 +3,10 @@ import json
 import sys
 
 import pytest
+import time
+from datetime import datetime, timezone
 
+from app.ebpf_bridge import _monotonic_ns_to_utc
 from app.ebpf_bridge import read_capture_events
 
 
@@ -130,5 +133,47 @@ def test_reader_reports_nonzero_exit_code():
                 [sys.executable, "-c", "raise SystemExit(7)"]
             ):
                 pass
+
+    asyncio.run(run_test())
+
+def test_monotonic_timestamp_converts_to_approximate_utc():
+    captured_at_ns = time.monotonic_ns()
+
+    converted = _monotonic_ns_to_utc(captured_at_ns)
+
+    assert converted.tzinfo == timezone.utc
+    assert isinstance(converted, datetime)
+
+    # A timestamp captured just before conversion should be near now.
+    difference = abs(
+        (datetime.now(timezone.utc) - converted).total_seconds()
+    )
+    assert difference < 1
+
+def test_reader_falls_back_for_invalid_monotonic_timestamp():
+    event = {
+        "packet_id": "ebpf-invalid-time",
+        "payload_hex": "474554",
+        "protocol": 6,
+        "tcp_flags": 24,
+        "captured_at_ns": "invalid",
+    }
+
+    async def run_test():
+        code = (
+            "import sys; "
+            f"sys.stdout.write({json.dumps(event)!r} + '\\n'); "
+            "sys.stdout.flush()"
+        )
+
+        result = [
+            item
+            async for item in read_capture_events(
+                [sys.executable, "-c", code]
+            )
+        ]
+
+        assert len(result) == 1
+        assert result[0]["captured_at"].tzinfo is not None
 
     asyncio.run(run_test())

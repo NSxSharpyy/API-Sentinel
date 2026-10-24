@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -55,19 +57,25 @@ def make_transaction():
 
 
 def test_save_persists_http_transaction(store):
-    transaction_id = store.save(make_transaction())
+    transaction = make_transaction()
+    captured_at = datetime(2026, 10, 23, 9, 30, tzinfo=timezone.utc)
+    transaction.request.captured_at = captured_at
+
+    transaction_id = store.save(transaction)
 
     with store.session_factory() as session:
         record = session.get(TransactionLog, transaction_id)
 
     assert record is not None
+    assert record.timestamp.replace(tzinfo=timezone.utc) == captured_at
+    assert record.source_ip == "10.0.0.10"
+    assert record.destination_ip == "10.0.0.20"
     assert record.request_method == "GET"
     assert record.request_uri == "/health"
     assert record.response_status == 200
     assert record.request_headers == {"host": "example.test"}
     assert record.response_headers == {"content-type": "text/plain"}
     assert record.response_body == "OK"
-
 
 def test_save_returns_unique_ids(store):
     first_id = store.save(make_transaction())

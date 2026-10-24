@@ -365,3 +365,26 @@ def test_accepts_quoted_chunk_extension_with_semicolon():
 
     assert len(messages) == 1
     assert messages[0].body == b"test"
+
+
+def test_fragmented_http_message_preserves_first_byte_timestamp():
+    from datetime import datetime, timezone
+
+    parser = HTTPStreamParser()
+    earlier = datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc)
+    later = datetime(2026, 10, 24, 10, 1, tzinfo=timezone.utc)
+
+    first = parser.feed(
+        b"POST /events HTTP/1.1\r\n"
+        b"Host: example.test\r\n"
+        b"Content-Length: 5\r\n\r\n"
+        b"hel",
+        captured_at=earlier,
+    )
+    assert first == []
+
+    messages = parser.feed(b"lo", captured_at=later)
+
+    assert len(messages) == 1
+    assert messages[0].body == b"hello"
+    assert messages[0].captured_at == earlier

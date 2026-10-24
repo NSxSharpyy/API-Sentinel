@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+from datetime import datetime, timezone
 import pytest
 import base64
 import json
@@ -64,6 +65,40 @@ def test_serializes_http_request_as_json():
     assert event["version"] == "HTTP/1.1"
     assert event["headers"]["host"] == "example.test"
     assert event["body_base64"] == ""
+
+
+
+def test_serializes_captured_at_as_utc_iso8601():
+    captured_at = datetime(
+        2026, 10, 23, 9, 30, tzinfo=timezone.utc
+    )
+    message = HTTPMessage(
+        method="GET",
+        uri="/api/users",
+        version="HTTP/1.1",
+        headers={},
+        body=b"",
+        captured_at=captured_at,
+    )
+
+    event = json.loads(serialize_http_message(message))
+
+    assert event["captured_at"] == "2026-10-23T09:30:00+00:00"
+
+
+def test_serializes_missing_captured_at_as_null():
+    message = HTTPMessage(
+        method="GET",
+        uri="/health",
+        version="HTTP/1.1",
+        headers={},
+        body=b"",
+    )
+
+    event = json.loads(serialize_http_message(message))
+
+    assert event["captured_at"] is None
+    assert event["method"] == "GET"
 
 
 def test_preserves_binary_request_body():

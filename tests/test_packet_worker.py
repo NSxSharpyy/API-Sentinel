@@ -91,10 +91,12 @@ def test_worker_reassembles_payload_after_syn(packet_queue):
         try:
             await asyncio.wait_for(packet_queue.join(), timeout=2)
 
-            pipeline.feed.assert_called_once_with(
-                data.payload,
-                connection_id=build_connection_id(data),
-            )
+            pipeline.feed.assert_called_once()
+            args, kwargs = pipeline.feed.call_args
+            assert args == (data.payload,)
+            assert kwargs["connection_id"] == build_connection_id(data)
+            assert kwargs["captured_at"] is not None
+            assert kwargs["captured_at"].tzinfo is not None
         finally:
             await stop_worker(task, stop_event)
 
@@ -132,10 +134,20 @@ def test_worker_buffers_out_of_order_payload(packet_queue):
         try:
             await asyncio.wait_for(packet_queue.join(), timeout=2)
 
-            pipeline.feed.assert_called_once_with(
-                b"0123456789later",
-                connection_id=connection_id,
-            )
+            calls = pipeline.feed.call_args_list
+            assert len(calls) == 2
+
+            first_args, first_kwargs = calls[0]
+            second_args, second_kwargs = calls[1]
+
+            assert first_args == (b"0123456789",)
+            assert second_args == (b"later",)
+
+            assert first_kwargs["connection_id"] == connection_id
+            assert second_kwargs["connection_id"] == connection_id
+
+            assert first_kwargs["captured_at"] == earlier.captured_at
+            assert second_kwargs["captured_at"] == later.captured_at
         finally:
             await stop_worker(task, stop_event)
 
@@ -349,12 +361,14 @@ def test_worker_counts_tcp_reassembly_buffer_overflows(
             0,
         )
 
-        def raise_buffer_error(self, sequence_number, payload):
+        def raise_buffer_error(
+            self, sequence_number, payload, captured_at
+        ):
             raise BufferError("test buffer overflow")
 
         monkeypatch.setattr(
             worker_module.TCPStreamReassembler,
-            "feed",
+            "feed_with_timestamps",
             raise_buffer_error,
         )
 

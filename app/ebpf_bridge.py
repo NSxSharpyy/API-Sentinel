@@ -1,11 +1,22 @@
+
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _monotonic_ns_to_utc(captured_at_ns: int) -> datetime:
+    """Convert kernel monotonic nanoseconds to an approximate UTC timestamp."""
+    monotonic_now_ns = time.monotonic_ns()
+    utc_now = datetime.now(timezone.utc)
+    elapsed_ns = monotonic_now_ns - captured_at_ns
+
+    return utc_now - timedelta(microseconds=elapsed_ns / 1000)
 
 
 async def _log_reader_stderr(stream: asyncio.StreamReader) -> None:
@@ -89,6 +100,20 @@ async def read_capture_events(
                 logger.warning("Ignoring event with invalid TCP flags")
                 continue
 
+            captured_at_ns = event.get("captured_at_ns")
+            if (
+                isinstance(captured_at_ns, int)
+                and not isinstance(captured_at_ns, bool)
+                and 0 <= captured_at_ns <= time.monotonic_ns()
+            ):
+                captured_at = _monotonic_ns_to_utc(captured_at_ns)
+            else:
+                logger.warning(
+                    "Capture event has missing or invalid captured_at_ns; "
+                    "using reader-processing time"
+                )
+                captured_at = datetime.now(timezone.utc)
+
             flag_names = [
                 name
                 for mask, name in (
@@ -106,7 +131,7 @@ async def read_capture_events(
 
             yield {
                 "packet_id": str(packet_id),
-                "captured_at": datetime.now(timezone.utc),
+                "captured_at": captured_at,
                 "payload": payload,
                 "source_ip": event.get("source_ip"),
                 "destination_ip": event.get("destination_ip"),

@@ -42,8 +42,12 @@ async def consume_events(
             stats.dropped += 1
             logger.warning("Dropped packet because raw packet queue is full")
             continue
-
         stats.accepted += 1
         queues.accepted_packet_count += 1
 
+        protocol = (packet.protocol or "").upper()
+        if protocol == "TCP":
+            queues.accepted_tcp_event_count += 1
+        elif protocol == "UDP":
+            queues.accepted_udp_event_count += 1
     return stats

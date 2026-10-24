@@ -1,40 +1,50 @@
-from typing import Dict, Any, List
+# core/day_10_bfla_detection_engine.py
+"""
+Day 10 / Issue 8: Canonical Role Format and Boundary-Aware BFLA Engine.
+"""
+import json
 
-class Day10BFLADetectionEngine:
+class CanonicalBFLAEngine:
     def __init__(self):
-        # High-privilege administrative functions endpoints signatures criteria catalog tracking map
-        self.admin_endpoint_signatures: List[str] = [
-            "/api/v1/admin",
-            "/api/v1/manage",
-            "/api/v1/system/configure",
-            "/api/v1/internal/maintenance"
+        # Strict administrative management routes mapping limits
+        self.protected_admin_routes = [
+            "/api/v1/admin/management",
+            "/api/v1/admin/users/delete"
         ]
 
-    def verify_function_level_authorization(self, request_context: Dict[str, Any]) -> Dict[str, Any]:
+    def verify_bfla_clearance(self, incoming_role: str, request_path: str) -> dict:
         """
-        Validates incoming request payload tracking metrics data structures maps against
-        runtime privilege extraction role levels to identify BFLA exploitation vectors.
+        Fix Issue 8: Enforce canonical role normalization and boundary-aware route checks
+        to prevent accidental privilege grants via custom substring inputs.
         """
-        path = request_context.get("path", "")
-        role = request_context.get("role", "standard_user")
-        user_id = request_context.get("user_id", "ANONYMOUS")
-        
-        is_admin_route = any(sig in path for sig in self.admin_endpoint_signatures)
-        
-        bfla_anomaly_detected = False
-        mitigation_reason = "Access Authorized"
+        if not incoming_role or not request_path:
+            return {"access_authorized": False, "alert_status": "MALFORMED_CONTEXT_REJECTED"}
 
-        # Centralized BFLA Enforcement Matrix logic execution block
-        if is_admin_route:
-            if role != "admin":
-                bfla_anomaly_detected = True
-                mitigation_reason = f"BFLA Alert: Non-privileged user role '{role}' attempted to access administrative function endpoint target path."
-        
+        # Action A: Canonical normalization of user roles to clear mismatches
+        canonical_role = incoming_role.strip().upper()
+        normalized_route = request_path.strip().rstrip("/")
+
+        # Action B: Safe boundary-aware administrative endpoint checking
+        is_admin_path = False
+        for admin_route in self.protected_admin_routes:
+            if normalized_route == admin_route or normalized_route.startswith(admin_route + "/"):
+                is_admin_path = True
+                break
+
+        # Access Restriction Guard Check
+        if is_admin_path and canonical_role != "ADMIN":
+            return {
+                "access_authorized": False,
+                "normalized_role_used": canonical_role,
+                "alert_status": "UNAUTHORIZED_ADMINISTRATIVE_ACCESS_DENIED_BFLA"
+            }
+
         return {
-            "user_id": user_id,
-            "path": path,
-            "role": role,
-            "bfla_flag": bfla_anomaly_detected,
-            "security_action": "BLOCK_REQUEST" if bfla_anomaly_detected else "ALLOW_REQUEST",
-            "log_reason": mitigation_reason
+            "access_authorized": True,
+            "normalized_role_used": canonical_role,
+            "alert_status": "ACCESS_REQUEST_APPROVED"
         }
+
+if __name__ == "__main__":
+    engine = CanonicalBFLAEngine()
+    print("Testing clean standard user on admin route:", json.dumps(engine.verify_bfla_clearance("standard_user", "/api/v1/admin/management"), indent=4))

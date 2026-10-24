@@ -1,21 +1,22 @@
-from typing import Dict, Set, Any
+# core/baseline_graph.py
+"""
+Day 1 Core: Centralized authorization matrix repository tracking explicit user-to-object pairs.
+"""
 
-class AuthorizationGraph:
+class StaticAuthorizationGraph:
     def __init__(self):
-        # Maps user_id -> set of authorized object_ids
-        self.graph: Dict[str, Set[str]] = {}
+        self._acl_matrix = {}
+
+    def register_new_object(self, user_id: str, object_id: str):
+        if user_id not in self._acl_matrix:
+            self._acl_matrix[user_id] = set()
+        self._acl_matrix[user_id].add(object_id)
 
     def is_authorized(self, user_id: str, object_id: str) -> bool:
-        if user_id not in self.graph:
-            return False
-        return object_id in self.graph[user_id]
+        if user_id in self._acl_matrix:
+            return object_id in self._acl_matrix[user_id]
+        return False
 
-    # FIX: Add register_new_object to dynamically handle POST/PUT creations
-    def register_new_object(self, user_id: str, new_object_id: str) -> None:
-        if user_id not in self.graph:
-            self.graph[user_id] = set()
-        self.graph[user_id].add(new_object_id)
-
-    def load_static_baseline(self, baseline_data: Dict[str, Any]) -> None:
-        for user_id, objects in baseline_data.items():
-            self.graph[user_id] = set(objects)
+    def seed_authorization_baseline(self):
+        self.register_new_object("usr_legit_owner", "obj_secure_resource_101")
+        self.register_new_object("usr_legit_owner", "obj_secure_resource_102")

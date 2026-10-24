@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from app import queues
 from app.capture_supervisor import supervise_capture
+from app.alert_bus import AlertBus
 from app.config import settings
 from app.blocklist_verdicts import BlocklistVerdictProducer
 from app.http_pipeline import HTTPMessagePipeline
@@ -29,7 +30,8 @@ async def lifespan(app: FastAPI):
     initialize_database()
 
     publisher = HTTPTransactionPublisher()
-    transaction_store = TransactionStore()
+    alert_bus = AlertBus()
+    transaction_store = TransactionStore(alert_bus=alert_bus)
     persistence_worker = TransactionPersistenceWorker(transaction_store)
 
     pipeline = HTTPMessagePipeline(
@@ -70,6 +72,7 @@ async def lifespan(app: FastAPI):
                 blocklist_receiver.close()
             if blocklist_writer is not None:
                 blocklist_writer.close()
+            alert_bus.close()
             publisher.close()
             logger.exception(
                 "Blocklist synchronization requested but initialization failed"
@@ -87,6 +90,7 @@ async def lifespan(app: FastAPI):
     app.state.http_pipeline = pipeline
     app.state.http_publisher = publisher
     app.state.transaction_store = transaction_store
+    app.state.alert_bus = alert_bus
     app.state.persistence_worker = persistence_worker
     app.state.capture_status = "starting"
 
@@ -241,6 +245,7 @@ async def lifespan(app: FastAPI):
                 "Persistence worker failed during shutdown"
             )
         finally:
+            alert_bus.close()
             publisher.close()
 
         logger.info("API-Sentinel background services stopped")

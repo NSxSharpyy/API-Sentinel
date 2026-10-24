@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.alert_bus import AlertBus
 from app.database import Base
 from app.http_reassembly import HTTPMessage
 from app.models import SecurityIncident, TransactionLog
@@ -111,3 +112,42 @@ def test_non_success_invoice_does_not_create_incident(store):
     with store.session_factory() as session:
         incidents = session.scalars(select(SecurityIncident)).all()
     assert incidents == []
+
+
+def test_cross_user_incident_is_published_after_commit(store):
+    bus = AlertBus()
+    subscriber = bus.subscribe()
+    store.alert_bus = bus
+
+    login(store)
+    transaction_id = store.save(invoice("demo-token", 3, 2))
+    event = subscriber.get_nowait()
+
+    with store.session_factory() as session:
+        incident = session.scalars(select(SecurityIncident)).one()
+        transaction = session.get(TransactionLog, transaction_id)
+
+    assert transaction is not None
+    assert event.incident_id == incident.id
+    assert event.transaction_id == transaction_id
+    assert event.severity == "high"
+    assert "Potential BOLA" in event.title
+    assert event.source_ip == "127.0.0.1"
+    assert bus.snapshot()["published_count"] == 1
+
+
+def test_alert_delivery_failure_does_not_fail_persistence(store, caplog):
+    bus = AlertBus()
+    bus.close()
+    store.alert_bus = bus
+
+    login(store)
+    transaction_id = store.save(invoice("demo-token", 3, 2))
+
+    with store.session_factory() as session:
+        transaction = session.get(TransactionLog, transaction_id)
+        incidents = session.scalars(select(SecurityIncident)).all()
+
+    assert transaction is not None
+    assert len(incidents) == 1
+    assert "Security incident persisted but alert publication failed" in caplog.text

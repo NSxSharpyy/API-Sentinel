@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy.orm import sessionmaker
 
+from app.alert_bus import AlertBus, AlertEvent
 from app.database import Base, engine, SessionLocal
 from app.models import TransactionLog, utc_now
 from app.transaction_correlator import HTTPTransaction
@@ -39,9 +40,50 @@ def _request_endpoint_ips(
 class TransactionStore:
     """Persist completed HTTP transactions."""
 
-    def __init__(self, session_factory: sessionmaker = SessionLocal):
+    def __init__(
+        self,
+        session_factory: sessionmaker = SessionLocal,
+        alert_bus: AlertBus | None = None,
+    ):
         self.session_factory = session_factory
         self.bola_detector = BOLADetector()
+        self.alert_bus = alert_bus
+
+    def _publish_alert(self, outcome: dict | None) -> None:
+        """Publish a committed incident without masking persistence success."""
+        if (
+            self.alert_bus is None
+            or not isinstance(outcome, dict)
+            or not outcome.get("detected")
+        ):
+            return
+
+        try:
+            event = AlertEvent(
+                incident_id=outcome["incident_id"],
+                detected_at=outcome["detected_at"],
+                severity=outcome["incident_severity"],
+                title=outcome["incident_title"],
+                description=outcome.get("incident_description"),
+                source_ip=outcome.get("incident_source_ip"),
+                transaction_id=outcome.get("incident_transaction_id"),
+                endpoint_id=outcome.get("incident_endpoint_id"),
+                status=outcome.get("incident_status", "open"),
+            )
+            _, dropped = self.alert_bus.publish(event)
+            if dropped:
+                logger.warning(
+                    "Security incident persisted but alert delivery was dropped "
+                    "(incident_id=%s, dropped=%d)",
+                    event.incident_id,
+                    dropped,
+                )
+        except Exception:
+            logger.exception(
+                "Security incident persisted but alert publication failed "
+                "(incident_id=%s)",
+                outcome.get("incident_id"),
+            )
 
     def save(self, transaction: HTTPTransaction) -> int:
         """Save a completed transaction and return its database ID."""
@@ -75,8 +117,7 @@ class TransactionStore:
                 session.commit()
                 session.refresh(record)
                 self.bola_detector.after_commit(outcome)
-                return record.id
-                session.refresh(record)
+                self._publish_alert(outcome)
                 return record.id
             except Exception:
                 session.rollback()

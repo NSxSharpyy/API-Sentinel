@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import queue
 import threading
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
+
+from app.alert_dedup import SlidingWindowAlertDeduplicator
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +30,13 @@ class AlertEvent:
 class AlertBus:
     """Deliver alerts to bounded, thread-safe subscriber queues."""
 
-    def __init__(self, subscriber_queue_size: int = 100) -> None:
+    def __init__(
+        self,
+        subscriber_queue_size: int = 100,
+        dedupe_window_seconds: float = 60.0,
+        dedupe_max_signatures: int = 10_000,
+        dedupe_clock: Callable[[], float] | None = None,
+    ) -> None:
         if subscriber_queue_size <= 0:
             raise ValueError("subscriber_queue_size must be positive")
 
@@ -35,9 +44,20 @@ class AlertBus:
         self._subscribers: set[queue.Queue[AlertEvent]] = set()
         self._lock = threading.Lock()
         self._closed = False
+        self._publish_attempt_count = 0
         self._published_count = 0
         self._delivered_count = 0
         self._dropped_delivery_count = 0
+
+        dedupe_options = {}
+        if dedupe_clock is not None:
+            dedupe_options["clock"] = dedupe_clock
+
+        self._deduplicator = SlidingWindowAlertDeduplicator(
+            window_seconds=dedupe_window_seconds,
+            max_signatures=dedupe_max_signatures,
+            **dedupe_options,
+        )
 
     def subscribe(self) -> queue.Queue[AlertEvent]:
         """Register a subscriber and return its queue."""
@@ -68,6 +88,10 @@ class AlertBus:
             if self._closed:
                 raise RuntimeError("alert bus is closed")
 
+            self._publish_attempt_count += 1
+            if self._deduplicator.should_suppress(event):
+                return 0, 0
+
             self._published_count += 1
             delivered = 0
             dropped = 0
@@ -87,12 +111,18 @@ class AlertBus:
     def snapshot(self) -> dict:
         """Return a snapshot of bus health counters."""
         with self._lock:
+            dedupe_metrics = self._deduplicator.snapshot()
             return {
                 "closed": self._closed,
                 "subscriber_count": len(self._subscribers),
+                "publish_attempt_count": self._publish_attempt_count,
                 "published_count": self._published_count,
                 "delivered_count": self._delivered_count,
                 "dropped_delivery_count": self._dropped_delivery_count,
+                "suppressed_count": dedupe_metrics["suppressed_count"],
+                "dedupe_window_seconds": dedupe_metrics["window_seconds"],
+                "dedupe_tracked_signatures": dedupe_metrics["tracked_signatures"],
+                "dedupe_unkeyed_count": dedupe_metrics["unkeyed_count"],
             }
 
     def close(self) -> None:

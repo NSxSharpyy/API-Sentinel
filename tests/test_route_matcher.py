@@ -149,6 +149,61 @@ class TestRouteMatcher(unittest.TestCase):
             "potentially_undocumented",
         )
 
+    def test_ignores_invalid_observed_entries(self):
+        observed = [
+            None,
+            {},
+            "invalid-record",
+            {
+                "method": "",
+                "route": "/api/v1/users/42",
+            },
+            {
+                "method": "GET",
+                "route": "",
+            },
+            {
+                "method": None,
+                "route": "/api/v1/users/42",
+            },
+            {
+                "method": "GET",
+                "route": None,
+            },
+        ]
+
+        results = self.matcher.match_observed_routes(observed)
+
+        self.assertEqual(results, [])
+
+    def test_match_route_rejects_invalid_method(self):
+        with self.assertRaises(ValueError):
+            self.matcher.match_route(
+                None,
+                "/api/v1/users/42",
+            )
+
+    def test_match_route_rejects_invalid_route(self):
+        with self.assertRaises(ValueError):
+            self.matcher.match_route(
+                "GET",
+                None,
+            )
+
+    def test_match_route_rejects_empty_method(self):
+        with self.assertRaises(ValueError):
+            self.matcher.match_route(
+                "",
+                "/api/v1/users/42",
+            )
+
+    def test_match_route_rejects_empty_route(self):
+        with self.assertRaises(ValueError):
+            self.matcher.match_route(
+                "GET",
+                "",
+            )
+
     def test_matches_multiple_dynamic_routes(self):
         matcher = RouteMatcher([
             {

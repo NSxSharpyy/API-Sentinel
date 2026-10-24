@@ -43,24 +43,33 @@ async def lifespan(app: FastAPI):
     ).strip().lower() in {"1", "true", "yes"}
     blocklist_writer = None
     blocklist_synchronizer = None
+    blocklist_receiver = None
     blocklist_task = None
+    blocklist_receiver_task = None
     blocklist_producer = BlocklistVerdictProducer(
         queues.blocklist_verdict_queue,
         enabled=blocklist_enabled,
     )
     blocklist_stop_event = asyncio.Event()
+    blocklist_receiver_stop_event = asyncio.Event()
 
     if blocklist_enabled:
         try:
             from app.blocklist_map_writer import LibbpfBlocklistMapWriter
             from app.blocklist_sync import BlocklistSynchronizer
+            from app.blocklist_verdict_receiver import BlocklistVerdictReceiver
 
             blocklist_writer = LibbpfBlocklistMapWriter()
             blocklist_synchronizer = BlocklistSynchronizer(
                 queues.blocklist_verdict_queue,
                 blocklist_writer,
             )
+            blocklist_receiver = BlocklistVerdictReceiver(blocklist_producer)
         except Exception:
+            if blocklist_receiver is not None:
+                blocklist_receiver.close()
+            if blocklist_writer is not None:
+                blocklist_writer.close()
             publisher.close()
             logger.exception(
                 "Blocklist synchronization requested but initialization failed"
@@ -71,6 +80,8 @@ async def lifespan(app: FastAPI):
     app.state.blocklist_synchronizer = blocklist_synchronizer
     app.state.blocklist_sync_task = None
     app.state.blocklist_verdict_producer = blocklist_producer
+    app.state.blocklist_verdict_receiver = blocklist_receiver
+    app.state.blocklist_verdict_receiver_task = None
 
     app.state.stop_event = stop_event
     app.state.http_pipeline = pipeline
@@ -118,9 +129,18 @@ async def lifespan(app: FastAPI):
         )
         app.state.blocklist_sync_task = blocklist_task
 
+    if blocklist_receiver is not None:
+        blocklist_receiver_task = asyncio.create_task(
+            blocklist_receiver.run(blocklist_receiver_stop_event),
+            name="api-sentinel-blocklist-verdict-receiver",
+        )
+        app.state.blocklist_verdict_receiver_task = blocklist_receiver_task
+
     logger.info("API-Sentinel persistence worker started")
     if blocklist_task is not None:
         logger.info("API-Sentinel blocklist synchronization worker started")
+    if blocklist_receiver_task is not None:
+        logger.info("API-Sentinel blocklist verdict receiver started")
     logger.info("API-Sentinel packet worker started")
     logger.info("API-Sentinel capture supervisor started")
 
@@ -162,6 +182,27 @@ async def lifespan(app: FastAPI):
             logger.exception(
                 "Packet worker failed during shutdown"
             )
+
+        # Stop verdict intake first so the synchronization worker can drain.
+        if blocklist_receiver_task is not None:
+            blocklist_receiver_stop_event.set()
+            try:
+                await asyncio.wait_for(blocklist_receiver_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                blocklist_receiver_task.cancel()
+                try:
+                    await blocklist_receiver_task
+                except asyncio.CancelledError:
+                    pass
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception(
+                    "Blocklist verdict receiver failed during shutdown"
+                )
+            finally:
+                if blocklist_receiver is not None:
+                    blocklist_receiver.close()
 
         # Stop blocklist synchronization and drain any queued verdicts.
         if blocklist_task is not None:
@@ -426,6 +467,21 @@ async def blocklist_status():
     }
     if synchronizer is not None:
         response.update(synchronizer.snapshot())
+
+    receiver = getattr(app.state, "blocklist_verdict_receiver", None)
+    receiver_task = getattr(
+        app.state, "blocklist_verdict_receiver_task", None
+    )
+    response["receiver_enabled"] = receiver is not None
+    if receiver is None:
+        response["receiver_status"] = "disabled"
+    else:
+        response["receiver_status"] = (
+            "running"
+            if receiver_task is not None and not receiver_task.done()
+            else "stopped"
+        )
+        response.update(receiver.snapshot())
 
     producer = getattr(app.state, "blocklist_verdict_producer", None)
     if producer is not None:

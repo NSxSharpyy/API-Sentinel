@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# Local SQLite databases and transient database files
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Local test databases
+appsec-testing/tests/.test_shop.db*
+appsec-testing/benchmarks/results/

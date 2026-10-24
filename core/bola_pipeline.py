@@ -1,28 +1,35 @@
-# core/baseline_graph.py
+# core/bola_pipeline.py
 """
-Day 4 / Issue 4: Tenant Isolation Bounds Mapping Database Simulator.
+Day 4 / Issue 4: Strict Multi-Tenant Aware BOLA Detection Pipeline.
 """
+from baseline_graph import StaticAuthorizationGraph
 
-class StaticAuthorizationGraph:
-    def __init__(self):
-        self._acl_matrix = {}
-        self._object_tenant_map = {}
+class BolaDetectionPipeline:
+    def __init__(self, auth_graph_instance: StaticAuthorizationGraph):
+        self.graph = auth_graph_instance
 
-    def register_new_object(self, user_id: str, object_id: str, tenant_id: str):
-        if user_id not in self._acl_matrix:
-            self._acl_matrix[user_id] = set()
-        self._acl_matrix[user_id].add(object_id)
-        self._object_tenant_map[object_id] = tenant_id
+    def process_access_request(self, user_id: str, object_id: str, tenant_id: str) -> dict:
+        if not user_id or user_id.upper() == "ANONYMOUS":
+            return {
+                "access_granted": False,
+                "bola_anomaly_flag": True,
+                "mitigation_routing": "BLOCK_REQUEST",
+                "security_alert_status": "DENIED_UNAUTHENTICATED_ANONYMOUS_SESSION"
+            }
 
-    def is_authorized(self, user_id: str, object_id: str, tenant_id: str) -> bool:
-        expected_tenant = self._object_tenant_map.get(object_id)
-        if expected_tenant and expected_tenant != tenant_id:
-            return False  # Strict reject if tenant bounds are breached!
-
-        if user_id in self._acl_matrix:
-            return object_id in self._acl_matrix[user_id]
-        return False
-
-    def seed_authorization_baseline(self):
-        self.register_new_object("usr_harish", "obj_data_101", "tenant_srm_engineering")
-        self.register_new_object("usr_harish", "obj_data_102", "tenant_srm_engineering")
+        has_access_clearance = self.graph.is_authorized(user_id, object_id, tenant_id)
+        
+        if not has_access_clearance:
+            return {
+                "access_granted": False,
+                "bola_anomaly_flag": True,
+                "mitigation_routing": "BLOCK_REQUEST",
+                "security_alert_status": "CRITICAL_CROSS_TENANT_BREACH_SUSPECTED"
+            }
+            
+        return {
+            "access_granted": True,
+            "bola_anomaly_flag": False,
+            "mitigation_routing": "ALLOW_TRAFFIC",
+            "security_alert_status": "AUTHORIZED_ACCESS_CLEARED"
+        }

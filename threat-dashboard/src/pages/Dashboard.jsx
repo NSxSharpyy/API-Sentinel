@@ -9,6 +9,7 @@ import AttackDistributionChart from "../components/ui/AttackDistributionChart";
 import SystemLatencyWidget from "../components/ui/SystemLatencyWidget";
 import AlertResponsivenessMonitor from "../components/ui/AlertResponsivenessMonitor";
 import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
+import EnforcementToggle from "../components/ui/EnforcementToggle";
 
 export default function Dashboard() {
   const {
@@ -21,7 +22,7 @@ export default function Dashboard() {
   const [renderMeasurement, setRenderMeasurement] =
     useState(null);
 
-  // These are existing demo incidents, not live telemetry alerts.
+  // Existing demo incidents, not live telemetry alerts.
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
@@ -55,8 +56,7 @@ export default function Dashboard() {
     []
   );
 
-  // Never show a measurement from an older event as if it
-  // belonged to the latest event.
+  // Only show a timing measurement matching the latest event.
   const measurementMatchesLatestEvent =
     latestEvent !== null &&
     latestEvent.receivedAtMs !== null &&
@@ -140,11 +140,14 @@ export default function Dashboard() {
         measurementSource={measurementSource}
       />
 
-      {/* Day 16 — Render the same event being measured */}
+      {/* Day 16 — Measure the rendered telemetry event */}
       <TelemetryRenderProbe
         event={latestEvent}
         onRendered={handleEventRendered}
       />
+
+      {/* Day 17 — Global Enforcement Demo Control */}
+      <EnforcementToggle />
 
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />

@@ -1,6 +1,6 @@
 # core/bola_pipeline.py
 """
-Day 1 Pipeline: Processes access metrics via the verified unified is_authorized() interface contract.
+Day 2 / Issue 2: Hardening the BOLA Detection Against Anonymous Access Bypasses.
 """
 from baseline_graph import StaticAuthorizationGraph
 
@@ -10,9 +10,19 @@ class BolaDetectionPipeline:
 
     def process_access_request(self, user_id: str, object_id: str) -> dict:
         """
-        Enforces object access validations through the verified graph contract interface.
+        Enforces object access validations while explicitly blocking missing 
+        or anonymous identity signatures from accessing protected fields.
         """
-        # Call verified consistent method name contract
+        # Fix Issue #2: Explicitly reject unauthenticated identities or anonymous access profiles
+        if not user_id or user_id.upper() == "ANONYMOUS":
+            return {
+                "access_granted": False,
+                "bola_anomaly_flag": True,
+                "mitigation_routing": "BLOCK_REQUEST",
+                "security_alert_status": "DENIED_UNAUTHENTICATED_ANONYMOUS_SESSION"
+            }
+
+        # Call verified graph contract lookup check
         has_access_clearance = self.graph.is_authorized(user_id, object_id)
         
         if not has_access_clearance:

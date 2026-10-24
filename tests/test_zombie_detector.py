@@ -41,6 +41,66 @@ class TestZombieAPIDetector(unittest.TestCase):
             "ZOMBIE_API"
         )
 
+    def test_flags_deprecated_parameterized_endpoint(self):
+        official_contract = {
+            "paths": {
+                "/api/v1/users/{id}": {
+                    "get": {
+                        "deprecated": True
+                    }
+                }
+            }
+        }
+
+        observed_routes = [
+            {
+                "method": "GET",
+                "route": "/api/v1/users/123"
+            }
+        ]
+
+        detector = ZombieAPIDetector(official_contract)
+
+        findings = detector.analyze(observed_routes)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(
+            findings[0]["method"],
+            "GET"
+        )
+        self.assertEqual(
+            findings[0]["route"],
+            "/api/v1/users/123"
+        )
+        self.assertEqual(
+            findings[0]["status"],
+            "ZOMBIE_API"
+        )
+
+    def test_different_method_is_not_zombie(self):
+        official_contract = {
+            "paths": {
+                "/api/v1/users/{id}": {
+                    "get": {
+                        "deprecated": True
+                    }
+                }
+            }
+        }
+
+        observed_routes = [
+            {
+                "method": "DELETE",
+                "route": "/api/v1/users/123"
+            }
+        ]
+
+        detector = ZombieAPIDetector(official_contract)
+
+        findings = detector.analyze(observed_routes)
+
+        self.assertEqual(findings, [])
+
     def test_does_not_flag_active_endpoint(self):
         official_contract = {
             "paths": {

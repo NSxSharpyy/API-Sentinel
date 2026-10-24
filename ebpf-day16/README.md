@@ -54,9 +54,19 @@ reader/backend logs first.
 
 ## Limitations / acceptance
 
-This is a first producer iteration, not proof that Day 16 is complete. WSL may
-reject TC attachment or the loopback receive path may differ from the assumed
-packet layout. Confirm compiler success, loader attachment, JSON reader events,
-accepted packet counters, HTTP transaction parsing, and finally capture-to-
-*detection* latency using the local BOLA scenario. Current capture-to-publish
-telemetry alone is not capture-to-detection latency.
+The producer and ring-buffer reader have been exercised in a controlled WSL
+loopback BOLA scenario. Observed evidence included reader events, accepted
+packets, HTTP transaction processing, persistence, sensitive-field redaction,
+and a lab-scoped BOLA incident. One controlled run observed 49.223 ms from
+capture to detection. This single observation is not a repeatable performance
+benchmark and does not demonstrate the sub-millisecond serialization target.
+
+This producer captures IPv4 TCP packets with non-empty payloads, supports
+Ethernet/VLAN packets and the local loopback packet layout, and ignores IPv6
+and fragmented IPv4. Keep the initial lab attached to `lo` and use local test
+traffic only.
+
+The controlled lab demonstrates an end-to-end path for that scenario, not
+broad production coverage. Further protocol, lifecycle, failure-recovery,
+security, and repeatable performance testing remains necessary before claiming
+production readiness.

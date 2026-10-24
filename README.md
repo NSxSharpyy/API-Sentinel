@@ -108,7 +108,11 @@ Port `8001` is used here to avoid conflicts with services that may already occup
 When the server starts successfully, visit:
 
 - `http://127.0.0.1:8001/` — root endpoint.
-- `http://127.0.0.1:8001/queue-status` — queue status.
+- `http://127.0.0.1:8001/queue-status` — ingestion and processing queues.
+- `http://127.0.0.1:8001/api/v1/endpoints` — discovered endpoints.
+- `http://127.0.0.1:8001/api/v1/alerts` — persisted security incidents.
+- `http://127.0.0.1:8001/api/v1/metrics` — runtime metrics.
+- `http://127.0.0.1:8001/openapi.json` — generated OpenAPI schema.
 - `http://127.0.0.1:8001/docs` — interactive API documentation.
 
 ## Run Tests
@@ -129,12 +133,16 @@ The tests cover the currently implemented components, including HTTP request and
 
 ## Current Limitations and Pending Work
 
-- **Real eBPF integration is pending.** The parser and pipeline have not yet been connected to a real eBPF Ring Buffer producer.
-- The current parser expects ordered TCP payload chunks. TCP sequence-number handling, retransmissions, out-of-order segments, and connection lifecycle management are not implemented.
+- The eBPF capture path has been exercised in a controlled WSL loopback BOLA lab. This limited runtime evidence does not establish production readiness.
+- TCP reassembly components and tests exist; broader stream handling and failure-recovery behavior still require validation beyond the controlled lab.
 - HTTP chunked transfer encoding is not supported.
 - HTTP parsing currently focuses on basic HTTP/1.x framing. Special response cases, such as responses to `HEAD` requests and bodyless status codes, need additional handling.
-- The pipeline and broker are components; a complete live traffic-capture-to-analysis workflow is not yet implemented.
+- The live capture-to-analysis path has been exercised for a controlled local BOLA scenario, but broader protocol coverage and operational reliability remain unverified.
 - ZeroMQ PUB/SUB delivery is not durable.
+- The alert bus is process-local and non-durable; bounded subscriber queues can drop notifications when full.
+- The v1 APIs currently lack authentication and authorization; keep the service on loopback or a trusted development network.
+- The Day 17 blocklist map does not drop packets by itself, and upstream heuristics-to-verdict integration remains outstanding.
+- A controlled latency observation exists, but the sub-millisecond serialization target has not been established by a repeatable benchmark.
 - Production hardening, observability, and broader protocol testing remain future work.
 
 ## Development Status

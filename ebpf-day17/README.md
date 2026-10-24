@@ -61,6 +61,11 @@ The documentation-only address 203.0.113.25 is used in examples.
 - Initialization does not overwrite an existing pin.
 - The map is state storage only. It cannot drop packets without a compatible
   eBPF program looking up this map and enforcing its entries.
-- The Python synchronizer is not yet connected to the FastAPI lifespan or to
-  an existing heuristic verdict producer.
+- When `API_SENTINEL_BLOCKLIST_SYNC_ENABLED=1`, the FastAPI lifespan starts
+  the map synchronizer and loopback-only verdict receiver.
+- The receiver-to-worker-to-kernel-map path has been exercised with explicit
+  test verdicts. Integration from the upstream heuristics/policy service to
+  `BlocklistVerdictSender` remains outstanding.
+- A BOLA incident does not automatically create a block verdict. A separate,
+  explicit policy decision is required.
 - Kernel map creation and packet enforcement are separate operations.

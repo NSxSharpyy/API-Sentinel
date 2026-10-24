@@ -1,6 +1,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -34,6 +35,36 @@ async def lifespan(app: FastAPI):
         publisher=publisher,
         persistence_worker=persistence_worker,
     )
+
+    # Keep kernel synchronization opt-in. Opening the map also validates its ABI.
+    blocklist_enabled = os.getenv(
+        "API_SENTINEL_BLOCKLIST_SYNC_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes"}
+    blocklist_writer = None
+    blocklist_synchronizer = None
+    blocklist_task = None
+    blocklist_stop_event = asyncio.Event()
+
+    if blocklist_enabled:
+        try:
+            from app.blocklist_map_writer import LibbpfBlocklistMapWriter
+            from app.blocklist_sync import BlocklistSynchronizer
+
+            blocklist_writer = LibbpfBlocklistMapWriter()
+            blocklist_synchronizer = BlocklistSynchronizer(
+                queues.blocklist_verdict_queue,
+                blocklist_writer,
+            )
+        except Exception:
+            publisher.close()
+            logger.exception(
+                "Blocklist synchronization requested but initialization failed"
+            )
+            raise
+
+    app.state.blocklist_sync_enabled = blocklist_enabled
+    app.state.blocklist_synchronizer = blocklist_synchronizer
+    app.state.blocklist_sync_task = None
 
     app.state.stop_event = stop_event
     app.state.http_pipeline = pipeline
@@ -74,7 +105,16 @@ async def lifespan(app: FastAPI):
     )
     app.state.capture_task = capture_task
 
+    if blocklist_synchronizer is not None:
+        blocklist_task = asyncio.create_task(
+            blocklist_synchronizer.run(blocklist_stop_event),
+            name="api-sentinel-blocklist-sync-worker",
+        )
+        app.state.blocklist_sync_task = blocklist_task
+
     logger.info("API-Sentinel persistence worker started")
+    if blocklist_task is not None:
+        logger.info("API-Sentinel blocklist synchronization worker started")
     logger.info("API-Sentinel packet worker started")
     logger.info("API-Sentinel capture supervisor started")
 
@@ -116,6 +156,31 @@ async def lifespan(app: FastAPI):
             logger.exception(
                 "Packet worker failed during shutdown"
             )
+
+        # Stop blocklist synchronization and drain any queued verdicts.
+        if blocklist_task is not None:
+            blocklist_stop_event.set()
+            try:
+                await asyncio.wait_for(blocklist_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Blocklist worker did not stop within 5 seconds; cancelling"
+                )
+                blocklist_task.cancel()
+                try:
+                    await blocklist_task
+                except asyncio.CancelledError:
+                    pass
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Blocklist worker failed during shutdown")
+            finally:
+                if blocklist_writer is not None:
+                    try:
+                        blocklist_writer.close()
+                    except Exception:
+                        logger.exception("Failed to close blocklist map writer")
 
         # Drain queued database writes after packet processing stops.
         persistence_stop_event.set()
@@ -327,4 +392,33 @@ async def detection_status():
             "capture_to_detection_count": 0,
         }
     return {"status": "running", **detector.snapshot()}
+
+
+@app.get("/blocklist-status")
+async def blocklist_status():
+    """Expose blocklist queue and synchronization worker diagnostics."""
+    enabled = getattr(app.state, "blocklist_sync_enabled", False)
+    synchronizer = getattr(app.state, "blocklist_synchronizer", None)
+    task = getattr(app.state, "blocklist_sync_task", None)
+
+    if not enabled:
+        status = "disabled"
+    elif synchronizer is None:
+        status = "not_initialized"
+    elif task is not None and not task.done():
+        status = "running"
+    else:
+        status = "stopped"
+
+    response = {
+        "status": status,
+        "enabled": enabled,
+        "queue_depth": queues.blocklist_verdict_queue.qsize(),
+        "queue_capacity": queues.BLOCK_VERDICT_QUEUE_MAX_SIZE,
+        "kernel_map_pin": "/sys/fs/bpf/api_sentinel_day17_blocklist",
+        "packet_drop_enforcement_configured": False,
+    }
+    if synchronizer is not None:
+        response.update(synchronizer.snapshot())
+    return response
 

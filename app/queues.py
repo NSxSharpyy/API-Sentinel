@@ -4,6 +4,13 @@ import asyncio
 from app.schemas import HeaderData, PacketMetadata, RawPacketChunk
 
 QUEUE_MAX_SIZE = 10000
+BLOCK_VERDICT_QUEUE_MAX_SIZE = 1024
+
+# Explicit block/unblock verdicts only. Detection incidents do not enter this
+# queue automatically; a policy component must submit validated verdict data.
+blocklist_verdict_queue: asyncio.Queue[object] = asyncio.Queue(
+    maxsize=BLOCK_VERDICT_QUEUE_MAX_SIZE
+)
 
 raw_packet_queue: asyncio.Queue[RawPacketChunk] = asyncio.Queue(
     maxsize=QUEUE_MAX_SIZE

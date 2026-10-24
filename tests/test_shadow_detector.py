@@ -83,6 +83,62 @@ class TestShadowAPIDetector(unittest.TestCase):
 
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0]["status"], "shadow")
+        self.assertEqual(findings[0]["method"], "POST")
+        self.assertEqual(findings[0]["route"], "/api/v1/users")
+
+    def test_duplicate_shadow_routes_are_deduplicated(self):
+        observed_routes = [
+            {
+                "method": "GET",
+                "route": "/api/v1/internal/debug",
+            },
+            {
+                "method": "GET",
+                "route": "/api/v1/internal/debug",
+            },
+            {
+                "method": "GET",
+                "route": "/api/v1/internal/debug",
+            },
+        ]
+
+        findings = self.detector.detect(observed_routes)
+
+        self.assertEqual(len(findings), 1)
+
+        self.assertEqual(
+            findings[0]["method"],
+            "GET",
+        )
+
+        self.assertEqual(
+            findings[0]["route"],
+            "/api/v1/internal/debug",
+        )
+
+    def test_same_path_different_methods_are_separate(self):
+        observed_routes = [
+            {
+                "method": "GET",
+                "route": "/api/v1/internal/debug",
+            },
+            {
+                "method": "POST",
+                "route": "/api/v1/internal/debug",
+            },
+        ]
+
+        findings = self.detector.detect(observed_routes)
+
+        self.assertEqual(len(findings), 2)
+
+        methods = {
+            finding["method"]
+            for finding in findings
+        }
+
+        self.assertIn("GET", methods)
+        self.assertIn("POST", methods)
 
     def test_empty_observed_routes(self):
         findings = self.detector.detect([])

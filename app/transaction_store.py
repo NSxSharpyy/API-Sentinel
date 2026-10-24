@@ -58,18 +58,16 @@ class TransactionStore:
         ):
             return
 
-        try:
-            event = AlertEvent(
-                incident_id=outcome["incident_id"],
-                detected_at=outcome["detected_at"],
-                severity=outcome["incident_severity"],
-                title=outcome["incident_title"],
-                description=outcome.get("incident_description"),
-                source_ip=outcome.get("incident_source_ip"),
-                transaction_id=outcome.get("incident_transaction_id"),
-                endpoint_id=outcome.get("incident_endpoint_id"),
-                status=outcome.get("incident_status", "open"),
+        incident_payload = outcome.get("incident")
+        if not isinstance(incident_payload, dict):
+            logger.error(
+                "Detected incident has no canonical payload; alert not published"
             )
+            return
+
+        incident_id = incident_payload.get("incident_id")
+        try:
+            event = AlertEvent(**incident_payload)
             _, dropped = self.alert_bus.publish(event)
             if dropped:
                 logger.warning(
@@ -82,7 +80,7 @@ class TransactionStore:
             logger.exception(
                 "Security incident persisted but alert publication failed "
                 "(incident_id=%s)",
-                outcome.get("incident_id"),
+                incident_id,
             )
 
     def save(self, transaction: HTTPTransaction) -> int:

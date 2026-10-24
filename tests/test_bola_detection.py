@@ -10,6 +10,7 @@ from app.alert_bus import AlertBus
 from app.database import Base
 from app.http_reassembly import HTTPMessage
 from app.models import SecurityIncident, TransactionLog
+from app.schemas import SecurityIncidentSchema
 from app.transaction_correlator import HTTPTransaction
 from app.transaction_store import TransactionStore
 
@@ -128,9 +129,13 @@ def test_cross_user_incident_is_published_after_commit(store):
         transaction = session.get(TransactionLog, transaction_id)
 
     assert transaction is not None
+    event_payload = event.to_dict()
     assert event.incident_id == incident.id
     assert event.transaction_id == transaction_id
     assert event.severity == "high"
+    assert set(event_payload) == set(SecurityIncidentSchema.model_fields)
+    assert event_payload["incident_id"] == incident.id
+    assert event_payload["status"] == incident.status
     assert "Potential BOLA" in event.title
     assert event.source_ip == "127.0.0.1"
     assert bus.snapshot()["published_count"] == 1

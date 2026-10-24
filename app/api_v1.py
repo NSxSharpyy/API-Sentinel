@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app import queues
 from app.database import SessionLocal
 from app.models import DiscoveredEndpoint, SecurityIncident, TransactionLog
+from app.schemas import SecurityIncidentSchema
 from app.queues import header_queue, metadata_queue, raw_packet_queue
 
 router = APIRouter(prefix="/api/v1", tags=["API v1"])
@@ -33,17 +34,8 @@ def _endpoint_dict(endpoint: DiscoveredEndpoint) -> dict[str, Any]:
 
 
 def _incident_dict(incident: SecurityIncident) -> dict[str, Any]:
-    return {
-        "id": incident.id,
-        "endpoint_id": incident.endpoint_id,
-        "transaction_id": incident.transaction_id,
-        "detected_at": incident.detected_at,
-        "severity": incident.severity,
-        "title": incident.title,
-        "description": incident.description,
-        "source_ip": incident.source_ip,
-        "status": incident.status,
-    }
+    """Serialize incidents using the shared cross-module schema."""
+    return SecurityIncidentSchema.from_model(incident).model_dump(mode="json")
 
 
 @router.get("/endpoints")

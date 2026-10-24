@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 from app.alert_dedup import SlidingWindowAlertDeduplicator
+from app.schemas import SecurityIncidentSchema
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +24,19 @@ class AlertEvent:
     endpoint_id: int | None = None
     status: str = "open"
 
+    def __post_init__(self) -> None:
+        # Validate at the event boundary and normalize timestamps to ISO-8601.
+        payload = SecurityIncidentSchema.model_validate(
+            asdict(self)
+        ).model_dump(mode="json")
+        for name, value in payload.items():
+            object.__setattr__(self, name, value)
+
     def to_dict(self) -> dict:
-        return asdict(self)
+        """Return the canonical JSON-compatible incident representation."""
+        return SecurityIncidentSchema.model_validate(
+            asdict(self)
+        ).model_dump(mode="json")
 
 
 class AlertBus:

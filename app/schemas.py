@@ -39,3 +39,31 @@ class PacketMetadata(BaseModel):
     direction: Optional[str] = None
     connection_id: Optional[str] = None
     tcp_flags: Optional[list[str]] = None
+
+class SecurityIncidentSchema(BaseModel):
+    """Canonical cross-module representation of a persisted security incident."""
+
+    incident_id: int = Field(gt=0)
+    detected_at: datetime
+    severity: str = Field(min_length=1, max_length=16)
+    title: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+    source_ip: Optional[str] = Field(default=None, max_length=45)
+    transaction_id: Optional[int] = Field(default=None, gt=0)
+    endpoint_id: Optional[int] = Field(default=None, gt=0)
+    status: str = Field(default="open", min_length=1, max_length=20)
+
+    @classmethod
+    def from_model(cls, incident):
+        """Map SQLAlchemy's primary key `id` to the API field `incident_id`."""
+        return cls(
+            incident_id=incident.id,
+            detected_at=incident.detected_at,
+            severity=incident.severity,
+            title=incident.title,
+            description=incident.description,
+            source_ip=incident.source_ip,
+            transaction_id=incident.transaction_id,
+            endpoint_id=incident.endpoint_id,
+            status=incident.status,
+        )

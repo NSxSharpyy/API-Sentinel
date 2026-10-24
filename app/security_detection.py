@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from app.models import SecurityIncident
+from app.schemas import SecurityIncidentSchema
 
 REDACTED = "[REDACTED]"
 SENSITIVE = {
@@ -190,18 +191,14 @@ class BOLADetector:
         )
         session.add(incident)
         session.flush()
+        incident_payload = SecurityIncidentSchema.from_model(
+            incident
+        ).model_dump(mode="python")
         return {
             "detected": True,
             "detected_at": detected_at.isoformat(),
             "latency_ms": latency_ms,
-            "incident_id": incident.id,
-            "incident_severity": incident.severity,
-            "incident_title": incident.title,
-            "incident_description": incident.description,
-            "incident_source_ip": incident.source_ip,
-            "incident_status": incident.status,
-            "incident_transaction_id": incident.transaction_id,
-            "incident_endpoint_id": incident.endpoint_id,
+            "incident": incident_payload,
         }
 
     def after_commit(self, outcome):

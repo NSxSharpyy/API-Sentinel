@@ -11,6 +11,7 @@ from app import api_v1
 from app.alert_bus import AlertBus
 from app.database import Base
 from app.main import app
+from app.schemas import SecurityIncidentSchema
 from app.security_detection import BOLADetector
 from app.models import (
     DiscoveredEndpoint,
@@ -121,6 +122,9 @@ def test_alerts_support_filters_and_pagination(api_client):
     assert len(body["items"]) == 1
     assert body["items"][0]["title"] == "BOLA alert"
     assert body["items"][0]["severity"] == "high"
+    assert body["items"][0]["incident_id"] > 0
+    assert "id" not in body["items"][0]
+    assert set(body["items"][0]) == set(SecurityIncidentSchema.model_fields)
     assert body["filters"] == {"severity": "high", "status": "open"}
 
 

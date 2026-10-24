@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app import queues
 from app.capture_supervisor import supervise_capture
 from app.config import settings
+from app.blocklist_verdicts import BlocklistVerdictProducer
 from app.http_pipeline import HTTPMessagePipeline
 from app.message_broker import HTTPTransactionPublisher
 from app.packet_worker import packet_worker
@@ -43,6 +44,10 @@ async def lifespan(app: FastAPI):
     blocklist_writer = None
     blocklist_synchronizer = None
     blocklist_task = None
+    blocklist_producer = BlocklistVerdictProducer(
+        queues.blocklist_verdict_queue,
+        enabled=blocklist_enabled,
+    )
     blocklist_stop_event = asyncio.Event()
 
     if blocklist_enabled:
@@ -65,6 +70,7 @@ async def lifespan(app: FastAPI):
     app.state.blocklist_sync_enabled = blocklist_enabled
     app.state.blocklist_synchronizer = blocklist_synchronizer
     app.state.blocklist_sync_task = None
+    app.state.blocklist_verdict_producer = blocklist_producer
 
     app.state.stop_event = stop_event
     app.state.http_pipeline = pipeline
@@ -420,5 +426,32 @@ async def blocklist_status():
     }
     if synchronizer is not None:
         response.update(synchronizer.snapshot())
+
+    producer = getattr(app.state, "blocklist_verdict_producer", None)
+    if producer is not None:
+        producer_metrics = producer.snapshot()
+        response.update({
+            "producer_enabled": producer_metrics["producer_enabled"],
+            "producer_submitted_count": producer_metrics["submitted_count"],
+            "producer_rejected_count": producer_metrics["rejected_count"],
+            "producer_disabled_count": producer_metrics["disabled_count"],
+            "producer_queue_full_count": producer_metrics["queue_full_count"],
+            "producer_submission_queue_depth":
+                producer_metrics["submission_queue_depth"],
+            "producer_submission_queue_capacity":
+                producer_metrics["submission_queue_capacity"],
+        })
+    else:
+        response.update({
+            "producer_enabled": False,
+            "producer_submitted_count": 0,
+            "producer_rejected_count": 0,
+            "producer_disabled_count": 0,
+            "producer_queue_full_count": 0,
+            "producer_submission_queue_depth":
+                queues.blocklist_verdict_queue.qsize(),
+            "producer_submission_queue_capacity":
+                queues.BLOCK_VERDICT_QUEUE_MAX_SIZE,
+        })
     return response
 

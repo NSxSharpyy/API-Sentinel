@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app import queues
 from app.capture_supervisor import supervise_capture
 from app.alert_bus import AlertBus
+from app.api_v1 import router as api_v1_router
 from app.config import settings
 from app.blocklist_verdicts import BlocklistVerdictProducer
 from app.http_pipeline import HTTPMessagePipeline
@@ -256,6 +257,8 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
+
+app.include_router(api_v1_router)
 
 
 @app.get("/")

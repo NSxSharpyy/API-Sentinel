@@ -150,6 +150,116 @@ class TestLiveShadowDiscovery(unittest.TestCase):
 
         self.assertEqual(results, [])
 
+        def test_method_is_part_of_classification(self):
+            """HTTP method must be included in runtime classification."""
+
+        discovery = LiveShadowDiscovery(
+            self.official_contract
+        )
+
+        observed_routes = [
+            ("GET", "/users"),
+            ("DELETE", "/users"),
+        ]
+
+        results = discovery.discover(observed_routes)
+
+        self.assertEqual(len(results), 2)
+
+        self.assertEqual(
+            results[0]["method"],
+            "GET",
+        )
+
+        self.assertEqual(
+            results[0]["route"],
+            "/users",
+        )
+
+        self.assertEqual(
+            results[0]["status"],
+            "OFFICIAL_API",
+        )
+
+        self.assertEqual(
+            results[1]["method"],
+            "DELETE",
+        )
+
+        self.assertEqual(
+            results[1]["route"],
+            "/users",
+        )
+
+        self.assertEqual(
+            results[1]["status"],
+            "SHADOW_API",
+        )
+
+    def test_method_matching_is_case_insensitive(self):
+        """HTTP methods should be normalized to uppercase."""
+
+        discovery = LiveShadowDiscovery(
+            self.official_contract
+        )
+
+        results = discovery.discover(
+            [
+                ("get", "/users"),
+                ("GET", "/orders"),
+            ]
+        )
+
+        self.assertEqual(
+            results[0]["method"],
+            "GET",
+        )
+
+        self.assertEqual(
+            results[0]["status"],
+            "OFFICIAL_API",
+        )
+
+        self.assertEqual(
+            results[1]["method"],
+            "GET",
+        )
+
+        self.assertEqual(
+            results[1]["status"],
+            "OFFICIAL_API",
+        )
+
+    def test_method_aware_shadow_and_zombie_detection(self):
+        """Method and path together determine Shadow/Zombie status."""
+
+        discovery = LiveShadowDiscovery(
+            self.official_contract
+        )
+
+        observed_routes = [
+            ("GET", "/old-api"),
+            ("POST", "/old-api"),
+            ("GET", "/admin/debug"),
+        ]
+
+        results = discovery.discover(observed_routes)
+
+        self.assertEqual(
+            results[0]["status"],
+            "ZOMBIE_API",
+        )
+
+        self.assertEqual(
+            results[1]["status"],
+            "SHADOW_API",
+        )
+
+        self.assertEqual(
+            results[2]["status"],
+            "SHADOW_API",
+        )
+
     def test_invalid_contract(self):
 
         with self.assertRaises(ValueError):

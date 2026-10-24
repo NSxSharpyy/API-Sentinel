@@ -63,6 +63,36 @@ class TestRuntimeEngine(unittest.TestCase):
 
         self.assertEqual(findings, [])
 
+    def test_query_parameters_are_ignored(self):
+        events = [
+            {
+                "method": "GET",
+                "path": "/users?status=active",
+            }
+        ]
+
+        findings = find_unapproved_endpoints(
+            events,
+            self.approved
+        )
+
+        self.assertEqual(findings, [])
+
+    def test_trailing_slash_is_normalized(self):
+        events = [
+            {
+                "method": "GET",
+                "path": "/users/",
+            }
+        ]
+
+        findings = find_unapproved_endpoints(
+            events,
+            self.approved
+        )
+
+        self.assertEqual(findings, [])
+
     def test_unapproved_path_is_flagged(self):
         events = [
             {"method": "GET", "path": "/internal/debug"}
@@ -74,6 +104,21 @@ class TestRuntimeEngine(unittest.TestCase):
         )
 
         self.assertEqual(len(findings), 1)
+
+    def test_invalid_http_method_is_ignored(self):
+        events = [
+            {
+                "method": "INVALID",
+                "path": "/internal/debug",
+            }
+        ]
+
+        findings = find_unapproved_endpoints(
+            events,
+            self.approved
+        )
+
+        self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":

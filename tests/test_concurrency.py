@@ -78,6 +78,17 @@ class TestConcurrentRouteProcessor(unittest.TestCase):
         with self.assertRaises(TypeError):
             ConcurrentRouteProcessor(max_workers="4")
 
+    def test_invalid_processor(self):
+        processor = ConcurrentRouteProcessor(max_workers=2)
+
+        routes = [
+            {"id": 1},
+            {"id": 2},
+        ]
+
+        with self.assertRaises(TypeError):
+            processor.process(routes, "not-a-function")
+
     def test_processor_exception_propagates(self):
         processor = ConcurrentRouteProcessor(max_workers=2)
 

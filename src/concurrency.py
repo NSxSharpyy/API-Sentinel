@@ -30,6 +30,8 @@ class ConcurrentRouteProcessor:
             List of processed results in input order.
         """
 
+        if not callable(processor):
+            raise TypeError("processor must be callable.")
         routes = list(routes)
 
         if not routes:

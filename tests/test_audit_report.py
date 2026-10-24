@@ -205,6 +205,82 @@ class TestSchemaAuditReport(unittest.TestCase):
             "/old-api",
         )
 
+        def test_report_type(self):
+            report = SchemaAuditReport(
+            self.diff_result
+        ).generate()
+
+        self.assertEqual(
+            report["report_type"],
+            "schema_discrepancy_audit",
+        )
+
+    def test_generated_at_exists(self):
+        report = SchemaAuditReport(
+            self.diff_result
+        ).generate()
+
+        self.assertIn(
+            "generated_at",
+            report,
+        )
+
+        self.assertTrue(
+            report["generated_at"]
+        )
+
+    def test_empty_differences(self):
+        diff_result = {
+            "summary": {
+                "official_routes": 0,
+                "live_routes": 0,
+            },
+            "differences": {},
+        }
+
+        report = SchemaAuditReport(
+            diff_result
+        ).generate()
+
+        self.assertEqual(
+            report["summary"]["official_routes"],
+            0,
+        )
+
+        self.assertEqual(
+            report["summary"]["live_routes"],
+            0,
+        )
+
+        self.assertEqual(
+            report["summary"]["common_routes"],
+            0,
+        )
+
+        self.assertEqual(
+            report["summary"]["shadow_routes"],
+            0,
+        )
+
+        self.assertEqual(
+            report["summary"]["zombie_routes"],
+            0,
+        )
+
+        self.assertEqual(
+            report["summary"]["missing_live_routes"],
+            0,
+        )
+
+        self.assertEqual(
+            report["findings"]["shadow_apis"],
+            [],
+        )
+
+        self.assertEqual(
+            report["findings"]["zombie_apis"],
+            [],
+        )
 
 if __name__ == "__main__":
     unittest.main()

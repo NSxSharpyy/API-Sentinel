@@ -27,9 +27,9 @@ actual completion dates.
 | 7 | Oct 14 | HTTP edge cases and Phase 1 freeze | Partial | Edge-case tests and parser hardening exist; complete multipart coverage and freeze evidence remain unverified. |
 | 8 | Oct 15 | Relational database models | Evidence found | Models, database configuration and model tests exist. |
 | 9 | Oct 16 | Request-response correlation and persistence | Verified in tests/runtime | Correlator, store and worker exist; completed transactions were persisted in the controlled runtime test. |
-| 10 | Oct 17 | Real-time alert event bus | Unverified | Transaction messaging exists; a separate alert broadcasting path has not been established. |
-| 11 | Oct 18 | Dashboard REST endpoints | Likely incomplete | The inspected route list did not show the planned /api/v1/endpoints, /api/v1/alerts and /api/v1/metrics routes. Check router registration before final classification. |
-| 12 | Oct 19 | Sliding-window alert deduplication | Unverified | Current evidence does not establish the required alert suppression feature. |
+| 10 | Oct 17 | Real-time alert event bus | Verified in tests | Thread-safe bounded subscriber queues; BOLA incidents publish after commit; delivery failures do not fail persistence. In-process delivery is not durable messaging. |
+| 11 | Oct 18 | Dashboard REST endpoints | Verified in tests | GET /api/v1/endpoints, /api/v1/alerts and /api/v1/metrics implemented; pagination, filters and metrics tested with TestClient and isolated SQLite. |
+| 12 | Oct 19 | Sliding-window alert deduplication | Verified in tests | Alert bus suppresses repeated fingerprints within a 60-second default sliding window; expiry, distinct patterns, bounded cache and suppression metrics tested. Database incidents remain persisted. |
 | 13 | Oct 20 | Standardized multi-module incident schema | Partial | BOLA incident creation exists; unification across all planned detection modules is unverified. |
 | 14 | Oct 21 | Ingestion documentation/OpenAPI and Phase 2 freeze | Unverified | Required documentation and freeze evidence have not been established. |
 | 15 | Oct 22 | Queue latency audit and sub-millisecond serialization | Unverified | Telemetry exists, but a controlled serialization benchmark meeting the target has not been demonstrated. |
@@ -39,13 +39,17 @@ actual completion dates.
 ## Git evidence
 
 - Branch: backend-parser
-- Latest audited commit: cdcfa04a80e852c733bdb90058c2a48f65fb40a3
-- Commit: Add loopback blocklist verdict receiver
+- Latest audited commit: 0d0677325bb80b750099840e363231d2a014999e
+- Commit: Add sliding-window alert deduplication
+- Previous feature commits: 941ad86 (API v1 endpoints, alerts and metrics); 2ded72d (real-time security alert bus)
 - Local HEAD and origin/backend-parser were equal after push.
 
 ## Test evidence
 
-- Full suite after receiver integration: 140 passed, 1 Starlette deprecation warning.
+- Earlier full suite after receiver integration: 140 passed, 1 Starlette deprecation warning.
+- Latest full suite after Days 10–12 work: 164 passed, 1 Starlette deprecation warning in 8.01 seconds.
+- Day 11 API tests: 4 passed; exercised endpoint pagination, alert filters/pagination, invalid query bounds, and metrics with an isolated SQLite database.
+- Day 12 focused tests: 22 passed across the deduplicator, alert bus, and API tests.
 - Receiver tests: 3 passed.
 - Day 17 focused tests before receiver integration: 30 passed, 1 warning.
 - Live Day 17 application test: 2 verdicts received and applied, zero reported failures or rejections; test IP was removed and the map was empty after cleanup.
@@ -53,11 +57,12 @@ actual completion dates.
 
 ## Outstanding priorities
 
-1. Verify Days 10–15 deliverables with targeted source inspection and acceptance tests.
-2. Connect the actual heuristics/policy service to BlocklistVerdictSender.
-3. Keep packet-drop enforcement disabled until a compatible enforcement program is separately implemented and tested.
-4. Collect clean, repeatable latency benchmarks after the capture pipeline is stable.
-5. Update this tracker only when new evidence exists; keep planned dates separate from actual completion dates.
+1. Day 13: verify and standardize incident fields across detection, persistence, alert events, and API responses.
+2. Day 14: verify required documentation, generated OpenAPI, and Phase 2 freeze criteria.
+3. Day 15: run a clean, repeatable serialization benchmark and document the measurement boundary and results.
+4. Connect the actual heuristics/policy service to BlocklistVerdictSender.
+5. Keep packet-drop enforcement disabled until a compatible enforcement program is separately implemented and tested.
+6. Update this tracker only when new evidence exists; keep planned dates separate from actual completion dates.
 
 ## Safety and repository hygiene
 

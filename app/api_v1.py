@@ -190,6 +190,30 @@ def get_metrics(request: Request):
                 persistence_worker.queue.qsize()
                 if persistence_worker is not None else 0
             ),
+            "queue_wait_count": (
+                persistence_worker.queue_wait_count
+                if persistence_worker is not None else 0
+            ),
+            "queue_wait_sample_count": (
+                persistence_worker.queue_wait_sample_count
+                if persistence_worker is not None else 0
+            ),
+            "last_queue_wait_ms": (
+                persistence_worker.last_queue_wait_ms
+                if persistence_worker is not None else 0.0
+            ),
+            "average_queue_wait_ms": (
+                persistence_worker.average_queue_wait_ms
+                if persistence_worker is not None else 0.0
+            ),
+            "max_queue_wait_ms": (
+                persistence_worker.max_queue_wait_ms
+                if persistence_worker is not None else 0.0
+            ),
+            "p95_queue_wait_ms": (
+                persistence_worker.p95_queue_wait_ms
+                if persistence_worker is not None else 0.0
+            ),
             "persisted_count": (
                 persistence_worker.persisted_count
                 if persistence_worker is not None else 0

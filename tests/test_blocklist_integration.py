@@ -88,6 +88,10 @@ def test_blocklist_status_http_route_defaults_to_disabled(monkeypatch):
         main.app.state, "blocklist_verdict_producer", None, raising=False
     )
 
+    monkeypatch.setattr(
+        main.app.state, "blocklist_policy", None, raising=False
+    )
+
     # Intentionally do not use the context manager: this tests the route
     # without starting capture services or the application lifespan.
     client = TestClient(main.app)
@@ -98,6 +102,8 @@ def test_blocklist_status_http_route_defaults_to_disabled(monkeypatch):
     assert payload["status"] == "disabled"
     assert payload["enabled"] is False
     assert payload["producer_enabled"] is False
+    assert payload["policy"]["enabled"] is False
+    assert payload["policy"]["submitted_count"] == 0
     assert payload["producer_submitted_count"] == 0
     assert payload["producer_rejected_count"] == 0
     assert payload["packet_drop_enforcement_configured"] is False

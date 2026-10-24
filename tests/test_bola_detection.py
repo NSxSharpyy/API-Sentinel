@@ -156,3 +156,52 @@ def test_alert_delivery_failure_does_not_fail_persistence(store, caplog):
     assert transaction is not None
     assert len(incidents) == 1
     assert "Security incident persisted but alert publication failed" in caplog.text
+
+
+def test_detected_incident_is_submitted_to_policy_after_commit(store):
+    class RecordingPolicy:
+        def __init__(self):
+            self.outcomes = []
+
+        def evaluate(self, outcome):
+            self.outcomes.append(outcome)
+            return {"accepted": False, "reason": "test_only"}
+
+    policy = RecordingPolicy()
+    store.blocklist_policy = policy
+
+    login(store)
+    transaction_id = store.save(invoice("demo-token", 3, 2))
+
+    assert len(policy.outcomes) == 1
+    outcome = policy.outcomes[0]
+    assert outcome["detected"] is True
+    incident_data = outcome["incident"]
+    assert incident_data["transaction_id"] == transaction_id
+
+    from app.models import SecurityIncident
+
+    with store.session_factory() as session:
+        persisted_incident = session.get(
+            SecurityIncident, incident_data["incident_id"]
+        )
+    assert persisted_incident is not None
+
+
+def test_policy_exception_does_not_hide_successful_persistence(store):
+    class BrokenPolicy:
+        def evaluate(self, outcome):
+            raise RuntimeError("synthetic policy failure")
+
+    store.blocklist_policy = BrokenPolicy()
+    login(store)
+    transaction_id = store.save(invoice("demo-token", 3, 2))
+
+    from app.models import SecurityIncident, TransactionLog
+
+    with store.session_factory() as session:
+        transaction = session.get(TransactionLog, transaction_id)
+        incidents = session.query(SecurityIncident).all()
+
+    assert transaction is not None
+    assert len(incidents) == 1

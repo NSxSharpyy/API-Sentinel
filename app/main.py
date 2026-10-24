@@ -44,6 +44,17 @@ async def lifespan(app: FastAPI):
     blocklist_enabled = os.getenv(
         "API_SENTINEL_BLOCKLIST_SYNC_ENABLED", ""
     ).strip().lower() in {"1", "true", "yes"}
+    blocklist_policy_requested = os.getenv(
+        "API_SENTINEL_BLOCKLIST_POLICY_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes"}
+    if blocklist_policy_requested and not blocklist_enabled:
+        alert_bus.close()
+        publisher.close()
+        raise RuntimeError(
+            "Blocklist policy requires API_SENTINEL_BLOCKLIST_SYNC_ENABLED=1"
+        )
+    blocklist_policy = None
+    blocklist_sender = None
     blocklist_writer = None
     blocklist_synchronizer = None
     blocklist_receiver = None
@@ -68,7 +79,37 @@ async def lifespan(app: FastAPI):
                 blocklist_writer,
             )
             blocklist_receiver = BlocklistVerdictReceiver(blocklist_producer)
+            if blocklist_policy_requested:
+                raw_allowlist = os.getenv(
+                    "API_SENTINEL_BLOCKLIST_ALLOWED_SOURCE_IPS", ""
+                )
+                allowed_source_ips = [
+                    item.strip() for item in raw_allowlist.split(",")
+                    if item.strip()
+                ]
+                if not allowed_source_ips:
+                    raise ValueError(
+                        "Blocklist policy requires an exact allowlist in "
+                        "API_SENTINEL_BLOCKLIST_ALLOWED_SOURCE_IPS"
+                    )
+                from app.blocklist_policy import (
+                    BlocklistPolicy, ThreadOwnedVerdictSender
+                )
+                from app.blocklist_verdict_client import BlocklistVerdictSender
+                blocklist_sender = ThreadOwnedVerdictSender(
+                    BlocklistVerdictSender
+                )
+                blocklist_policy = BlocklistPolicy(
+                    blocklist_sender,
+                    allowed_source_ips,
+                    enabled=True,
+                    ttl_seconds=int(os.getenv(
+                        "API_SENTINEL_BLOCKLIST_VERDICT_TTL_SECONDS", "60"
+                    )),
+                )
         except Exception:
+            if blocklist_sender is not None:
+                blocklist_sender.close()
             if blocklist_receiver is not None:
                 blocklist_receiver.close()
             if blocklist_writer is not None:
@@ -80,6 +121,9 @@ async def lifespan(app: FastAPI):
             )
             raise
 
+    transaction_store.blocklist_policy = blocklist_policy
+    app.state.blocklist_policy = blocklist_policy
+    app.state.blocklist_sender = blocklist_sender
     app.state.blocklist_sync_enabled = blocklist_enabled
     app.state.blocklist_synchronizer = blocklist_synchronizer
     app.state.blocklist_sync_task = None
@@ -188,7 +232,37 @@ async def lifespan(app: FastAPI):
                 "Packet worker failed during shutdown"
             )
 
-        # Stop verdict intake first so the synchronization worker can drain.
+        # Drain persistence first. Post-commit policy sends need the
+        # verdict receiver and blocklist worker to remain alive.
+        persistence_stop_event.set()
+        try:
+            await persistence_task
+        except asyncio.CancelledError:
+            logger.warning("Persistence worker was cancelled")
+        except Exception:
+            logger.exception("Persistence worker failed during shutdown")
+        finally:
+            alert_bus.close()
+            publisher.close()
+
+        # Allow locally submitted policy verdicts time to reach the receiver.
+        if blocklist_policy is not None and blocklist_receiver is not None:
+            expected = blocklist_policy.snapshot()["submitted_count"]
+            deadline = asyncio.get_running_loop().time() + 2.0
+            while (
+                blocklist_receiver.snapshot()["receiver_messages_accepted"] < expected
+                and asyncio.get_running_loop().time() < deadline
+            ):
+                await asyncio.sleep(0.02)
+            accepted = blocklist_receiver.snapshot()["receiver_messages_accepted"]
+            if accepted < expected:
+                logger.warning(
+                    "Timed out waiting for accepted verdicts: expected at least %d, accepted %d",
+                    expected,
+                    accepted,
+                )
+
+        # Stop verdict intake after persistence and sender calls have completed.
         if blocklist_receiver_task is not None:
             blocklist_receiver_stop_event.set()
             try:
@@ -202,14 +276,12 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
             except Exception:
-                logger.exception(
-                    "Blocklist verdict receiver failed during shutdown"
-                )
+                logger.exception("Blocklist verdict receiver failed during shutdown")
             finally:
                 if blocklist_receiver is not None:
                     blocklist_receiver.close()
 
-        # Stop blocklist synchronization and drain any queued verdicts.
+        # Stop synchronization only after receiver intake has completed.
         if blocklist_task is not None:
             blocklist_stop_event.set()
             try:
@@ -234,20 +306,8 @@ async def lifespan(app: FastAPI):
                     except Exception:
                         logger.exception("Failed to close blocklist map writer")
 
-        # Drain queued database writes after packet processing stops.
-        persistence_stop_event.set()
-
-        try:
-            await persistence_task
-        except asyncio.CancelledError:
-            logger.warning("Persistence worker was cancelled")
-        except Exception:
-            logger.exception(
-                "Persistence worker failed during shutdown"
-            )
-        finally:
-            alert_bus.close()
-            publisher.close()
+        if blocklist_sender is not None:
+            blocklist_sender.close()
 
         logger.info("API-Sentinel background services stopped")
 
@@ -517,5 +577,19 @@ async def blocklist_status():
             "producer_submission_queue_capacity":
                 queues.BLOCK_VERDICT_QUEUE_MAX_SIZE,
         })
+    policy = getattr(app.state, "blocklist_policy", None)
+    response["policy"] = (
+        policy.snapshot()
+        if policy is not None
+        else {
+            "enabled": False,
+            "allowed_source_count": 0,
+            "evaluated_count": 0,
+            "submitted_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "last_reason": "not_configured",
+        }
+    )
     return response
 

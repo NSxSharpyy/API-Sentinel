@@ -48,6 +48,7 @@ class TransactionStore:
         self.session_factory = session_factory
         self.bola_detector = BOLADetector()
         self.alert_bus = alert_bus
+        self.blocklist_policy = None
 
     def _publish_alert(self, outcome: dict | None) -> None:
         """Publish a committed incident without masking persistence success."""
@@ -116,6 +117,17 @@ class TransactionStore:
                 session.refresh(record)
                 self.bola_detector.after_commit(outcome)
                 self._publish_alert(outcome)
+                if (
+                    self.blocklist_policy is not None
+                    and isinstance(outcome, dict)
+                    and outcome.get("detected")
+                ):
+                    try:
+                        self.blocklist_policy.evaluate(outcome)
+                    except Exception:
+                        logger.exception(
+                            "Blocklist policy evaluation failed after transaction commit"
+                        )
                 return record.id
             except Exception:
                 session.rollback()

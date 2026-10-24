@@ -1,0 +1,16 @@
+{
+  "approved_apis": [
+    {
+      "method": "GET",
+      "path": "/users"
+    },
+    {
+      "method": "POST",
+      "path": "/users"
+    },
+    {
+      "method": "GET",
+      "path": "/users/{id}"
+    }
+  ]
+}

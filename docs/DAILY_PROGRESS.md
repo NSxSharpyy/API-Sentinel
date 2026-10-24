@@ -39,7 +39,7 @@ actual completion dates.
 ## Git evidence
 
 - Branch: backend-parser
- - Latest feature commit audited: b5be48fedd68997c6b07760352c2a5198d5aa44a
+- Latest feature commit audited: b5be48fedd68997c6b07760352c2a5198d5aa44a
 - Commit: Document API v1 and OpenAPI contract
 - Previous feature commits: 941ad86 (API v1 endpoints, alerts and metrics); 2ded72d (real-time security alert bus)
 - Local HEAD and origin/backend-parser were equal after push.

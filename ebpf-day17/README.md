@@ -63,9 +63,31 @@ The documentation-only address 203.0.113.25 is used in examples.
   eBPF program looking up this map and enforcing its entries.
 - When `API_SENTINEL_BLOCKLIST_SYNC_ENABLED=1`, the FastAPI lifespan starts
   the map synchronizer and loopback-only verdict receiver.
-- The receiver-to-worker-to-kernel-map path has been exercised with explicit
-  test verdicts. Integration from the upstream heuristics/policy service to
-  `BlocklistVerdictSender` remains outstanding.
+- The receiver-to-worker-to-kernel-map path and opt-in lab BOLA policy are
+  covered by tests. Packet-drop enforcement is separate and remains
+  unverified until controlled runtime validation.
 - A BOLA incident does not automatically create a block verdict. A separate,
   explicit policy decision is required.
 - Kernel map creation and packet enforcement are separate operations.
+
+## Experimental packet-drop enforcement
+
+`blocklist_enforce.bpf.c` is a separate TC ingress classifier that consults
+the existing Day 17 IPv4 hash map. It drops packets matching a permanent or
+unexpired source-IP entry and passes missing or expired entries. It supports
+Ethernet IPv4 with up to two VLAN tags.
+
+Build only:
+
+    make blocklist_enforce.bpf.o blocklist_enforcer_loader
+
+Attachment requires both `API_SENTINEL_ENABLE_PACKET_DROP=1` and
+`--enable-packet-drop`. The loader accepts only interface names starting
+with `api-sntl-`; use a disposable test interface, never `eth0`, `lo`, or a
+production interface. Ctrl+C requests detachment. If the process is forcibly
+killed, inspect and detach the exact filter before proceeding.
+
+Compilation is not runtime verification. Keep
+`packet_drop_enforcement_configured: false` until controlled tests verify
+matching packets drop, unrelated and expired-entry packets pass, and
+detachment restores normal traffic.

@@ -447,6 +447,58 @@ async def queue_status():
             persistence_task is not None
             and not persistence_task.done()
         ),
+        "persistence_queue_capacity": (
+            persistence_worker.queue.maxsize
+            if persistence_worker is not None else 0
+        ),
+        "persistence_queue_max_depth": (
+            persistence_worker.max_queue_depth
+            if persistence_worker is not None else 0
+        ),
+        "persistence_queue_wait_count": (
+            persistence_worker.queue_wait_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_queue_wait_avg_ms": (
+            persistence_worker.average_queue_wait_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_queue_wait_p95_ms": (
+            persistence_worker.p95_queue_wait_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_batch_amortized_per_job_count": (
+            persistence_worker.batch_amortized_per_job_duration_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_amortized_per_job_avg_ms": (
+            persistence_worker.average_batch_amortized_per_job_duration_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_batch_amortized_per_job_p95_ms": (
+            persistence_worker.p95_batch_amortized_per_job_duration_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_batch_amortized_per_job_max_ms": (
+            persistence_worker.max_batch_amortized_per_job_duration_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_store_call_count": (
+            persistence_worker.store_call_duration_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_store_call_avg_ms": (
+            persistence_worker.average_store_call_duration_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_store_call_p95_ms": (
+            persistence_worker.p95_store_call_duration_ms
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_store_call_max_ms": (
+            persistence_worker.max_store_call_duration_ms
+            if persistence_worker is not None else 0.0
+        ),
         "http_completed_transaction_count": (
             len(pipeline.completed_transactions)
             if pipeline is not None

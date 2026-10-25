@@ -116,12 +116,13 @@ class BOLADetector:
         method = (request.method or "").upper()
         path = urlsplit(request.uri or "").path
         status = response.status_code or 0
-        req_body = _json_object(request.body)
-        resp_body = _json_object(response.body)
-
         # Learn a lab identity from a successful login response.
         if method == "POST" and path == "/api/v2/auth/login":
-            if not 200 <= status < 300 or resp_body is None:
+            if not 200 <= status < 300:
+                return None
+
+            resp_body = _json_object(response.body)
+            if resp_body is None:
                 return None
             token = resp_body.get("token")
             user_id = resp_body.get("user_id")
@@ -142,6 +143,8 @@ class BOLADetector:
         match = INVOICE_PATH.fullmatch(path)
         if method != "GET" or match is None or not 200 <= status < 300:
             return None
+
+        resp_body = _json_object(response.body)
         if resp_body is None:
             return None
 

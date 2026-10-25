@@ -156,24 +156,34 @@ def main() -> int:
                     failures.append(error)
     finally:
         elapsed_s = time.perf_counter() - started
-        # Let the ring-buffer reader, raw queue and persistence worker drain.
-        deadline = time.monotonic() + args.drain_timeout
-        final_metrics = None
-        while time.monotonic() < deadline:
-            try:
-                final_metrics = get_json(base_url + "/queue-status", args.timeout)
-            except Exception:
-                time.sleep(0.25)
-                continue
-            persisted_delta = int(final_metrics.get("persistence_persisted_count", 0) or 0) - baseline_counts["persistence_persisted_count"]
-            if persisted_delta >= successful and int(final_metrics.get("persistence_queue_size", 0) or 0) == 0:
-                break
-            time.sleep(0.25)
+        # Capture is on loopback: polling queue-status during drain creates
+        # additional captured transactions. Use a quiet, bounded drain window,
+        # then take one final metrics snapshot.
+        time.sleep(args.drain_timeout)
+        try:
+            final_metrics = get_json(base_url + "/queue-status", args.timeout)
+        except Exception:
+            final_metrics = None
         rss_stop.set()
         monitor.join(timeout=1.0)
 
     if final_metrics is None:
         print("FAIL: unable to retrieve final /queue-status metrics")
+        return 2
+    required_metrics = set(COUNTER_KEYS) | {
+        "capture_running",
+        "raw_packet_queue",
+        "header_queue",
+        "metadata_queue",
+        "persistence_queue_size",
+    }
+
+    missing_metrics = sorted(required_metrics - final_metrics.keys())
+    if missing_metrics:
+        print(
+            "FAIL: final /queue-status response missing required metrics: "
+            + ", ".join(missing_metrics)
+        )
         return 2
 
     final_counts = {key: int(final_metrics.get(key, 0) or 0) for key in COUNTER_KEYS}
@@ -181,13 +191,15 @@ def main() -> int:
     rss_values_mib = [value / 1024 for value in rss_samples]
     rss_growth_mib = (max(rss_samples) - initial_rss) / 1024 if rss_samples else 0.0
     persisted_delta = deltas["persistence_persisted_count"]
-    transaction_rate = persisted_delta / elapsed_s if elapsed_s > 0 else 0.0
+    http_rate = successful / elapsed_s if elapsed_s > 0 else 0.0
+    total_elapsed_s = time.perf_counter() - started
 
     print("API-Sentinel live loopback capture benchmark")
     print(f"Boundary: real HTTP client -> loopback capture -> ring reader -> queues -> HTTP parser/correlator -> persistence")
     print("Not a physical NIC line-rate or production-database benchmark.")
     print(f"URL: {base_url}/; requested={args.requests}; successful HTTP responses={successful}; concurrency={args.concurrency}")
-    print(f"Wall time: {elapsed_s:.3f}s; observed persisted delta={persisted_delta}; persisted transaction rate={transaction_rate:.1f}/s")
+    print(f"Load wall time: {elapsed_s:.3f}s; total test+drain time={total_elapsed_s:.3f}s")
+    print(f"Successful HTTP response rate: {http_rate:.1f}/s; observed persisted delta={persisted_delta}")
     print(f"Request latency p50={percentile(latencies_ms, .50):.3f}ms; p95={percentile(latencies_ms, .95):.3f}ms; p99={percentile(latencies_ms, .99):.3f}ms")
     print("Counter deltas:")
     for key, value in deltas.items():
@@ -207,6 +219,17 @@ def main() -> int:
             violations.append(f"{key} increased by {deltas[key]}")
     if final_metrics.get("capture_running") is not True:
         violations.append("capture_running became false")
+    for queue_key in (
+        "raw_packet_queue",
+        "header_queue",
+        "metadata_queue",
+        "persistence_queue_size",
+    ):
+        depth = int(final_metrics.get(queue_key, 0) or 0)
+        if depth != 0:
+            violations.append(
+                f"{queue_key} did not drain to zero (final_depth={depth})"
+            )
     if rss_growth_mib > args.max_rss_growth_mib:
         violations.append(f"sampled RSS grew by {rss_growth_mib:.1f} MiB (limit {args.max_rss_growth_mib:.1f} MiB)")
 

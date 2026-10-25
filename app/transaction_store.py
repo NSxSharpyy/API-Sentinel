@@ -141,7 +141,6 @@ class TransactionStore:
         last_seen = _as_utc(endpoint.last_seen)
         if _as_utc(observed_at) > last_seen:
             endpoint.last_seen = observed_at
-            session.flush()
         return endpoint
 
     def _publish_alert(self, outcome: dict | None) -> None:
@@ -212,12 +211,12 @@ class TransactionStore:
                 )
                 session.add(record)
                 session.flush()
+                transaction_id = record.id
                 outcome = self.bola_detector.inspect(
-                    transaction, record.id, session, source_ip,
+                    transaction, transaction_id, session, source_ip,
                     endpoint_id=record.endpoint_id,
                 )
                 session.commit()
-                session.refresh(record)
                 self.bola_detector.after_commit(outcome)
                 self._publish_alert(outcome)
                 if (
@@ -231,7 +230,7 @@ class TransactionStore:
                         logger.exception(
                             "Blocklist policy evaluation failed after transaction commit"
                         )
-                return record.id
+                return transaction_id
             except Exception:
                 session.rollback()
                 logger.exception("Failed to persist HTTP transaction")

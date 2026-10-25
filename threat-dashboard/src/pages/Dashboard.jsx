@@ -1,18 +1,28 @@
 
+import { useCallback, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 
 import { mockIncidents } from "../data/mockIncidents";
 import IncidentAlertGrid from "../components/ui/IncidentAlertGrid";
 import EndpointDataTable from "../components/ui/EndpointDataTable";
 import AttackDistributionChart from "../components/ui/AttackDistributionChart";
+import SystemLatencyWidget from "../components/ui/SystemLatencyWidget";
+import AlertResponsivenessMonitor from "../components/ui/AlertResponsivenessMonitor";
+import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
+import EnforcementToggle from "../components/ui/EnforcementToggle";
 
 export default function Dashboard() {
   const {
     transactions = [],
     connectionStatus = "disconnected",
     isMockMode = false,
+    latestLatencyMs = null,
   } = useOutletContext();
 
+  const [renderMeasurement, setRenderMeasurement] =
+    useState(null);
+
+  // Existing demo incidents, not live telemetry alerts.
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
@@ -24,6 +34,51 @@ export default function Dashboard() {
     (incident) =>
       incident.severity?.toLowerCase() === "high"
   ).length;
+
+  const latencySource = isMockMode
+    ? "Simulated telemetry value"
+  : typeof latestLatencyMs === "number" &&
+      Number.isFinite(latestLatencyMs) &&
+      latestLatencyMs >= 0
+    ? "Telemetry field; measurement boundary unverified"
+    : "";
+
+  // Transactions are stored newest first by useTelemetry.
+  const latestEvent = transactions[0] ?? null;
+
+  const handleEventRendered = useCallback(
+    (eventId, receivedAtMs, latencyMs, source) => {
+      setRenderMeasurement({
+        eventId,
+        receivedAtMs,
+        latencyMs,
+        source,
+      });
+    },
+    []
+  );
+
+  // Only show a timing measurement matching the latest event.
+  const measurementMatchesLatestEvent =
+    latestEvent !== null &&
+    latestEvent.receivedAtMs !== null &&
+    renderMeasurement?.eventId === latestEvent.id &&
+    renderMeasurement?.receivedAtMs ===
+      latestEvent.receivedAtMs;
+
+  const displayedRenderLatency =
+    measurementMatchesLatestEvent
+      ? renderMeasurement.latencyMs
+      : null;
+
+  const measurementSource =
+    measurementMatchesLatestEvent
+      ? renderMeasurement.source === "mock"
+        ? "Mock telemetry: receipt-to-render measurement"
+        : "Live telemetry: browser receipt-to-render measurement"
+      : latestEvent
+        ? "Measuring the latest telemetry event"
+        : "Waiting for telemetry timing";
 
   return (
     <section className="space-y-6">
@@ -74,6 +129,28 @@ export default function Dashboard() {
         </article>
       </div>
 
+      {/* Day 15 — System Latency */}
+      <SystemLatencyWidget
+        latencyMs={latestLatencyMs}
+        isMock={isMockMode}
+        source={latencySource}
+      />
+
+      {/* Day 16 — Receipt-to-render measurement */}
+      <AlertResponsivenessMonitor
+        latestLatencyMs={displayedRenderLatency}
+        measurementSource={measurementSource}
+      />
+
+      {/* Day 16 — Measure the rendered telemetry event */}
+      <TelemetryRenderProbe
+        event={latestEvent}
+        onRendered={handleEventRendered}
+      />
+
+      {/* Day 17 — Global Enforcement Demo Control */}
+      <EnforcementToggle />
+
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />
 
@@ -98,7 +175,7 @@ export default function Dashboard() {
         />
       </section>
 
-      {/* Recent Security Alerts */}
+      {/* Existing Recent Security Alerts */}
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">
@@ -106,8 +183,8 @@ export default function Dashboard() {
           </h2>
 
           <p className="mt-1 text-sm text-gray-600">
-            Illustrative incidents showing the reusable alert
-            card and severity components.
+            SIMULATED DATA — These sample incidents demonstrate
+            the alert interface. They are not live security detections.
           </p>
         </div>
 

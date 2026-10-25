@@ -20,6 +20,7 @@ export default function DashboardLayout() {
   const {
     connectionStatus,
     latestMessage,
+    latestLatencyMs,
     lastError,
     isMockMode,
     transactions,
@@ -110,6 +111,7 @@ export default function DashboardLayout() {
                 transactions,
                 connectionStatus,
                 isMockMode,
+                latestLatencyMs,
               }}
             />
           </div>

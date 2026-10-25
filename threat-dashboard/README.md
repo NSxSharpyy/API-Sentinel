@@ -1,28 +1,34 @@
-﻿# API-Sentinel Threat Dashboard
+﻿
+# API-Sentinel Threat Dashboard
 
 ## 1. Project Overview
 
-API-Sentinel is a frontend dashboard for API threat monitoring and security incident visualization.
+API-Sentinel is a React frontend for API threat monitoring and security incident visualization.
 
-The current frontend includes:
-- A shared dashboard layout with desktop and mobile navigation.
-- Security overview cards and illustrative security alerts.
-- Severity badges for Critical, High, Medium, and Low incidents.
-- A telemetry status banner.
-- A reusable WebSocket client and React hook for receiving telemetry.
-- Mock telemetry for development when the backend is unavailable.
+The dashboard includes:
 
-**Important:** Mock events are simulated data, not real security detections. Live backend connectivity has not yet been verified.
+- Shared dashboard layout and responsive navigation.
+- Security overview cards and illustrative incident alerts.
+- Severity badges.
+- Telemetry connection status.
+- A WebSocket telemetry client with exponential-backoff reconnection.
+- Mock telemetry for frontend development.
+- API Attack Surface search and combined filters.
+- An illustrative attack distribution chart.
+- Browser receipt-to-render responsiveness measurement.
+- A demo-only enforcement control.
+
+**Important:** Mock data is simulated and must not be treated as a real security detection. Live backend integration has not been verified merely by building or running the frontend.
 
 ## 2. Requirements
 
-Install the following before running the project:
+Install:
 
-- Node.js: a version supported by the installed Vite release.
-- npm: included with Node.js.
-- Git, if you need to clone the repository.
+- Node.js compatible with the project's Vite version.
+- npm.
+- Git, if you need repository access.
 
-Check your installed versions:
+Check versions:
 
 ```bash
 node --version
@@ -31,49 +37,43 @@ npm --version
 
 ## 3. Installation
 
-Open a terminal in the `threat-dashboard` directory.
-
-Install the dependencies recorded in the project's lockfile:
+Run from the `threat-dashboard` directory:
 
 ```bash
 npm ci
 ```
 
-If installation fails, check the Node.js and npm versions and read the error before trying other installation commands.
+If installation fails, inspect the error and verify the Node.js version and lockfile before making dependency changes.
 
 ## 4. Environment Configuration
 
-The project uses Vite environment variables to configure telemetry.
-
-Create your local environment file by copying the example:
+Create the local environment file from the example:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-The example configuration is:
+Example configuration:
 
 ```env
 VITE_TELEMETRY_MODE=mock
 VITE_TELEMETRY_WS_URL=ws://localhost:8000/ws/telemetry
 ```
 
-### Environment variables
-
 | Variable | Purpose |
 |---|---|
 | `VITE_TELEMETRY_MODE` | Selects mock or WebSocket telemetry mode. |
-| `VITE_TELEMETRY_WS_URL` | WebSocket endpoint used in live mode. |
+| `VITE_TELEMETRY_WS_URL` | WebSocket URL used in live mode. |
 
-Keep `VITE_TELEMETRY_MODE=mock` while developing without a connected backend.
+Keep mock mode enabled while the backend endpoint and event contract remain unconfirmed.
 
-The WebSocket URL above is a placeholder. Confirm the actual endpoint with the backend team before enabling live mode.
+The WebSocket URL above is a placeholder. Confirm the correct URL and authentication requirements with the backend team.
 
-Do not commit your local `.env` file or put secrets in frontend environment variables. Variables prefixed with `VITE_` are exposed to client-side code.
+Environment variables prefixed with `VITE_` are exposed to client-side code. Never store secrets in them or commit a local `.env` file.
+
+Restart Vite after changing environment variables.
 
 ## 5. Run the Development Server
-
-Start the frontend:
 
 ```bash
 npm run dev
@@ -83,69 +83,148 @@ Open the local URL printed by Vite, usually:
 
 http://localhost:5173/
 
-To stop the server, press `Ctrl+C` in the terminal.
+Stop the server with `Ctrl+C`.
 
-## 6. Mock Telemetry and Live WebSocket Mode
+## 6. Mock Telemetry
 
-### Mock mode
-
-Set the following in `.env`:
+Set:
 
 ```env
 VITE_TELEMETRY_MODE=mock
 ```
 
-Mock mode generates simulated telemetry events periodically. The dashboard should display **Mock telemetry active** and a warning that the events are simulated.
+The frontend generates simulated telemetry periodically.
 
-This mode allows frontend development without a running telemetry backend.
+Mock events are for interface development only. They do not prove that an API endpoint exists, that an attack occurred, or that a security control is active.
 
-### Live WebSocket mode
+## 7. Live WebSocket Telemetry
 
 Live mode requires a running backend with a compatible WebSocket endpoint.
 
-After confirming the endpoint with the backend team, configure `.env`:
+Example configuration, only after confirming the actual endpoint:
 
 ```env
 VITE_TELEMETRY_MODE=websocket
 VITE_TELEMETRY_WS_URL=ws://localhost:8000/ws/telemetry
 ```
 
-Replace the example URL if the backend team provides a different endpoint. Use `wss://` when required by the deployed environment.
+Use `wss://` when required by the deployed environment.
 
-Restart the Vite development server after changing environment variables.
+### Reconnection behavior
 
-Live mode also requires the backend's message format and any authentication requirements to match the frontend implementation. A successful frontend build alone does not prove that the WebSocket connection works.
+The client attempts to reconnect after an unexpected socket closure or a socket-construction failure.
 
-Automatic reconnection is not currently implemented in this client.
+The current reconnection strategy uses exponential backoff:
 
-## 7. Linting and Production Build
+- Initial delay: 1 second.
+- Subsequent delays increase exponentially.
+- Maximum delay: 30 seconds.
+- Only one reconnect timer is scheduled at a time.
+- A successful connection resets the retry counter.
+- An intentional disconnect cancels pending reconnection and closes the client.
 
-Check the code with ESLint:
+If the WebSocket URL is missing, the client reports a configuration error instead of repeatedly attempting a connection.
+
+This behavior must still be tested against the target browser and backend before being considered verified in production.
+
+### Telemetry message validation
+
+The current frontend validator expects an event payload containing:
+
+- Event ID: `id`, `eventId`, or `event_id`.
+- HTTP method: `method`.
+- Endpoint: `endpoint` or `path`.
+- HTTP status code: `statusCode` or `status_code`.
+- Latency: `latencyMs` or `latency_ms`.
+- Timestamp: `timestamp` or `timestampUtc`.
+
+The method must be a supported HTTP method, the status code must be an integer from 100 through 599, latency must be finite and non-negative, and the timestamp must be parseable.
+
+**Backend contract status:** These expectations are based on the current frontend implementation. The backend team must confirm the actual schema and timestamp semantics before live integration is declared verified.
+
+Invalid messages are rejected from the transaction table and reported through the telemetry error state.
+
+## 8. Incident Data
+
+The dashboard currently uses illustrative incident data from `mockIncidents`.
+
+Critical and High incident counts are counts within that demo dataset, not verified live detections.
+
+A live incident feed requires a confirmed backend API or documented incident event contract, including severity definitions and error handling.
+
+## 9. API Attack Surface
+
+The endpoint inventory currently comes from `mockApiEndpoints`.
+
+The existing search, source filter, classification filter, HTTP method filter, and combined filtering behavior are frontend features.
+
+Endpoint entries and Official, Shadow, and Zombie classifications are illustrative examples, not verified discovery findings.
+
+Live inventory requires a confirmed backend discovery service and a documented response schema. The demo warning must remain until this integration has been verified.
+
+## 10. Attack Distribution Chart
+
+The attack distribution chart uses `mockAttackDistribution` sample values.
+
+These values are illustrative and are not measured attack-event aggregates.
+
+Live aggregation requires a confirmed backend endpoint, documented attack categories, a time range, and an aggregation interval. Empty results and request failures must be handled explicitly.
+
+## 11. Latency Measurement Boundaries
+
+The dashboard distinguishes the following concepts:
+
+- **Telemetry latency value:** A latency field supplied by the latest valid event. Its measurement boundary must be confirmed with the backend.
+- **Browser receipt-to-render latency:** An elapsed-time measurement between browser event receipt and the associated UI render measurement.
+- **Backend processing latency:** Requires a documented backend measurement.
+- **End-to-end alert delivery latency:** Requires defined pipeline boundaries and trustworthy timestamps or tracing.
+
+These values are not interchangeable. Browser rendering time does not establish backend processing time or end-to-end delivery time.
+
+Mock values must remain clearly labelled as simulated.
+
+## 12. Enforcement Control
+
+The current `EnforcementToggle` component changes local demo state only.
+
+It does not enable or disable actual traffic blocking. Backend integration, authorization, confirmed server state, and error handling are required before this can become a real enforcement control.
+
+## 13. Quality Checks
+
+Run from the `threat-dashboard` directory:
 
 ```bash
+npm ci
 npm run lint
-```
-
-Create a production build:
-
-```bash
 npm run build
 ```
 
-Vite writes the production output to the `dist` directory.
+The project currently defines lint and production build scripts. It does not define a dedicated test script in the supplied `package.json`.
 
-## 8. Current Implementation Status
+Record actual command results and manually verify the dashboard in mock mode. Test live mode only when the backend endpoint and message schema have been confirmed.
 
-Implemented:
+## 14. Implementation Status
+
+### Implemented in the frontend
+
 - Dashboard layout and navigation.
-- Security overview and illustrative incident cards.
-- Severity badges.
-- Configurable telemetry client and React hook.
-- Mock telemetry status display.
+- Mock telemetry generation.
+- WebSocket client and reconnection logic.
+- Telemetry validation against the frontend's expected schema.
+- API Attack Surface search and filters.
+- Demo incident summaries.
+- Demo attack distribution chart.
+- Browser receipt-to-render measurement.
+- Demo-only enforcement control.
 
-Still dependent on backend integration:
-- Confirmed live WebSocket connectivity.
-- Agreement on the telemetry message schema.
-- Any required backend authentication and connection settings.
+### Requires backend integration or verification
 
-Use mock-data labels appropriately when presenting the dashboard before live telemetry has been verified.
+- Confirmed live WebSocket connectivity and authentication.
+- Agreement on the backend telemetry schema.
+- Live incident API and severity semantics.
+- Live API endpoint discovery and classification.
+- Real attack-event aggregation.
+- Verified backend processing and alert delivery latency.
+- Actual enforcement API and confirmed server-side state.
+
+A successful frontend build does not establish that any backend integration is working.

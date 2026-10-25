@@ -34,6 +34,10 @@ const mockEvents = [
   },
 ];
 
+const BASE_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 30000;
+const MOCK_INTERVAL_MS = 5000;
+
 export function createTelemetryClient({
   onMessage,
   onStatus,
@@ -44,9 +48,15 @@ export function createTelemetryClient({
   let reconnectTimer = null;
   let closed = true;
   let retryAttempt = 0;
+  let socketGeneration = 0;
 
-  const baseDelay = 1000;
-  const maxDelay = 30000;
+  function reportStatus(status) {
+    onStatus?.(status);
+  }
+
+  function reportError(message) {
+    onError?.(message);
+  }
 
   function clearReconnectTimer() {
     if (reconnectTimer !== null) {
@@ -55,18 +65,33 @@ export function createTelemetryClient({
     }
   }
 
+  function clearMockTimer() {
+    if (mockTimer !== null) {
+      window.clearInterval(mockTimer);
+      mockTimer = null;
+    }
+  }
+
   function scheduleReconnect() {
-    if (closed || reconnectTimer !== null) return;
+    if (closed || reconnectTimer !== null) {
+      return;
+    }
+
+    if (!telemetryConfig.websocketUrl) {
+      reportStatus("error");
+      reportError("WebSocket URL is not configured.");
+      return;
+    }
 
     const delay = Math.min(
-      baseDelay * 2 ** retryAttempt,
-      maxDelay
+      BASE_RECONNECT_DELAY_MS * 2 ** retryAttempt,
+      MAX_RECONNECT_DELAY_MS
     );
 
     retryAttempt += 1;
 
-    onStatus?.("reconnecting");
-    onError?.(
+    reportStatus("reconnecting");
+    reportError(
       `Connection lost. Retrying in ${Math.ceil(
         delay / 1000
       )} second(s).`
@@ -82,15 +107,16 @@ export function createTelemetryClient({
   }
 
   function openSocket() {
-    if (closed) return;
-
-    if (!telemetryConfig.websocketUrl) {
-      onStatus?.("error");
-      onError?.("WebSocket URL is not configured.");
+    if (closed) {
       return;
     }
 
-    // Avoid opening another socket while one is connecting or open.
+    if (!telemetryConfig.websocketUrl) {
+      reportStatus("error");
+      reportError("WebSocket URL is not configured.");
+      return;
+    }
+
     if (
       socket &&
       (socket.readyState === WebSocket.CONNECTING ||
@@ -99,7 +125,9 @@ export function createTelemetryClient({
       return;
     }
 
-    onStatus?.(
+    const generation = ++socketGeneration;
+
+    reportStatus(
       retryAttempt > 0 ? "reconnecting" : "connecting"
     );
 
@@ -118,35 +146,81 @@ export function createTelemetryClient({
     }
 
     nextSocket.addEventListener("open", () => {
-      if (closed || socket !== nextSocket) return;
+      if (
+        closed ||
+        socket !== nextSocket ||
+        generation !== socketGeneration
+      ) {
+        return;
+      }
 
       retryAttempt = 0;
-      onStatus?.("connected");
+      clearReconnectTimer();
+      reportStatus("connected");
     });
 
     nextSocket.addEventListener("message", (event) => {
-      if (closed || socket !== nextSocket) return;
+      if (
+        closed ||
+        socket !== nextSocket ||
+        generation !== socketGeneration
+      ) {
+        return;
+      }
+
+      const receivedAtMs = performance.now();
+
+      if (typeof event.data !== "string") {
+        reportError(
+          "Received a telemetry message in an unsupported format."
+        );
+        return;
+      }
+
+      let message;
 
       try {
-        const message = JSON.parse(event.data);
-        onMessage?.(message);
+        message = JSON.parse(event.data);
       } catch {
-        onError?.(
+        reportError(
           "Received a message that is not valid JSON."
+        );
+        return;
+      }
+
+      try {
+        onMessage?.(message, {
+          receivedAtMs,
+          source: "live",
+        });
+      } catch {
+        reportError(
+          "The telemetry message could not be processed."
         );
       }
     });
 
     nextSocket.addEventListener("error", () => {
-      if (closed || socket !== nextSocket) return;
+      if (
+        closed ||
+        socket !== nextSocket ||
+        generation !== socketGeneration
+      ) {
+        return;
+      }
 
-      onError?.("WebSocket connection error.");
-
-      // The close event is responsible for reconnecting.
+      reportStatus("error");
+      reportError("WebSocket connection error.");
     });
 
     nextSocket.addEventListener("close", () => {
-      if (closed || socket !== nextSocket) return;
+      if (
+        closed ||
+        socket !== nextSocket ||
+        generation !== socketGeneration
+      ) {
+        return;
+      }
 
       socket = null;
       scheduleReconnect();
@@ -154,38 +228,66 @@ export function createTelemetryClient({
   }
 
   function connect() {
-    // Prevent duplicate intervals or WebSocket connections.
-    if (!closed) return;
+    if (!closed) {
+      return;
+    }
 
     closed = false;
+    retryAttempt = 0;
+
     clearReconnectTimer();
+    clearMockTimer();
 
     if (telemetryConfig.mode === "mock") {
-      onStatus?.("mock");
+      reportStatus("mock");
 
       let index = 0;
 
-      const emitMockEvent = () => {
-        if (closed) return;
+      function emitMockEvent() {
+        if (closed) {
+          return;
+        }
 
-        const event = mockEvents[index % mockEvents.length];
+        const event =
+          mockEvents[index % mockEvents.length];
 
-        onMessage?.({
+        const timestamp = new Date().toISOString();
+
+        // IMPORTANT: The validator reads message.data,
+        // so timestamp must be included inside data.
+        const message = {
           ...event,
           data: {
             ...event.data,
-            timestamp: new Date().toISOString(),
+            timestamp,
           },
-        });
+          timestamp,
+          metadata: {
+            source: "mock",
+          },
+        };
 
         index += 1;
-      };
 
+        try {
+          onMessage?.(message, {
+            receivedAtMs: performance.now(),
+            source: "mock",
+          });
+        } catch {
+          reportError(
+            "The simulated telemetry event could not be processed."
+          );
+        }
+      }
+
+      // Emit the first event immediately.
       emitMockEvent();
 
+      // Emit another mock event every five seconds.
       mockTimer = window.setInterval(
         emitMockEvent,
-        5000
+        MOCK_INTERVAL_MS
       );
 
       return;
@@ -195,30 +297,30 @@ export function createTelemetryClient({
   }
 
   function disconnect() {
-    closed = true;
-
-    clearReconnectTimer();
-
-    if (mockTimer !== null) {
-      window.clearInterval(mockTimer);
-      mockTimer = null;
+    if (closed) {
+      return;
     }
 
-    if (socket !== null) {
-      const currentSocket = socket;
-      socket = null;
+    // Prevent reconnection after an intentional shutdown.
+    closed = true;
+    socketGeneration += 1;
 
-      // Close both CONNECTING and OPEN sockets.
-      if (
-        currentSocket.readyState === WebSocket.CONNECTING ||
-        currentSocket.readyState === WebSocket.OPEN
-      ) {
-        currentSocket.close();
-      }
+    clearReconnectTimer();
+    clearMockTimer();
+
+    const currentSocket = socket;
+    socket = null;
+
+    if (
+      currentSocket &&
+      (currentSocket.readyState === WebSocket.CONNECTING ||
+        currentSocket.readyState === WebSocket.OPEN)
+    ) {
+      currentSocket.close();
     }
 
     retryAttempt = 0;
-    onStatus?.("disconnected");
+    reportStatus("disconnected");
   }
 
   return {

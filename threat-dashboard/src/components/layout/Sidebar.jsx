@@ -1,6 +1,7 @@
 
 import {
   Activity,
+  FileCode2,
   LayoutDashboard,
   Network,
   Settings,
@@ -24,6 +25,11 @@ const navigationItems = [
     label: "API Attack Surface",
     path: "/api-surface",
     icon: Network,
+  },
+  {
+    label: "OpenAPI Contract",
+    path: "/openapi-contract",
+    icon: FileCode2,
   },
   {
     label: "Settings",
@@ -60,7 +66,7 @@ export default function Sidebar({ collapsed, onNavigate }) {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {navigationItems.map((item) => {
           const Icon = item.icon;
 

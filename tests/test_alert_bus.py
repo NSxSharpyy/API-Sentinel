@@ -139,10 +139,24 @@ def test_websocket_alert_endpoint_streams_events_and_unsubscribes(monkeypatch):
         status="open",
     )
 
+    import time
+
     with client.websocket_connect("/ws/alerts") as websocket:
         delivered, dropped = bus.publish(event)
         assert (delivered, dropped) == (1, 0)
         payload = websocket.receive_json()
         assert payload == event.to_dict()
+
+        # Let the application consume the disconnect and unsubscribe before
+        # Starlette's test-client context performs its final cancellation.
+        websocket.close()
+        deadline = time.monotonic() + 1.0
+        while (
+            bus.snapshot()["subscriber_count"] != 0
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+
+        assert bus.snapshot()["subscriber_count"] == 0
 
     assert bus.snapshot()["subscriber_count"] == 0

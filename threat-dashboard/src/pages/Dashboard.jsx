@@ -36,10 +36,12 @@ export default function Dashboard() {
   ).length;
 
   const latencySource = isMockMode
-    ? "Demo data"
-    : latestLatencyMs !== null
-      ? "Backend telemetry"
-      : "";
+    ? "Simulated telemetry value"
+  : typeof latestLatencyMs === "number" &&
+      Number.isFinite(latestLatencyMs) &&
+      latestLatencyMs >= 0
+    ? "Telemetry field; measurement boundary unverified"
+    : "";
 
   // Transactions are stored newest first by useTelemetry.
   const latestEvent = transactions[0] ?? null;
@@ -181,8 +183,8 @@ export default function Dashboard() {
           </h2>
 
           <p className="mt-1 text-sm text-gray-600">
-            Illustrative incidents showing the reusable alert
-            card and severity components.
+            SIMULATED DATA — These sample incidents demonstrate
+            the alert interface. They are not live security detections.
           </p>
         </div>
 

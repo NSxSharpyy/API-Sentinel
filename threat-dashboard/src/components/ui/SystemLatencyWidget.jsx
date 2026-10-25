@@ -1,32 +1,28 @@
 
 import { Activity, Clock3, Gauge, Wifi } from "lucide-react";
 
-function SystemLatencyWidget({
+export default function SystemLatencyWidget({
   latencyMs = null,
   isMock = true,
   source = "",
 }) {
-  // Use 84 ms only as a clearly labelled demo value.
-  // Never treat it as a real backend measurement.
-  const displayedLatency = isMock
-    ? (latencyMs ?? 84)
-    : latencyMs;
-
   const hasLatency =
-    typeof displayedLatency === "number" &&
-    Number.isFinite(displayedLatency) &&
-    displayedLatency >= 0;
+    typeof latencyMs === "number" &&
+    Number.isFinite(latencyMs) &&
+    latencyMs >= 0;
+
+  const displayedLatency = hasLatency ? latencyMs : null;
 
   const statusLabel = isMock
     ? "Demo data"
     : hasLatency
-      ? "Backend metric"
-      : "Waiting for metric";
+      ? "Reported value"
+      : "Not available";
 
   const statusColor = isMock
     ? "text-amber-700 bg-amber-50"
     : hasLatency
-      ? "text-emerald-700 bg-emerald-50"
+      ? "text-blue-700 bg-blue-50"
       : "text-slate-600 bg-slate-100";
 
   return (
@@ -48,11 +44,11 @@ function SystemLatencyWidget({
               id="system-latency-title"
               className="text-base font-semibold text-slate-900"
             >
-              System Latency
+              Telemetry Latency Value
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Request processing time
+              Latency reported by the latest valid telemetry event
             </p>
           </div>
         </div>
@@ -69,7 +65,7 @@ function SystemLatencyWidget({
       </div>
 
       <div className="mt-6 flex items-end gap-2">
-        {hasLatency ? (
+        {displayedLatency !== null ? (
           <>
             <span className="text-4xl font-bold tracking-tight text-slate-900">
               {displayedLatency.toLocaleString(undefined, {
@@ -104,10 +100,10 @@ function SystemLatencyWidget({
         <div>
           <p className="text-sm text-slate-600">
             {isMock
-              ? "Example value for UI demonstration only."
-              : hasLatency
-                ? "Value supplied by the backend."
-                : "No verified latency metric has been received."}
+              ? "Simulated value. This is not a measured system latency."
+              : displayedLatency !== null
+                ? "Value received in telemetry. The measurement boundary has not been independently verified."
+                : "No valid latency value is available."}
           </p>
 
           {source && (
@@ -120,5 +116,3 @@ function SystemLatencyWidget({
     </section>
   );
 }
-
-export default SystemLatencyWidget;

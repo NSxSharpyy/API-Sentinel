@@ -1,4 +1,3 @@
-
 import { useMemo, useState } from "react";
 import { Search, X, ShieldAlert } from "lucide-react";
 import { mockApiEndpoints } from "../data/mockApiEndpoints";
@@ -14,9 +13,8 @@ const classificationOptions = [
 
 const sourceOptions = [
   "All sources",
-  "Gateway",
-  "Code scan",
-  "Traffic analysis",
+  "Official",
+  "Discovered",
 ];
 
 const methodOptions = [
@@ -32,10 +30,13 @@ function getClassificationClasses(classification) {
   switch (classification) {
     case "Official":
       return "bg-green-50 text-green-700 ring-green-600/20";
+
     case "Shadow":
       return "bg-amber-50 text-amber-700 ring-amber-600/20";
+
     case "Zombie":
       return "bg-red-50 text-red-700 ring-red-600/20";
+
     default:
       return "bg-gray-50 text-gray-700 ring-gray-600/20";
   }
@@ -76,10 +77,12 @@ function MethodBadge({ method }) {
 
 export default function ApiSurface() {
   const [search, setSearch] = useState("");
-  const [selectedSource, setSelectedSource] = useState("All sources");
+  const [selectedSource, setSelectedSource] =
+    useState("All sources");
   const [selectedClassification, setSelectedClassification] =
     useState("All classifications");
-  const [selectedMethod, setSelectedMethod] = useState("All methods");
+  const [selectedMethod, setSelectedMethod] =
+    useState("All methods");
 
   const endpoints = Array.isArray(mockApiEndpoints)
     ? mockApiEndpoints
@@ -114,7 +117,8 @@ export default function ApiSurface() {
 
       const matchesSource =
         selectedSource === "All sources" ||
-        endpointSource.toLowerCase() === selectedSource.toLowerCase();
+        endpointSource.toLowerCase() ===
+          selectedSource.toLowerCase();
 
       const matchesClassification =
         selectedClassification === "All classifications" ||
@@ -176,6 +180,7 @@ export default function ApiSurface() {
 
   return (
     <main className="space-y-6 p-4 sm:p-6 lg:p-8">
+      {/* Page heading */}
       <header>
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-indigo-50 p-3 text-indigo-600">
@@ -194,6 +199,7 @@ export default function ApiSurface() {
         </div>
       </header>
 
+      {/* Endpoint summary cards */}
       <section
         aria-label="API endpoint summary"
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
@@ -219,6 +225,7 @@ export default function ApiSurface() {
         />
       </section>
 
+      {/* Demo data warning */}
       <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <div className="flex items-start gap-3">
           <ShieldAlert
@@ -233,13 +240,16 @@ export default function ApiSurface() {
             </h2>
 
             <p className="mt-1 text-sm text-amber-800">
-              These endpoints are sample data for the frontend. They do not
-              represent a live API discovery scan.
+              These endpoints are sample data for the frontend.
+              They do not represent a live API discovery scan, and
+              their classifications have not been verified against
+              a real environment.
             </p>
           </div>
         </div>
       </section>
 
+      {/* Endpoint inventory and filters */}
       <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -264,6 +274,7 @@ export default function ApiSurface() {
           )}
         </div>
 
+        {/* Search and filter controls */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="relative sm:col-span-2 xl:col-span-1">
             <label
@@ -303,7 +314,9 @@ export default function ApiSurface() {
               id="api-endpoint-source"
               name="apiEndpointSource"
               value={selectedSource}
-              onChange={(event) => setSelectedSource(event.target.value)}
+              onChange={(event) =>
+                setSelectedSource(event.target.value)
+              }
               className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               {sourceOptions.map((source) => (
@@ -351,7 +364,9 @@ export default function ApiSurface() {
               id="api-endpoint-method"
               name="apiEndpointMethod"
               value={selectedMethod}
-              onChange={(event) => setSelectedMethod(event.target.value)}
+              onChange={(event) =>
+                setSelectedMethod(event.target.value)
+              }
               className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               {methodOptions.map((method) => (
@@ -363,6 +378,7 @@ export default function ApiSurface() {
           </div>
         </div>
 
+        {/* Filter result count */}
         <div className="flex flex-col gap-1 border-t border-gray-100 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p className="text-gray-600" aria-live="polite">
             Showing{" "}
@@ -383,6 +399,7 @@ export default function ApiSurface() {
           )}
         </div>
 
+        {/* Endpoint table */}
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full min-w-[760px] divide-y divide-gray-200 text-left text-sm">
             <thead className="bg-gray-50">

@@ -27,7 +27,7 @@ not by itself satisfy every operational acceptance criterion.
 | 14 | API route documentation/OpenAPI and Phase 2 freeze | API docs and OpenAPI contract test committed; Phase 2 review recorded | Documentation/API contract verified locally; formal Phase 2 freeze and external sign-off remain open. |
 | 15 | Measure queue/serialization latency and sub-millisecond serialization | Serialization benchmarks; raw queue-wait metrics; five 500-item SQLite paced runs persisted 2,500/2,500, zero failures/rejections; paced p95 queue wait 0.028–0.056 ms | Partial. Synthetic measurements are reproducible, but the actual raw-capture queue under sustained live load, raw queue overflow and production-database behavior remain open. Preloaded-burst queue wait increases significantly as expected. |
 | 16 | Capture-to-BOLA telemetry within milliseconds | Controlled live Day 16 run captured, parsed, persisted and detected BOLA with redaction checks; one observed capture-to-detection value 49.223 ms | Verified for the controlled lab scenario, not a general latency guarantee. Repeat with recorded percentiles for stronger sign-off. |
-| 17 | Verdict worker updates the eBPF kernel hash map | WSL app/policy tests plus isolated veth runtime path: persisted BOLA incident, verdict accepted, map updated, active source dropped, unrelated source passed, expiry restored traffic and cleanup passed | Core controlled end-to-end path verified. The separate app-lifecycle harness still needs a successful WSL run to verify the normal FastAPI lifespan rather than manually constructing services. Production readiness/sustained latency is not claimed. |
+| 17 | Verdict worker updates the eBPF kernel hash map | WSL app/policy tests plus isolated veth runtime path: persisted BOLA incident, verdict accepted, map updated, active source dropped, unrelated source passed, expiry restored traffic and cleanup passed | Core controlled end-to-end path verified. The FastAPI application-lifecycle test is recorded as passed in docs/DAY17_POLICY_INTEGRATION.md on 2026-10-25. This is controlled WSL lab evidence only. Production readiness/sustained latency is not claimed. |
 
 ## Latest local verification evidence
 
@@ -46,9 +46,8 @@ not by itself satisfy every operational acceptance criterion.
 
 1. Run the latest acceptance patch under the repository's Python 3.14 virtualenv
    and require the full suite to pass.
-2. Run `scripts/day17_application_lifecycle_e2e.py` in WSL with the pinned map,
-   disposable veth namespace, and experimental TC filter attached only to
-   `api-sntl-test0`; record a PASS, then detach and clean up.
+2. The application-lifecycle enforcement test is recorded as passed in `docs/DAY17_POLICY_INTEGRATION.md` on 2026-10-25. Treat this as controlled WSL lab evidence, not production-readiness evidence. If rerun, preserve the isolated disposable lab setup and verify cleanup.
+
 3. Run a sustained live-capture workload for Day 6/15 and record event/packet
    accepted, rejected and dropped counts, queue wait, throughput, and process
    memory. A synthetic benchmark is not a substitute.

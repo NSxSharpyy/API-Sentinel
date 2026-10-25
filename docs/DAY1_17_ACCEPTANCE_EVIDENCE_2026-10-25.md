@@ -41,7 +41,7 @@ The earlier 10,000-request failure is retained as evidence: the 2,500-item persi
 1. **Day 5 and Day 13:** obtain Member 3/4 consumer contract and compatibility acceptance.
 2. **Day 7 and Day 14:** record formal Phase 1 and Phase 2 freeze decisions.
 3. **Days 6 and 15:** controlled loopback workloads passed at the sizes above, but this is not a long-duration stability test. Production-database behavior also remains unverified.
-4. **Day 17:** reconcile this review with the lifecycle-test result recorded in `docs/DAY17_POLICY_INTEGRATION.md`; keep enforcement opt-in and lab-scoped.
+4. **Day 17:** the controlled WSL application-lifecycle enforcement test is recorded as passed in `docs/DAY17_POLICY_INTEGRATION.md`. Keep enforcement opt-in and lab-scoped; this result does not establish production readiness or sustained detection-to-enforcement latency.
 5. Re-run final verification after the documentation/code changes are committed, then confirm the intended commit is pushed. Do not stage local database files, backups, compiled artifacts, or unrelated untracked files.
 
 ## Overall status

@@ -84,6 +84,11 @@ class HTTPTransactionCorrelator:
             return None
 
         if message.message_type == "response":
+            # Informational responses (for example 100 Continue or 103 Early
+            # Hints) are interim and must not consume the corresponding request.
+            if message.status_code is not None and message.status_code < 200:
+                return None
+
             pending = self._pending.get(key)
 
             if not pending:

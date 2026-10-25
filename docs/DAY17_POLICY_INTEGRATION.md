@@ -4,8 +4,10 @@ Date audited: 2026-10-25
 
 ## Status
 
-**Policy-to-verdict-queue integration verified in tests. Kernel packet-drop
-enforcement is not verified and remains disabled.**
+**Policy-to-verdict-queue integration is verified in tests. Separate isolated
+kernel packet-drop runtime tests are now confirmed. The combined live
+detection-to-kernel-map-to-packet-drop sequence remains unverified, and the
+FastAPI application does not automatically attach the enforcement program.**
 
 ## Implemented path
 
@@ -53,6 +55,71 @@ enforcement is not verified and remains disabled.**
 - Queue acceptance does not by itself prove that a kernel map update completed.
 - Updating the kernel map does not itself drop packets.
 - `/blocklist-status` must continue to report
-  `packet_drop_enforcement_configured: false` until a compatible packet-drop
-  enforcement program is separately implemented and tested.
-- This test does not demonstrate packet dropping or production-safe blocking.
+  `packet_drop_enforcement_configured: false` until the deployed application's
+  enforcement lifecycle (including its actual attachment state) is designed and
+  verified. The standalone loader's existence does not mean it is attached.
+
+## Additional verification recorded on 2026-10-25
+
+### Policy-to-synchronizer integration regression test
+
+A new `tests/test_blocklist_e2e.py` exercises the full software path through the
+real loopback ZeroMQ sender and receiver, verdict validation, bounded queue,
+`BlocklistSynchronizer`, and a recording map-writer adapter. It verifies that
+a qualifying lab BOLA verdict reaches the map-writer boundary with the expected
+source IP, action, rule ID, and expiry fields. This test uses an injected writer;
+it does not modify the host kernel map.
+
+### Isolated eBPF packet-drop runtime test
+
+The developer subsequently ran the separate experimental TC classifier and
+loader against a disposable veth pair and network namespace. The observed
+results were:
+
+1. Before inserting a blocklist entry, traffic from `198.18.0.2` to the test
+   host replied successfully.
+2. With a 45-second active map entry for `198.18.0.2`, ping received no replies
+   (100% packet loss).
+3. The unrelated source `198.18.0.6` continued to receive replies.
+4. After waiting 46 seconds, the entry was reported expired and traffic from
+   `198.18.0.2` again received replies.
+5. Ctrl+C reported `Enforcement filter detached.` The ingress filter listing was
+   empty, `bpftool net show` reported no attached TC programs, the temporary
+   entry was removed, and the test interface/namespace were removed.
+
+These observations verify the **isolated packet-drop program behavior** in the
+user's WSL lab. They are separate from the Python test that uses a recording
+map writer.
+
+## Updated acceptance verdict
+
+**Partial — policy, receiver, synchronizer boundary and isolated kernel
+classifier are verified separately; the combined live detection-to-real-kernel
+map-to-packet-drop sequence remains outstanding.** The FastAPI process does not
+automatically attach the packet-drop classifier. The loader remains an explicit,
+manual, opt-in lab operation on `api-sntl-*` interfaces. Keep
+`packet_drop_enforcement_configured` false until the deployed application's
+actual enforcement lifecycle is designed and verified. Do not attach this to
+`eth0`, `lo`, or production interfaces.
+
+## Integrated kernel packet-drop runtime test — 2026-10-25
+
+Environment: WSL, Python 3.14, isolated disposable veth network.
+
+- Baseline connectivity: both test sources passed before enforcement.
+- Controlled BOLA incident: incident ID 1 persisted for source `198.18.0.2`.
+- Policy: one verdict submitted, zero skipped and zero failures.
+- Loopback receiver: one verdict accepted, zero rejected or malformed.
+- Kernel synchronizer: one update applied, zero failures; observed apply latency
+  was 0.359176 ms for this run.
+- Pinned map: temporary block entry for `198.18.0.2` was present.
+- Active verdict: traffic from `198.18.0.2` was dropped.
+- Unrelated source: `198.18.0.6` traffic continued to pass.
+- Expiry: traffic from `198.18.0.2` passed again after the 20-second TTL.
+- Cleanup: filter detached, temporary entry absent, namespace and interface
+  removed, and no network BPF attachments reported.
+
+Result: controlled end-to-end lab test passed. This does not establish
+sustained sub-millisecond latency, production readiness, or integration with
+the normal FastAPI application lifecycle. Keep enforcement status and
+configuration reporting conservative until those checks are complete.

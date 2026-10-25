@@ -1,0 +1,41 @@
+name: Python tests
+
+on:
+  push:
+    branches: [backend-parser]
+  pull_request:
+    branches: [backend-parser]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile application, tests, and benchmark modules
+        run: python -m compileall -q app tests benchmarks
+
+      - name: Run full test suite
+        run: python -m pytest -q

@@ -45,3 +45,23 @@ def test_schema_rejects_invalid_incident_ids_and_empty_titles():
 
     with pytest.raises(ValidationError):
         SecurityIncidentSchema(**{**values, "title": ""})
+
+
+def test_canonical_incident_schema_round_trips_through_alert_bus_event():
+    from app.alert_bus import AlertEvent
+
+    incident = SecurityIncidentSchema(
+        incident_id=31,
+        detected_at=datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc),
+        severity="high",
+        title="Potential BOLA",
+        description="Controlled test incident",
+        source_ip="192.0.2.10",
+        transaction_id=14,
+        endpoint_id=9,
+        status="open",
+    )
+
+    event = AlertEvent(**incident.model_dump(mode="python"))
+
+    assert event.to_dict() == incident.model_dump(mode="json")

@@ -9,6 +9,13 @@ import zmq
 from app.http_reassembly import HTTPMessage
 
 HTTP_TRANSACTION_TOPIC = b"http.transaction"
+DISCOVERY_HTTP_TOPIC = b"discovery.http.transaction"
+HEURISTICS_HTTP_TOPIC = b"heuristics.http.transaction"
+DOWNSTREAM_HTTP_TOPICS = (
+    HTTP_TRANSACTION_TOPIC,
+    DISCOVERY_HTTP_TOPIC,
+    HEURISTICS_HTTP_TOPIC,
+)
 
 
 def serialize_http_message(message: HTTPMessage) -> bytes:
@@ -44,11 +51,16 @@ class HTTPTransactionPublisher:
         self.socket.bind(endpoint)
 
     def publish(self, message: HTTPMessage) -> None:
-        """Publish one HTTP message on the transaction topic."""
+        """Publish a parsed message to the general and downstream topics.
+
+        The general topic preserves the original contract. Two additional
+        topics let the discovery and heuristic services consume the same
+        normalized event independently. PUB/SUB remains best-effort: these
+        topics do not provide durable delivery or consumer acknowledgements.
+        """
         payload = serialize_http_message(message)
-        self.socket.send_multipart(
-            [HTTP_TRANSACTION_TOPIC, payload]
-        )
+        for topic in DOWNSTREAM_HTTP_TOPICS:
+            self.socket.send_multipart([topic, payload])
 
     def close(self) -> None:
         """Close the publisher socket."""
@@ -58,14 +70,20 @@ class HTTPTransactionPublisher:
 class HTTPTransactionSubscriber:
     """Receive HTTP transaction events from a ZeroMQ PUB socket."""
 
-    def __init__(self, endpoint: str = "tcp://127.0.0.1:5557"):
+    def __init__(
+        self,
+        endpoint: str = "tcp://127.0.0.1:5557",
+        topic: bytes = HTTP_TRANSACTION_TOPIC,
+    ):
+        if topic not in DOWNSTREAM_HTTP_TOPICS:
+            raise ValueError(
+                "topic must be one of the configured HTTP transaction topics"
+            )
+        self.topic = topic
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.SUB)
         self.socket.setsockopt(zmq.LINGER, 0)
-        self.socket.setsockopt(
-            zmq.SUBSCRIBE,
-            HTTP_TRANSACTION_TOPIC,
-        )
+        self.socket.setsockopt(zmq.SUBSCRIBE, topic)
         self.socket.connect(endpoint)
 
     def receive(self, timeout_ms: int = 3000) -> dict | None:
@@ -75,7 +93,7 @@ class HTTPTransactionSubscriber:
 
         topic, payload = self.socket.recv_multipart()
 
-        if topic != HTTP_TRANSACTION_TOPIC:
+        if topic != self.topic:
             return None
 
         return json.loads(payload.decode("utf-8"))

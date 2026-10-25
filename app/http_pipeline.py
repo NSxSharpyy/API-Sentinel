@@ -23,6 +23,19 @@ DEFAULT_CONNECTION_ID = "default"
 MAX_COMPLETED_TRANSACTIONS = 1000
 
 
+def _reverse_connection_id(connection_id: str) -> str | None:
+    """Return the reverse directional key for a TCP connection ID."""
+    if not isinstance(connection_id, str) or "|" not in connection_id:
+        return None
+    protocol, endpoints = connection_id.split("|", 1)
+    if "->" not in endpoints:
+        return None
+    source, destination = endpoints.split("->", 1)
+    if not protocol or not source or not destination:
+        return None
+    return f"{protocol}|{destination}->{source}"
+
+
 class HTTPMessagePipeline:
     """Parse HTTP messages, correlate transactions, and persist events."""
 
@@ -74,6 +87,10 @@ class HTTPMessagePipeline:
         self.completed_transactions: deque[HTTPTransaction] = deque(
             maxlen=MAX_COMPLETED_TRANSACTIONS
         )
+
+        # HEAD request context must cross the two directional TCP parsers.
+        # The key is the exact response-direction connection ID.
+        self._pending_head_responses: dict[str, int] = {}
 
         self._parsers: dict[str, HTTPStreamParser] = {
             DEFAULT_CONNECTION_ID: (
@@ -178,7 +195,44 @@ class HTTPMessagePipeline:
     ) -> None:
         """Remove parser state and pending correlation requests."""
         self._parsers.pop(connection_id, None)
+        reverse_id = _reverse_connection_id(connection_id)
+        self._pending_head_responses.pop(connection_id, None)
+        if reverse_id is not None:
+            self._pending_head_responses.pop(reverse_id, None)
         self.correlator.close_connection(connection_id)
+
+    def _sync_head_response_context(
+        self,
+        connection_id: str,
+        parser: HTTPStreamParser,
+        pending_before_feed: int,
+        messages: list[HTTPMessage],
+    ) -> None:
+        """Move HEAD context between directional parsers and consume finals."""
+        # A response parser decrements this count only when a final response
+        # for a HEAD request is completed. Interim 1xx messages leave it intact.
+        consumed = max(0, pending_before_feed - parser.pending_head_responses)
+        if consumed:
+            remaining = max(
+                0, self._pending_head_responses.get(connection_id, 0) - consumed
+            )
+            if remaining:
+                self._pending_head_responses[connection_id] = remaining
+            else:
+                self._pending_head_responses.pop(connection_id, None)
+
+        reverse_id = _reverse_connection_id(connection_id)
+        for message in messages:
+            if message.message_type != "request" or message.method != "HEAD":
+                continue
+            if reverse_id is None:
+                # Compatibility for single-stream callers that feed both
+                # directions to one parser rather than providing a 4-tuple.
+                parser.expect_head_response()
+            else:
+                self._pending_head_responses[reverse_id] = (
+                    self._pending_head_responses.get(reverse_id, 0) + 1
+                )
 
     def _publish_all(
         self,
@@ -243,6 +297,15 @@ class HTTPMessagePipeline:
         """Parse and publish messages with their capture timestamps."""
         parser = self._get_parser(connection_id)
 
+        # Response bytes are parsed on the reverse-direction stream. Seed that
+        # parser with outstanding HEAD context before it sees a response header.
+        pending_for_direction = self._pending_head_responses.get(connection_id, 0)
+        if pending_for_direction > parser.pending_head_responses:
+            parser.expect_head_responses(
+                pending_for_direction - parser.pending_head_responses
+            )
+        pending_before_feed = parser.pending_head_responses
+
         try:
             messages = parser.feed(data, captured_at=captured_at)
         except HTTPParseError as exc:
@@ -250,6 +313,9 @@ class HTTPMessagePipeline:
                 if message.captured_at is None:
                     message.captured_at = captured_at
 
+            self._sync_head_response_context(
+                connection_id, parser, pending_before_feed, exc.messages
+            )
             self._publish_all(exc.messages, connection_id)
             self.close_connection(connection_id)
             raise
@@ -258,5 +324,8 @@ class HTTPMessagePipeline:
             if message.captured_at is None:
                 message.captured_at = captured_at
 
+        self._sync_head_response_context(
+            connection_id, parser, pending_before_feed, messages
+        )
         self._publish_all(messages, connection_id)
         return messages

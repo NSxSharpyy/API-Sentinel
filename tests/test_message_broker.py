@@ -10,6 +10,8 @@ import uuid
 from app.http_pipeline import HTTPMessagePipeline
 from app.http_reassembly import HTTPMessage
 from app.message_broker import (
+    DISCOVERY_HTTP_TOPIC,
+    HEURISTICS_HTTP_TOPIC,
     HTTP_TRANSACTION_TOPIC,
     HTTPTransactionPublisher,
     HTTPTransactionSubscriber,
@@ -371,3 +373,37 @@ def test_pipeline_allows_existing_connection_at_limit():
     pipeline.feed(b"", connection_id="connection-1")
 
     assert pipeline.open_connections == 2
+
+
+@pytest.mark.parametrize(
+    "topic",
+    [DISCOVERY_HTTP_TOPIC, HEURISTICS_HTTP_TOPIC],
+)
+def test_publisher_routes_to_each_downstream_consumer_topic(topic):
+    endpoint = _available_endpoint()
+    subscriber = HTTPTransactionSubscriber(endpoint, topic=topic)
+    publisher = None
+
+    try:
+        publisher = HTTPTransactionPublisher(endpoint)
+        _wait_for_subscriber(subscriber, publisher)
+
+        publisher.publish(
+            HTTPMessage(
+                method="GET",
+                uri="/routed?source=test",
+                version="HTTP/1.1",
+                headers={"host": "example.test"},
+                body=b"",
+            )
+        )
+        event = subscriber.receive(timeout_ms=3000)
+
+        assert event is not None
+        assert event["event_type"] == "http.transaction"
+        assert event["method"] == "GET"
+        assert event["uri"] == "/routed?source=test"
+    finally:
+        if publisher is not None:
+            publisher.close()
+        subscriber.close()

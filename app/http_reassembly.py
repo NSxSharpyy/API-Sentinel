@@ -189,7 +189,13 @@ class HTTPStreamParser:
 
     def expect_head_response(self) -> None:
         """Mark that the next corresponding response is for a HEAD request."""
-        self.pending_head_responses += 1
+        self.expect_head_responses(1)
+
+    def expect_head_responses(self, count: int) -> None:
+        """Queue HEAD response context supplied by a bidirectional pipeline."""
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError("count must be a positive integer")
+        self.pending_head_responses += count
 
     def _fail(
         self,
@@ -371,7 +377,9 @@ class HTTPStreamParser:
                 bodyless_response = (
                     status_code < 200 or status_code in (204, 304)
                 )
-                if self.pending_head_responses > 0:
+                # Interim 1xx responses do not complete the request and must
+                # not consume a pending HEAD response marker.
+                if self.pending_head_responses > 0 and status_code >= 200:
                     bodyless_response = True
                     self.pending_head_responses -= 1
 
@@ -411,8 +419,5 @@ class HTTPStreamParser:
             messages.append(message)
             del self.buffer[:message_end]
             self._consume_timestamp_bytes(message_end)
-
-            if message_type == "request" and method == "HEAD":
-                self.expect_head_response()
 
         return messages

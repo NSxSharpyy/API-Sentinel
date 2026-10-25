@@ -69,6 +69,79 @@ def test_worker_persists_queued_transaction_and_drains_on_shutdown():
     asyncio.run(run_test())
 
 
+def test_worker_uses_batch_save_when_store_supports_safe_batch():
+    async def run_test():
+        class BatchStore:
+            def __init__(self):
+                self.batches = []
+
+            def can_batch(self, transactions):
+                return True
+
+            def save_batch(self, transactions):
+                self.batches.append(list(transactions))
+                return [1_000_000 for _ in transactions]
+
+            def save(self, transaction):
+                raise AssertionError("save_batch should have been used")
+
+        store = BatchStore()
+        worker = TransactionPersistenceWorker(store=store)
+        first = make_transaction()
+        second = make_transaction()
+        worker.enqueue(first)
+        worker.enqueue(second)
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.batches == [[first, second]]
+        assert worker.persisted_count == 2
+        assert worker.failed_count == 0
+        assert worker.queue.empty()
+
+    asyncio.run(run_test())
+
+
+def test_worker_falls_back_to_individual_saves_when_batch_fails(caplog):
+    async def run_test():
+        class FallbackStore:
+            def __init__(self):
+                self.batch_attempts = 0
+                self.saved = []
+
+            def can_batch(self, transactions):
+                return True
+
+            def save_batch(self, transactions):
+                self.batch_attempts += 1
+                raise RuntimeError("synthetic batch failure")
+
+            def save(self, transaction):
+                self.saved.append(transaction)
+
+        store = FallbackStore()
+        worker = TransactionPersistenceWorker(store=store)
+        first = make_transaction()
+        second = make_transaction()
+        worker.enqueue(first)
+        worker.enqueue(second)
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.batch_attempts == 1
+        assert store.saved == [first, second]
+        assert worker.persisted_count == 2
+        assert worker.failed_count == 0
+        assert worker.queue.empty()
+        assert "retrying jobs individually" in caplog.text
+
+    asyncio.run(run_test())
+
+
 def test_worker_continues_after_persistence_failure(caplog):
     async def run_test():
         store = Mock()

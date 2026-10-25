@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -176,6 +177,76 @@ class TransactionStore:
                 "(incident_id=%s)",
                 incident_id,
             )
+
+    def can_batch(self, transactions: list[HTTPTransaction]) -> bool:
+        """Batch only transactions that cannot affect BOLA state."""
+        return all(
+            not self.bola_detector.requires_ordered_processing(transaction)
+            for transaction in transactions
+        )
+
+    def save_batch(self, transactions: list[HTTPTransaction]) -> list[int]:
+        """Persist ordinary transactions in one database transaction.
+
+        BOLA-sensitive login and invoice requests must use save() individually.
+        Returned durations are preparation time plus an equal share of commit
+        time, in nanoseconds, for the worker's existing metrics.
+        """
+        transactions = list(transactions)
+        if not transactions:
+            return []
+        if not self.can_batch(transactions):
+            raise ValueError(
+                "BOLA-sensitive transactions must be persisted individually"
+            )
+
+        durations = []
+        with self.session_factory() as session:
+            try:
+                for transaction in transactions:
+                    started_ns = time.perf_counter_ns()
+                    request = transaction.request
+                    response = transaction.response
+                    source_ip, destination_ip = _request_endpoint_ips(
+                        request.connection_id
+                    )
+
+                    observed_at = request.captured_at or utc_now()
+                    if (
+                        observed_at.tzinfo is None
+                        or observed_at.utcoffset() is None
+                    ):
+                        observed_at = observed_at.replace(tzinfo=timezone.utc)
+                    observed_at = observed_at.astimezone(timezone.utc)
+
+                    endpoint = self._upsert_endpoint(
+                        session, transaction, destination_ip, observed_at
+                    )
+                    record = TransactionLog(
+                        endpoint_id=endpoint.id if endpoint is not None else None,
+                        timestamp=observed_at,
+                        source_ip=source_ip,
+                        destination_ip=destination_ip,
+                        request_method=request.method,
+                        request_uri=request.uri,
+                        response_status=response.status_code,
+                        request_headers=redact_headers(request.headers),
+                        response_headers=redact_headers(response.headers),
+                        request_body=redact_body(request.body),
+                        response_body=redact_body(response.body),
+                    )
+                    session.add(record)
+                    durations.append(time.perf_counter_ns() - started_ns)
+
+                commit_started_ns = time.perf_counter_ns()
+                session.commit()
+                commit_ns = time.perf_counter_ns() - commit_started_ns
+            except Exception:
+                session.rollback()
+                raise
+
+        share_ns = commit_ns // len(transactions)
+        return [duration + share_ns for duration in durations]
 
     def save(self, transaction: HTTPTransaction) -> int:
         """Save a completed transaction and return its database ID."""

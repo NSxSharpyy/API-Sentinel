@@ -107,6 +107,19 @@ class BOLADetector:
             return None
         return hashlib.sha256(parts[1].encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def requires_ordered_processing(transaction):
+        """Identify routes whose processing depends on BOLA detector state."""
+        request = transaction.request
+        method = (request.method or "").upper()
+        try:
+            path = urlsplit(request.uri or "").path
+        except ValueError:
+            return True
+        if method == "POST" and path == "/api/v2/auth/login":
+            return True
+        return method == "GET" and INVOICE_PATH.fullmatch(path) is not None
+
     def inspect(
         self, transaction, transaction_id, session, source_ip,
         endpoint_id: int | None = None,

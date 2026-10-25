@@ -202,10 +202,31 @@ class TransactionPersistenceWorker:
     def _measure_batch_store_calls(
         self, jobs: list[PersistenceJob]
     ) -> list[tuple[int, Exception | None]]:
-        """Save jobs sequentially in one thread dispatch.
+        """Batch safe jobs; preserve ordered saves for BOLA-sensitive routes."""
+        transactions = [job.transaction for job in jobs]
+        store_type = type(self.store)
+        supports_batch = (
+            callable(getattr(store_type, "can_batch", None))
+            and callable(getattr(store_type, "save_batch", None))
+        )
+        if supports_batch and self.store.can_batch(transactions):
+            try:
+                durations = self.store.save_batch(transactions)
+            except Exception:
+                logger.exception(
+                    "Batched persistence failed; retrying jobs individually"
+                )
+                return [
+                    self._measure_store_call(job.transaction)
+                    for job in jobs
+                ]
 
-        Each store.save() still owns its existing transaction and commit.
-        """
+            if len(durations) != len(jobs):
+                raise RuntimeError(
+                    "save_batch duration count does not match job count"
+                )
+            return [(duration, None) for duration in durations]
+
         return [
             self._measure_store_call(job.transaction)
             for job in jobs

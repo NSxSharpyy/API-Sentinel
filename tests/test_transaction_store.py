@@ -91,6 +91,54 @@ def test_save_returns_unique_ids(store):
     assert len(records) == 2
 
 
+def test_save_batch_persists_transactions_and_reuses_endpoint(store):
+    first = make_transaction()
+    first.request.headers = {"Host": "EXAMPLE.TEST"}
+    first.request.uri = "/health?probe=one"
+    first.request.captured_at = datetime(
+        2026, 10, 25, 12, 0, tzinfo=timezone.utc
+    )
+
+    second = make_transaction()
+    second.request.headers = {"host": "example.test"}
+    second.request.uri = "/health?probe=two"
+    second.request.captured_at = datetime(
+        2026, 10, 25, 12, 1, tzinfo=timezone.utc
+    )
+
+    durations = store.save_batch([first, second])
+
+    with store.session_factory() as session:
+        records = session.scalars(
+            select(TransactionLog).order_by(TransactionLog.id)
+        ).all()
+        endpoints = session.scalars(select(DiscoveredEndpoint)).all()
+
+    assert len(durations) == 2
+    assert all(duration >= 0 for duration in durations)
+    assert len(records) == 2
+    assert len(endpoints) == 1
+    assert records[0].endpoint_id == records[1].endpoint_id
+    assert endpoints[0].path == "/health"
+
+
+def test_batching_excludes_bola_sensitive_routes(store):
+    ordinary = make_transaction()
+    assert store.can_batch([ordinary]) is True
+
+    login = make_transaction()
+    login.request.method = "POST"
+    login.request.uri = "/api/v2/auth/login"
+    assert store.can_batch([login]) is False
+
+    invoice = make_transaction()
+    invoice.request.uri = "/api/v2/billing/invoices/42"
+    assert store.can_batch([invoice]) is False
+
+    with pytest.raises(ValueError, match="BOLA-sensitive"):
+        store.save_batch([login])
+
+
 def test_save_rolls_back_when_commit_fails(store, monkeypatch):
     def fail_commit(self):
         raise RuntimeError("simulated database failure")

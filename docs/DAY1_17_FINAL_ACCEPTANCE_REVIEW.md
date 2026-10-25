@@ -41,15 +41,15 @@ not by itself satisfy every operational acceptance criterion.
   failed with 1,780 persistence rejections. After increasing queue capacity
   to 12,000, the 10,000-request run with a 60-second drain persisted all
   10,000 transactions and passed the benchmark checks.
-- Code and acceptance evidence were pushed to `backend-parser` in commits
-  `44492a6` and `4f2cdc0`; local and remote commit hashes matched.
-- Confirm the CI status for the latest pushed commit separately; do not infer
-  a CI pass from the local test suite.
+- Code and acceptance evidence are pushed to `backend-parser`; the latest
+  commit `e9f98de` is present in local `HEAD` and `origin/backend-parser`.
+- GitHub Actions CI for `e9f98de` completed successfully: both Python 3.13
+  and Python 3.14 jobs passed. This is separate from the local test evidence.
 
 ## Conditions before declaring all Days 1–17 complete
 
-1. Run the latest acceptance patch under the repository's Python 3.14 virtualenv
-   and require the full suite to pass.
+1. **Code test gate: COMPLETE for the current commit.** The local Python 3.14
+   suite passed with 202 tests. Re-run it if source code changes afterward.
 2. The application-lifecycle enforcement test is recorded as passed in `docs/DAY17_POLICY_INTEGRATION.md` on 2026-10-25. Treat this as controlled WSL lab evidence, not production-readiness evidence. If rerun, preserve the isolated disposable lab setup and verify cleanup.
 
 3. Controlled live WSL loopback runs and queue metrics are now recorded in the
@@ -57,8 +57,11 @@ not by itself satisfy every operational acceptance criterion.
    database acceptance requirements need additional testing.
 4. Obtain consumer-contract acceptance from Member 3/4 for Days 5 and 13.
 5. Record the formal Phase 1/Phase 2 acceptance decision for Days 7 and 14.
-6. Re-run CI after the final patch and verify the pushed commit matches local
-   HEAD. Do not stage local DBs, backups, or compiled binaries.
+6. **CI gate: COMPLETE for the current commit.** GitHub Actions for `e9f98de`
+   succeeded in both Python 3.13 and Python 3.14 jobs; local `HEAD` and
+   `origin/backend-parser` both resolve to `e9f98de`. For later source changes,
+   rerun CI and verify the pushed commit matches local `HEAD`. Do not stage
+   local DBs, backups, or compiled binaries.
 
 ## Evidence update — 2026-10-25
 

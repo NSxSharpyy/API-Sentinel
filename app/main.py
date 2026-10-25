@@ -2,9 +2,10 @@
 import asyncio
 import logging
 import os
+import queue
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app import queues
 from app.capture_supervisor import supervise_capture
@@ -78,7 +79,16 @@ async def lifespan(app: FastAPI):
                 queues.blocklist_verdict_queue,
                 blocklist_writer,
             )
-            blocklist_receiver = BlocklistVerdictReceiver(blocklist_producer)
+            verdict_endpoint = os.getenv(
+                "API_SENTINEL_BLOCKLIST_VERDICT_ENDPOINT",
+                "tcp://127.0.0.1:5558",
+            ).strip()
+            # The receiver validates this as IPv4 loopback, so an accidental
+            # non-loopback bind fails closed during application startup.
+            blocklist_receiver = BlocklistVerdictReceiver(
+                blocklist_producer,
+                endpoint=verdict_endpoint,
+            )
             if blocklist_policy_requested:
                 raw_allowlist = os.getenv(
                     "API_SENTINEL_BLOCKLIST_ALLOWED_SOURCE_IPS", ""
@@ -96,8 +106,12 @@ async def lifespan(app: FastAPI):
                     BlocklistPolicy, ThreadOwnedVerdictSender
                 )
                 from app.blocklist_verdict_client import BlocklistVerdictSender
+                # Connect to the receiver's actual bound endpoint. This also
+                # supports ephemeral loopback ports in controlled runtime tests.
                 blocklist_sender = ThreadOwnedVerdictSender(
-                    BlocklistVerdictSender
+                    lambda: BlocklistVerdictSender(
+                        endpoint=blocklist_receiver.endpoint
+                    )
                 )
                 blocklist_policy = BlocklistPolicy(
                     blocklist_sender,
@@ -319,6 +333,68 @@ app = FastAPI(
 )
 
 app.include_router(api_v1_router)
+
+
+@app.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    """Stream committed security alerts to connected frontend clients.
+
+    Alert delivery is best-effort and process-local. This endpoint should only
+    be exposed on a trusted development network until authentication and
+    authorization are implemented.
+    """
+    alert_bus = getattr(websocket.app.state, "alert_bus", None)
+    if alert_bus is None:
+        await websocket.close(code=1013, reason="Alert bus is not initialized")
+        return
+    try:
+        subscriber = alert_bus.subscribe()
+    except RuntimeError:
+        await websocket.close(code=1013, reason="Alert bus is shutting down")
+        return
+
+    await websocket.accept()
+
+    async def stream_alerts() -> None:
+        # Poll the thread-safe queue without occupying a worker thread. This
+        # also makes disconnect cancellation deterministic in async servers.
+        while True:
+            try:
+                event = subscriber.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.025)
+                continue
+            await websocket.send_json(event.to_dict())
+
+    async def watch_disconnect() -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+
+    sender_task = asyncio.create_task(stream_alerts(), name="api-sentinel-ws-alert-sender")
+    receiver_task = asyncio.create_task(watch_disconnect(), name="api-sentinel-ws-disconnect-watch")
+    tasks = (sender_task, receiver_task)
+    try:
+        done, pending = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            try:
+                task.result()
+            except (WebSocketDisconnect, asyncio.CancelledError):
+                pass
+    except WebSocketDisconnect:
+        pass
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        alert_bus.unsubscribe(subscriber)
 
 
 @app.get("/")

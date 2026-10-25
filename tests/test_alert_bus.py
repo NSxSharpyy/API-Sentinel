@@ -120,3 +120,29 @@ def test_repeated_alert_is_suppressed_in_bus():
     assert subscriber.get_nowait() == first
     assert subscriber.empty()
     assert bus.snapshot()["suppressed_count"] == 1
+
+
+def test_websocket_alert_endpoint_streams_events_and_unsubscribes(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    bus = AlertBus()
+    monkeypatch.setattr(app.state, "alert_bus", bus, raising=False)
+    client = TestClient(app)
+    event = AlertEvent(
+        incident_id=9901,
+        detected_at="2026-10-25T12:00:00Z",
+        severity="high",
+        title="WebSocket delivery test",
+        description="Controlled test event",
+        source_ip="192.0.2.44",
+        status="open",
+    )
+
+    with client.websocket_connect("/ws/alerts") as websocket:
+        delivered, dropped = bus.publish(event)
+        assert (delivered, dropped) == (1, 0)
+        payload = websocket.receive_json()
+        assert payload == event.to_dict()
+
+    assert bus.snapshot()["subscriber_count"] == 0

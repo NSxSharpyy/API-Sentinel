@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.models import TransactionLog
+from app.models import DiscoveredEndpoint, SecurityIncident, TransactionLog
 from app.http_reassembly import HTTPMessage
 from app.transaction_correlator import HTTPTransaction
 from app.transaction_store import TransactionStore
@@ -108,3 +108,64 @@ def test_save_rolls_back_when_commit_fails(store, monkeypatch):
         records = session.scalars(select(TransactionLog)).all()
 
     assert records == []
+
+
+def test_save_discovers_endpoint_normalizes_host_and_strips_query(store):
+    first = make_transaction()
+    first.request.headers = {"Host": "EXAMPLE.TEST"}
+    first.request.uri = "/health?probe=one"
+    first.request.captured_at = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
+
+    first_id = store.save(first)
+
+    second = make_transaction()
+    second.request.headers = {"host": "example.test"}
+    second.request.uri = "/health?probe=two"
+    second.request.captured_at = datetime(2026, 10, 25, 12, 1, tzinfo=timezone.utc)
+    second_id = store.save(second)
+
+    with store.session_factory() as session:
+        endpoints = session.scalars(select(DiscoveredEndpoint)).all()
+        first_record = session.get(TransactionLog, first_id)
+        second_record = session.get(TransactionLog, second_id)
+
+    assert len(endpoints) == 1
+    endpoint = endpoints[0]
+    assert (endpoint.host, endpoint.method, endpoint.path) == (
+        "example.test", "GET", "/health"
+    )
+    assert first_record.endpoint_id == endpoint.id
+    assert second_record.endpoint_id == endpoint.id
+    assert endpoint.first_seen.replace(tzinfo=timezone.utc) == first.request.captured_at
+    assert endpoint.last_seen.replace(tzinfo=timezone.utc) == second.request.captured_at
+
+
+def test_bola_incident_links_to_discovered_endpoint(store):
+    login = make_transaction()
+    login.request.method = "POST"
+    login.request.uri = "/api/v2/auth/login"
+    login.request.headers = {"host": "billing.example.test", "content-type": "application/json"}
+    login.request.body = b'{"username":"user-a","password":"test"}'
+    login.response.status_code = 200
+    login.response.body = b'{"token":"test-token","user_id":1}'
+    store.save(login)
+
+    invoice = make_transaction()
+    invoice.request.uri = "/api/v2/billing/invoices/42"
+    invoice.request.headers = {
+        "host": "billing.example.test",
+        "authorization": "Bearer test-token",
+    }
+    invoice.response.status_code = 200
+    invoice.response.body = b'{"id":42,"owner_id":2,"status":"paid"}'
+    transaction_id = store.save(invoice)
+
+    with store.session_factory() as session:
+        record = session.get(TransactionLog, transaction_id)
+        incident = session.scalar(select(SecurityIncident))
+        endpoint = session.get(DiscoveredEndpoint, record.endpoint_id)
+
+    assert incident is not None
+    assert incident.transaction_id == record.id
+    assert incident.endpoint_id == endpoint.id
+    assert endpoint.path == "/api/v2/billing/invoices/42"

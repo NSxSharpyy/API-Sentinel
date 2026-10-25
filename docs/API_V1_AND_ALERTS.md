@@ -43,6 +43,13 @@ Each item follows the shared `SecurityIncidentSchema`:
 The database attribute remains `id`; the shared schema maps it to
 `incident_id`. No database migration is required for this mapping.
 
+Completed transaction persistence also upserts `DiscoveredEndpoint` using a
+normalized Host header, uppercase method, and URL path. Query parameters are
+preserved in the transaction log but excluded from endpoint identity, so
+`/users?page=1` and `/users?page=2` map to the same `/users` endpoint. The
+transaction and any BOLA incident reference the endpoint row when one can be
+identified.
+
 Example:
 
     curl "http://127.0.0.1:8001/api/v1/alerts?severity=high&status=open&limit=20"
@@ -59,6 +66,28 @@ Returns runtime snapshots grouped as:
 - `database`: endpoint, transaction and incident record counts.
 
 These are current snapshots, not durable time-series metrics.
+
+### WebSocket `/ws/alerts`
+
+Streams canonical JSON `SecurityIncidentSchema` events to connected frontend
+clients after the database transaction commits. The first message is a security
+incident event, not a heartbeat. A client must reconnect after disconnecting;
+the endpoint does not replay older alerts. Each connection consumes one bounded
+process-local alert-bus queue, and queue-full deliveries can be dropped and are
+counted in metrics.
+
+Example JavaScript:
+
+```javascript
+const socket = new WebSocket("ws://127.0.0.1:8001/ws/alerts");
+socket.onmessage = (message) => {
+  const incident = JSON.parse(message.data);
+  console.log(incident.incident_id, incident.severity, incident.title);
+};
+```
+
+This endpoint does not implement authentication/authorization. Expose it only
+on loopback or a trusted development network until access controls exist.
 
 ## Alert bus and deduplication
 
@@ -93,6 +122,11 @@ Run the API and OpenAPI contract tests:
 The v1 routes do not currently implement authentication or authorization.
 Keep the service on loopback or a trusted development network until access
 controls are implemented and tested.
+
+The blocklist receiver defaults to `tcp://127.0.0.1:5558`. For an isolated
+local test, `API_SENTINEL_BLOCKLIST_VERDICT_ENDPOINT` can select another
+loopback TCP port. The receiver rejects non-loopback bind addresses, and the
+sender connects to the receiver's actual bound endpoint.
 
 The BOLA detector is a lab-scoped heuristic that associates identity with an
 observed successful login response and token fingerprint. It does not

@@ -39,28 +39,25 @@ The parser is an initial implementation for ordered byte streams. It is not yet 
 
 The backend includes a ZeroMQ publisher and topic-selectable subscriber.
 
-- Topics: `http.transaction`, `discovery.http.transaction`, and
-  `heuristics.http.transaction`.
-- Message payload: UTF-8 encoded JSON.
-- Request and response bodies are Base64-encoded in the JSON event.
-- The HTTP pipeline passes incoming byte chunks to the parser and publishes
-  each complete parsed message to the configured topics.
+- `http.transaction` is the backward-compatible per-message topic; each event
+  represents one parsed request or response.
+- `discovery.http.transaction` and `heuristics.http.transaction` carry complete
+  correlated request/response pairs for the downstream analysis services.
+- Payloads are UTF-8 JSON; HTTP bodies are Base64-encoded to preserve arbitrary
+  bytes.
 
-The current broker uses ZeroMQ PUB/SUB. It publishes the original `http.transaction`
-topic and dedicated `discovery.http.transaction` and `heuristics.http.transaction`
-topics for decoupled downstream consumers. Messages are not durably stored, and
-subscribers can miss messages if they are not ready or connected when events are
-published. Each routed event currently represents one parsed HTTP request or
-response, not a durable correlated transaction record.
+The HTTP pipeline sends each parsed message to the legacy topic and publishes a
+completed transaction to both downstream topics only after the correlator has a
+matching request and final response. The complete event has `message_type` set
+to `completed_transaction`, a `connection_key`, and nested `request` and
+`response` objects. This makes the downstream contract explicit and prevents a
+request-only event from being mistaken for a completed transaction.
 
-The existing request event format contains:
-
-- `event_type`
-- `method`
-- `uri`
-- `version`
-- `headers`
-- `body_base64`
+The broker uses ZeroMQ PUB/SUB and is best-effort, not durable. Subscribers can
+miss messages if they have not connected and completed the subscription
+handshake before an event is published. Consumer acknowledgements and replay are
+not implemented. Actual Member 3/4 deployments still need to confirm that their
+consumers use these topics and the documented JSON contract.
 
 ## Project Structure
 
@@ -130,6 +127,7 @@ When the server starts successfully, visit:
 - `http://127.0.0.1:8001/api/v1/endpoints` — discovered endpoints.
 - `http://127.0.0.1:8001/api/v1/alerts` — persisted security incidents.
 - `http://127.0.0.1:8001/api/v1/metrics` — runtime metrics.
+- `ws://127.0.0.1:8001/ws/alerts` — JSON events for committed security incidents.
 - `http://127.0.0.1:8001/openapi.json` — generated OpenAPI schema.
 - `http://127.0.0.1:8001/docs` — interactive API documentation.
 
@@ -166,7 +164,8 @@ The tests cover the currently implemented components, including HTTP request and
 - HTTP/1.x parsing does not support HTTP/2, TLS decryption, WebSocket framing, or connection-tunnel decoding. Broader protocol coverage remains future work.
 - The live capture-to-analysis path has been exercised for a controlled local BOLA scenario, but broader protocol coverage and operational reliability remain unverified.
 - ZeroMQ PUB/SUB delivery is not durable.
-- The alert bus is process-local and non-durable; bounded subscriber queues can drop notifications when full.
+- The alert bus and `/ws/alerts` stream are process-local and non-durable; bounded subscriber queues can drop notifications when full, and reconnecting clients do not receive replay.
+- Persisting a completed transaction now upserts `DiscoveredEndpoint` by normalized host, method, and path (query strings are not part of the endpoint identity); transaction rows and BOLA incidents reference that endpoint when an identity can be derived.
 - The v1 APIs currently lack authentication and authorization; keep the service on loopback or a trusted development network.
 - The Day 17 map does not drop packets by itself. A separate experimental TC
   classifier and loader can enforce entries on explicitly named `api-sntl-*` lab

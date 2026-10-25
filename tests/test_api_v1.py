@@ -185,3 +185,52 @@ def test_metrics_expose_database_and_alert_bus_counts(api_client):
     assert "average_queue_wait_ms" in body["persistence"]
     assert "p95_queue_wait_ms" in body["persistence"]
     assert body["detection"]["status"] == "running"
+
+
+def test_persisted_http_transaction_populates_discovered_endpoint_api(api_client, monkeypatch):
+    from app.http_reassembly import HTTPMessage
+    from app.transaction_correlator import HTTPTransaction
+    from app.transaction_store import TransactionStore
+
+    client, sessions = api_client
+    bus = app.state.alert_bus
+    store = TransactionStore(session_factory=sessions, alert_bus=bus)
+    monkeypatch.setattr(app.state, "transaction_store", store, raising=False)
+
+    request = HTTPMessage(
+        version="HTTP/1.1",
+        headers={"Host": "API.Example.Test", "Content-Type": "application/json"},
+        body=b"{}",
+        message_type="request",
+        method="POST",
+        uri="/v1/users?source=lab",
+        connection_id="TCP|192.0.2.10:49152->192.0.2.20:443",
+        captured_at=datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc),
+    )
+    response = HTTPMessage(
+        version="HTTP/1.1",
+        headers={"content-type": "application/json"},
+        body=b'{"created":true}',
+        message_type="response",
+        status_code=201,
+        reason_phrase="Created",
+        connection_id="TCP|192.0.2.20:443->192.0.2.10:49152",
+    )
+    transaction = HTTPTransaction(
+        connection_key="TCP|192.0.2.10:49152<->192.0.2.20:443",
+        request=request,
+        response=response,
+    )
+    store.save(transaction)
+
+    listing = client.get("/api/v1/endpoints")
+    assert listing.status_code == 200
+    body = listing.json()
+    assert body["total"] == 1
+    assert body["items"][0]["host"] == "api.example.test"
+    assert body["items"][0]["method"] == "POST"
+    assert body["items"][0]["path"] == "/v1/users"
+
+    metrics = client.get("/api/v1/metrics").json()
+    assert metrics["database"]["discovered_endpoints"] == 1
+    assert metrics["database"]["transaction_logs"] == 1

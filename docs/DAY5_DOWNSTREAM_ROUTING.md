@@ -1,29 +1,37 @@
-# Day 5 — Downstream HTTP Event Routing
+# Day 5 — Downstream HTTP Transaction Routing
 
 Last audited: 2026-10-25
 
-## Implemented
+## Implemented contract
 
-The ZeroMQ publisher preserves the original `http.transaction` topic and also
-publishes each complete parsed HTTP request/response message to:
+- `http.transaction` remains the backward-compatible per-message topic. It
+  carries each parsed request or response as UTF-8 JSON, with HTTP fields and
+  the body Base64-encoded.
+- `discovery.http.transaction` carries one completed, correlated HTTP
+  request/response pair for the Discovery consumer.
+- `heuristics.http.transaction` carries the same completed transaction for the
+  Heuristics consumer.
+- The two downstream topics are emitted by `HTTPMessagePipeline` only after
+  request/response correlation completes. Their JSON payload has
+  `message_type: "completed_transaction"` with nested `request` and `response`
+  objects and a normalized `connection_key`.
+- Database persistence and downstream publication failures are logged
+  independently; best-effort ZeroMQ publication does not provide a durable
+  acknowledgement or prove consumer-side processing.
 
-- `discovery.http.transaction` — consumer route for the Discovery module.
-- `heuristics.http.transaction` — consumer route for the Heuristics module.
+## Repository verification
 
-`HTTPTransactionSubscriber` accepts one of the configured topics. The payload
-is the existing UTF-8 JSON contract, including the message type, directional
-connection ID, capture timestamp, HTTP fields and Base64-encoded body. Existing
-consumers subscribed to `http.transaction` are not required to change.
+- `tests/test_message_broker.py` checks the legacy topic and both downstream
+  topics, including request/response pairing.
+- `tests/test_http_pipeline.py` checks opposite-direction correlation and
+  downstream publication of completed transactions.
+- The full Python suite passed after the changes in the audit workspace.
 
-## Verification
+## Acceptance boundary
 
-- Unit/runtime broker tests verify the legacy topic and each downstream route.
-- The publisher and subscriber use ZeroMQ PUB/SUB, which is best-effort and
-  non-durable. Consumers may miss events while disconnected or not subscribed.
-- The Member 3/Member 4 services are not present in this repository snapshot;
-  their deployment and semantic integration cannot be claimed as verified here.
-
-## Acceptance status
-
-**Partial.** Routing channels and tests are implemented. Cross-repository
-consumer acceptance by Member 3 and Member 4 still needs confirmation.
+**Partial until external acceptance.** Member 3 and Member 4 consumer
+implementations/deployments are not present in this repository snapshot. The
+producer's topic and payload contract can be verified here, but cross-repository
+compatibility needs consumer contract tests or written confirmation from those
+owners. PUB/SUB remains best-effort and non-durable; use a durable broker or an
+acknowledged delivery design if lossless delivery is required.

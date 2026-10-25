@@ -123,3 +123,27 @@ Result: controlled end-to-end lab test passed. This does not establish
 sustained sub-millisecond latency, production readiness, or integration with
 the normal FastAPI application lifecycle. Keep enforcement status and
 configuration reporting conservative until those checks are complete.
+
+## Application-lifecycle kernel enforcement test — 2026-10-25
+
+Environment: WSL, Python 3.14, isolated veth network and disposable namespace.
+
+- Baseline ping tests passed for both test sources before enforcement.
+- Synthetic login and cross-owner invoice request traversed the real
+  application pipeline.
+- BOLA incident 1 was persisted for source `198.18.0.2`, with an endpoint
+  record created.
+- The policy submitted one verdict; the loopback receiver accepted one;
+  the kernel synchronizer applied one update, with zero reported failures.
+- The observed map-application latency was 0.404586 ms for this run.
+- Active verdict dropped traffic from `198.18.0.2`; unrelated traffic from
+  `198.18.0.6` continued to pass.
+- Traffic from `198.18.0.2` passed again after the 20-second TTL.
+- The enforcement filter detached, the test blocklist entry was absent,
+  the test namespace/interface were removed, and `bpftool net show` reported
+  no network BPF attachments.
+
+Result: controlled end-to-end application-lifecycle test passed.
+The single map-application measurement does not prove that end-to-end
+detection-to-enforcement latency stays below 1 ms under sustained load.
+Production readiness and broader performance acceptance remain outstanding.

@@ -275,13 +275,27 @@ class HTTPMessagePipeline:
                         "continuing message publishing"
                     )
 
+                # Publish one correlated request/response event to downstream
+                # discovery and heuristic topics. Keep legacy message events
+                # below for existing subscribers.
+                try:
+                    publish_transaction = getattr(
+                        self.publisher, "publish_transaction", None
+                    )
+                    if callable(publish_transaction):
+                        publish_transaction(transaction)
+                except Exception:
+                    logger.exception(
+                        "Failed to publish completed HTTP transaction; "
+                        "continuing message processing"
+                    )
                 finally:
                     if processing_started_ns is not None:
                         self._record_transaction_processing_latency(
                             processing_started_ns
                         )
 
-            # Preserve the existing ZeroMQ per-message event contract.
+            # Preserve the existing per-message event contract.
             self.publisher.publish(message)
             self._record_capture_to_publish_latency(
                 message.captured_at,

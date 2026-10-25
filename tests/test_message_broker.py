@@ -9,6 +9,7 @@ import uuid
 
 from app.http_pipeline import HTTPMessagePipeline
 from app.http_reassembly import HTTPMessage
+from app.transaction_correlator import HTTPTransaction
 from app.message_broker import (
     DISCOVERY_HTTP_TOPIC,
     HEURISTICS_HTTP_TOPIC,
@@ -37,14 +38,35 @@ def _wait_for_subscriber(subscriber, publisher, timeout=3.0):
             method="GET",
             uri=f"/{marker}",
             version="HTTP/1.1",
-            headers={},
+            headers={"host": "example.test"},
             body=b"",
+            message_type="request",
+            connection_id="TCP|192.0.2.10:49152->192.0.2.20:80",
         )
-        publisher.publish(message)
+        if subscriber.topic == HTTP_TRANSACTION_TOPIC:
+            publisher.publish(message)
+        else:
+            response = HTTPMessage(
+                version="HTTP/1.1",
+                headers={},
+                body=b"OK",
+                message_type="response",
+                status_code=200,
+                reason_phrase="OK",
+                connection_id="TCP|192.0.2.20:80->192.0.2.10:49152",
+            )
+            publisher.publish_transaction(HTTPTransaction(
+                connection_key="TCP|192.0.2.10:49152<->192.0.2.20:80",
+                request=message,
+                response=response,
+            ))
 
         event = subscriber.receive(timeout_ms=100)
-
-        if event is not None and event.get("uri") == f"/{marker}":
+        event_uri = (
+            event.get("uri") if event is not None and event.get("message_type") != "completed_transaction"
+            else event.get("request", {}).get("uri") if event is not None else None
+        )
+        if event is not None and event_uri == f"/{marker}":
             return
 
     raise AssertionError("Subscriber did not receive readiness event in time")
@@ -86,6 +108,21 @@ def test_serializes_captured_at_as_utc_iso8601():
     event = json.loads(serialize_http_message(message))
 
     assert event["captured_at"] == "2026-10-23T09:30:00+00:00"
+
+
+def test_serializes_naive_captured_at_as_utc_not_local_timezone():
+    message = HTTPMessage(
+        method="GET",
+        uri="/health",
+        version="HTTP/1.1",
+        headers={},
+        body=b"",
+        captured_at=datetime(2026, 10, 25, 4, 30),
+    )
+
+    event = json.loads(serialize_http_message(message))
+
+    assert event["captured_at"] == "2026-10-25T04:30:00+00:00"
 
 
 def test_serializes_missing_captured_at_as_null():
@@ -388,21 +425,30 @@ def test_publisher_routes_to_each_downstream_consumer_topic(topic):
         publisher = HTTPTransactionPublisher(endpoint)
         _wait_for_subscriber(subscriber, publisher)
 
-        publisher.publish(
-            HTTPMessage(
-                method="GET",
-                uri="/routed?source=test",
-                version="HTTP/1.1",
-                headers={"host": "example.test"},
-                body=b"",
-            )
+        pipeline = HTTPMessagePipeline(publisher)
+        request_direction = "TCP|192.0.2.10:49152->192.0.2.20:80"
+        response_direction = "TCP|192.0.2.20:80->192.0.2.10:49152"
+        pipeline.feed(
+            b"GET /routed?source=test HTTP/1.1\r\n"
+            b"Host: example.test\r\n\r\n",
+            connection_id=request_direction,
+        )
+        pipeline.feed(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK",
+            connection_id=response_direction,
         )
         event = subscriber.receive(timeout_ms=3000)
 
         assert event is not None
         assert event["event_type"] == "http.transaction"
-        assert event["method"] == "GET"
-        assert event["uri"] == "/routed?source=test"
+        assert event["message_type"] == "completed_transaction"
+        assert event["connection_key"] == (
+            "TCP|192.0.2.10:49152<->192.0.2.20:80"
+        )
+        assert event["request"]["method"] == "GET"
+        assert event["request"]["uri"] == "/routed?source=test"
+        assert event["response"]["status_code"] == 200
+        assert base64.b64decode(event["response"]["body_base64"]) == b"OK"
     finally:
         if publisher is not None:
             publisher.close()

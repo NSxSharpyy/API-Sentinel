@@ -107,7 +107,10 @@ class BOLADetector:
             return None
         return hashlib.sha256(parts[1].encode("utf-8")).hexdigest()
 
-    def inspect(self, transaction, transaction_id, session, source_ip):
+    def inspect(
+        self, transaction, transaction_id, session, source_ip,
+        endpoint_id: int | None = None,
+    ):
         request = transaction.request
         response = transaction.response
         method = (request.method or "").upper()
@@ -175,6 +178,7 @@ class BOLADetector:
                 latency_ms = elapsed
 
         incident = SecurityIncident(
+            endpoint_id=endpoint_id,
             transaction_id=transaction_id,
             detected_at=detected_at,
             severity="high",

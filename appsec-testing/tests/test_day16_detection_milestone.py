@@ -256,3 +256,161 @@ def test_live_legitimate_traffic_emits_no_alert(tmp_path):
                 except subprocess.TimeoutExpired:
                     engine_proc.kill()
                     engine_proc.wait(timeout=3)
+
+
+def test_engine_reports_docker_log_follower_failure(
+    monkeypatch, tmp_path, capsys
+):
+    clear_detector()
+    monkeypatch.setattr(engine, "ALERTS_PATH", tmp_path / "alerts.jsonl")
+
+    captured = {}
+
+    class FakeProcess:
+        def __init__(self):
+            import io
+
+            self.stdout = io.StringIO("")
+            self.returncode = 2
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+    fake_process = FakeProcess()
+
+    def fake_popen(command, **kwargs):
+        captured["kwargs"] = kwargs
+        return fake_process
+
+    monkeypatch.setattr(engine.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(RuntimeError, match="status 2") as exc_info:
+        engine.main()
+
+    output = capsys.readouterr()
+
+    assert captured["kwargs"]["stderr"] == subprocess.STDOUT
+    assert captured["kwargs"]["stdout"] == subprocess.PIPE
+    assert "Docker Compose exit code: 2" in output.out
+    assert (
+        "Docker Compose log follower exited unexpectedly with status 2"
+        in str(exc_info.value)
+    )
+
+
+def test_engine_reports_missing_docker_executable(monkeypatch, tmp_path):
+    clear_detector()
+    monkeypatch.setattr(engine, "ALERTS_PATH", tmp_path / "alerts.jsonl")
+
+    def missing_docker(*args, **kwargs):
+        raise FileNotFoundError("docker executable not found")
+
+    monkeypatch.setattr(engine.subprocess, "Popen", missing_docker)
+
+    with pytest.raises(RuntimeError, match="Could not start Docker Compose"):
+        engine.main()
+
+
+def test_engine_detects_exit_while_log_stream_is_silent(
+    monkeypatch, tmp_path
+):
+    import threading
+
+    clear_detector()
+    monkeypatch.setattr(engine, "ALERTS_PATH", tmp_path / "alerts.jsonl")
+
+    class SilentStream:
+        def __init__(self):
+            self.release = threading.Event()
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            # Simulate a log stream that remains open without producing lines.
+            self.release.wait(timeout=5)
+            raise StopIteration
+
+        def close(self):
+            self.release.set()
+
+    class ExitedProcess:
+        def __init__(self):
+            self.stdout = SilentStream()
+            self.returncode = 2
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            self.stdout.close()
+            return self.returncode
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            self.stdout.close()
+
+    fake_process = ExitedProcess()
+    monkeypatch.setattr(
+        engine.subprocess, "Popen", lambda *args, **kwargs: fake_process
+    )
+
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="status 2"):
+        engine.main()
+
+    assert time.monotonic() - started < 2, (
+        "Engine waited on a silent stream instead of detecting process exit"
+    )
+
+
+def test_qualifying_billing_event_writes_alert(monkeypatch, tmp_path):
+    clear_detector()
+    alert_path = tmp_path / "alerts.jsonl"
+    monkeypatch.setattr(engine, "ALERTS_PATH", alert_path)
+    monkeypatch.setattr(engine, "WINDOW_SECONDS", 10)
+    monkeypatch.setattr(engine, "DISTINCT_OWNER_THRESHOLD", 1)
+
+    engine.process_log_line(event(requester=99, owner=10, cross_user=True))
+
+    alerts = read_jsonl(alert_path)
+    assert len(alerts) == 1
+    assert alerts[0]["alert_type"] == "cross_user_object_access"
+    assert alerts[0]["requester_id"] == 99
+    assert alerts[0]["distinct_owners_accessed"] == 1
+
+
+def test_new_incident_alerts_after_sliding_window_expires(monkeypatch):
+    clear_detector()
+    monkeypatch.setattr(engine, "WINDOW_SECONDS", 10)
+    monkeypatch.setattr(engine, "DISTINCT_OWNER_THRESHOLD", 2)
+
+    ticks = iter((0.0, 1.0, 12.0, 13.0))
+    monkeypatch.setattr(engine.time, "monotonic", lambda: next(ticks))
+
+    alerts = []
+    monkeypatch.setattr(
+        engine, "emit_alert",
+        lambda requester, count: alerts.append((requester, count)),
+    )
+
+    # First incident: two distinct owners trigger one alert.
+    engine.process_log_line(event(requester=99, owner=10))
+    engine.process_log_line(event(requester=99, owner=20))
+    assert alerts == [(99, 2)]
+
+    # Both earlier entries expire; the new incident should alert independently.
+    engine.process_log_line(event(requester=99, owner=30))
+    engine.process_log_line(event(requester=99, owner=40))
+    assert alerts == [(99, 2), (99, 2)]

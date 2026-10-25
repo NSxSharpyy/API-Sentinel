@@ -203,3 +203,87 @@ def test_collect_billing_evidence_writes_valid_jsonl_and_separate_results(
     assert (run_dir / "billing_container_logs.txt").exists()
     assert (run_dir / "bola_detection_alerts.jsonl").exists()
     assert (run_dir / "bola_detection_summary.json").exists()
+
+
+def test_collect_billing_evidence_fails_when_no_bola_alert_is_generated(
+    tmp_path, monkeypatch
+):
+    import subprocess
+
+    events = [
+        {
+            "service": "billing-service",
+            "message": "invoice accessed",
+            "request_id": "req-owner",
+            "method": "GET",
+            "path": "/api/v2/billing/invoices/1",
+            "invoice_id": 1,
+            "requester_id": 1,
+            "owner_id": 1,
+        },
+        {
+            "service": "billing-service",
+            "message": "request",
+            "request_id": "req-owner",
+            "method": "GET",
+            "path": "/api/v2/billing/invoices/1",
+            "status": 200,
+        },
+    ]
+    stdout = "".join(
+        "api-sentinel-billing  | " + json.dumps(event) + "\n"
+        for event in events
+    )
+
+    monkeypatch.setattr(
+        sim.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout, ""
+        ),
+    )
+
+    run_dir = tmp_path / "legitimate-only"
+    run_dir.mkdir()
+
+    result = sim.collect_billing_evidence(
+        run_dir, "2026-10-20T12:00:00+00:00"
+    )
+
+    alerts_path = run_dir / "bola_detection_alerts.jsonl"
+
+    assert result["log_collection"] == "OK"
+    assert result["detector"]["alerts_generated"] == 0
+    assert result["status"] == "FAIL"
+    assert alerts_path.exists()
+    assert alerts_path.read_text(encoding="utf-8") == ""
+    assert (run_dir / "bola_detection_summary.json").exists()
+
+
+def test_collect_billing_evidence_fails_when_log_collection_fails(
+    tmp_path, monkeypatch
+):
+    import subprocess
+
+    monkeypatch.setattr(
+        sim.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 1, "", "simulated billing log collection failure"
+        ),
+    )
+
+    run_dir = tmp_path / "collection-failure"
+    run_dir.mkdir()
+
+    result = sim.collect_billing_evidence(
+        run_dir, "2026-10-20T12:00:00+00:00"
+    )
+
+    assert result["log_collection"] == "NOT_RUN"
+    assert "billing_log_collection_exit_1" in result["errors"]
+    assert result["detector"]["alerts_generated"] == 0
+    assert result["status"] == "FAIL"
+    assert (run_dir / "billing_events.jsonl").exists()
+    assert (run_dir / "bola_detection_alerts.jsonl").exists()
+    assert (run_dir / "bola_detection_summary.json").exists()

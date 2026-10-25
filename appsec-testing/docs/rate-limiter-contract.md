@@ -102,3 +102,17 @@ and persistence across restarts require separate design and testing.
 
 All Day 18 attack simulations must remain within the authorized,
 local API-Sentinel lab.
+
+## 7. Mock storage failure policy
+
+The temporary mock uses a fail-closed policy when rate-limit storage cannot
+be opened or updated. It returns HTTP `503 Service Unavailable` with JSON
+`{"error":"rate_limiter_unavailable"}` and `Retry-After: 1`. It must not
+forward that request upstream. A storage failure is not counted as an HTTP
+429 rate-limit decision.
+
+SQLite transactions serialize updates to the shared sliding-window state.
+Concurrency tests must verify that requests sharing an identity cannot
+exceed the configured limit, and that distinct identities have independent
+limits. This policy and these tests describe the mock; production behavior
+must be verified separately.

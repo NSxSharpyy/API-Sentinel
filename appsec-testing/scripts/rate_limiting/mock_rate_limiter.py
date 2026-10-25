@@ -42,20 +42,35 @@ def validate_config():
         raise ValueError("Invalid local upstream or rate-limit configuration.")
 
 
+class RateLimitStorageError(RuntimeError):
+    """The limiter cannot reliably read or update shared rate-limit state."""
+
+
 def connect_db():
-    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
-    db = sqlite3.connect(DB_PATH, timeout=10)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS request_windows (
-            identity TEXT NOT NULL,
-            timestamp REAL NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE INDEX IF NOT EXISTS idx_request_windows_identity_time
-        ON request_windows(identity, timestamp)
-    """)
-    return db
+    db = None
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+        db = sqlite3.connect(DB_PATH, timeout=10)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS request_windows (
+                identity TEXT NOT NULL,
+                timestamp REAL NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_request_windows_identity_time
+            ON request_windows(identity, timestamp)
+        """)
+        return db
+    except (OSError, sqlite3.Error) as exc:
+        if db is not None:
+            try:
+                db.close()
+            except sqlite3.Error:
+                pass
+        raise RateLimitStorageError(
+            "Rate-limit storage is unavailable."
+        ) from exc
 
 
 def client_identity():
@@ -95,8 +110,17 @@ def check_and_record(identity, now=None):
         )
         db.commit()
         return True, 0
+    except sqlite3.Error as exc:
+        raise RateLimitStorageError(
+            "Rate-limit storage operation failed."
+        ) from exc
     finally:
-        db.close()
+        try:
+            db.close()
+        except sqlite3.Error as exc:
+            raise RateLimitStorageError(
+                "Rate-limit storage close failed."
+            ) from exc
 
 
 @app.get("/health")
@@ -117,7 +141,15 @@ def health():
     "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"
 ])
 def proxy(path):
-    allowed, retry_after = check_and_record(client_identity())
+    try:
+        allowed, retry_after = check_and_record(client_identity())
+    except RateLimitStorageError:
+        # Fail closed: never bypass enforcement when shared state is unavailable.
+        response = jsonify({"error": "rate_limiter_unavailable"})
+        response.status_code = 503
+        response.headers["Retry-After"] = "1"
+        return response
+
     if not allowed:
         response = jsonify({
             "error": "rate_limited",

@@ -71,6 +71,18 @@ metadata_queue: asyncio.Queue[PacketMetadata] = asyncio.Queue(
 
 raw_packet_queue_wait_metrics = QueueWaitMetrics()
 
+# Highest raw packet queue depth observed after a successful consumer enqueue.
+raw_packet_queue_max_depth = 0
+
+
+def record_raw_packet_queue_depth() -> None:
+    """Record the highest observed raw packet queue depth."""
+    global raw_packet_queue_max_depth
+    raw_packet_queue_max_depth = max(
+        raw_packet_queue_max_depth,
+        raw_packet_queue.qsize(),
+    )
+
 # Packet-event counters
 dropped_packet_count = 0
 accepted_packet_count = 0

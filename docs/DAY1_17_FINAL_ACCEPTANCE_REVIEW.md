@@ -56,3 +56,20 @@ not by itself satisfy every operational acceptance criterion.
 5. Record the formal Phase 1/Phase 2 acceptance decision for Days 7 and 14.
 6. Re-run CI after the final patch and verify the pushed commit matches local
    HEAD. Do not stage local DBs, backups, or compiled binaries.
+
+## Evidence update — 2026-10-25
+
+The latest local test and live loopback benchmark evidence is recorded in
+[`DAY1_17_ACCEPTANCE_EVIDENCE_2026-10-25.md`](DAY1_17_ACCEPTANCE_EVIDENCE_2026-10-25.md).
+
+The persistence queue capacity was increased from 2,500 to 12,000 after a
+10,000-request run rejected 1,780 transactions. With the updated capacity and
+a 60-second drain window, the repeated 10,000-request loopback benchmark
+persisted all 10,000 transactions and reported zero packet drops, persistence
+failures, or persistence rejections. The full test suite passed: 202 tests,
+with one existing Starlette deprecation warning.
+
+These results improve the local Day 6/15 evidence but do not establish
+production readiness or long-duration/physical-NIC line-rate performance.
+Member 3/4 acceptance for Days 5 and 13, formal Phase 1/2 decisions for Days
+7 and 14, and final post-commit/push verification remain outstanding.

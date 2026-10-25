@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import api_v1
+from app import api_v1, queues
 from app.alert_bus import AlertBus
 from app.database import Base
 from app.main import app
@@ -176,6 +176,12 @@ def test_metrics_expose_database_and_alert_bus_counts(api_client):
     assert body["alerts"]["open_incidents"] == 1
     assert body["alerts"]["published_count"] == 0
     assert "accepted_packet_count" in body["ingestion"]
+    assert body["ingestion"]["raw_packet_queue_capacity"] == (
+        api_v1.raw_packet_queue.maxsize
+    )
+    assert body["ingestion"]["raw_packet_queue_max_depth"] == (
+        queues.raw_packet_queue_max_depth
+    )
     packet_wait = body["ingestion"]["raw_packet_queue_wait"]
     assert packet_wait["queue_wait_count"] >= 0
     assert "p95_queue_wait_ms" in packet_wait

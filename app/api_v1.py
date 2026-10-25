@@ -173,6 +173,8 @@ def get_metrics(request: Request):
     return {
         "ingestion": {
             "raw_packet_queue": raw_packet_queue.qsize(),
+            "raw_packet_queue_capacity": raw_packet_queue.maxsize,
+            "raw_packet_queue_max_depth": queues.raw_packet_queue_max_depth,
             "header_queue": header_queue.qsize(),
             "metadata_queue": metadata_queue.qsize(),
             "raw_packet_queue_wait": queues.raw_packet_queue_wait_metrics.snapshot(),

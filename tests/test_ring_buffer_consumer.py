@@ -81,6 +81,37 @@ def test_consumer_handles_empty_stream():
     asyncio.run(run_test())
 
 
+def test_consumer_records_raw_packet_queue_max_depth(monkeypatch):
+    async def valid_events():
+        for packet_id in ("pkt-peak-001", "pkt-peak-002"):
+            yield {
+                "packet_id": packet_id,
+                "captured_at": datetime.now(timezone.utc),
+                "payload": b"GET /health HTTP/1.1\r\n",
+                "source_ip": "10.0.0.10",
+                "destination_ip": "10.0.0.20",
+                "source_port": 49152,
+                "destination_port": 80,
+                "protocol": "TCP",
+            }
+
+    async def run_test():
+        original_peak = queues.raw_packet_queue_max_depth
+        monkeypatch.setattr(queues, "raw_packet_queue_max_depth", 0)
+        try:
+            stats = await consume_events(valid_events())
+            assert stats.accepted == 2
+            assert stats.dropped == 0
+            assert raw_packet_queue.qsize() == 2
+            assert queues.raw_packet_queue_max_depth == 2
+        finally:
+            monkeypatch.setattr(
+                queues, "raw_packet_queue_max_depth", original_peak
+            )
+
+    asyncio.run(run_test())
+
+
 def test_consumer_counts_packets_dropped_when_queue_is_full():
     async def full_queue_events():
         yield {

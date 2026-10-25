@@ -44,6 +44,8 @@ async def consume_events(
             stats.dropped += 1
             logger.warning("Dropped packet because raw packet queue is full")
             continue
+
+        queues.record_raw_packet_queue_depth()
         stats.accepted += 1
         queues.accepted_packet_count += 1
 

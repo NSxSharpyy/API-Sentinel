@@ -41,10 +41,9 @@ not by itself satisfy every operational acceptance criterion.
   failed with 1,780 persistence rejections. After increasing queue capacity
   to 12,000, the 10,000-request run with a 60-second drain persisted all
   10,000 transactions and passed the benchmark checks.
-- Code and acceptance evidence are pushed to `backend-parser`; the latest
-  commit `e9f98de` is present in local `HEAD` and `origin/backend-parser`.
-- GitHub Actions CI for `e9f98de` completed successfully: both Python 3.13
-  and Python 3.14 jobs passed. This is separate from the local test evidence.
+- Code and acceptance evidence are pushed to `backend-parser`. Source commit
+  `e9f98de` and follow-up documentation commit `3656ce3` both passed GitHub
+  Actions CI on Python 3.13 and Python 3.14.
 
 ## Conditions before declaring all Days 1–17 complete
 
@@ -57,11 +56,11 @@ not by itself satisfy every operational acceptance criterion.
    database acceptance requirements need additional testing.
 4. Obtain consumer-contract acceptance from Member 3/4 for Days 5 and 13.
 5. Record the formal Phase 1/Phase 2 acceptance decision for Days 7 and 14.
-6. **CI gate: COMPLETE for the current commit.** GitHub Actions for `e9f98de`
-   succeeded in both Python 3.13 and Python 3.14 jobs; local `HEAD` and
-   `origin/backend-parser` both resolve to `e9f98de`. For later source changes,
-   rerun CI and verify the pushed commit matches local `HEAD`. Do not stage
-   local DBs, backups, or compiled binaries.
+6. **CI gate: COMPLETE for the verified commits.** GitHub Actions succeeded
+   for `e9f98de` and the follow-up documentation commit `3656ce3` on Python
+   3.13 and Python 3.14. For later source changes, rerun CI and verify the
+   pushed commit matches local `HEAD`. Do not stage local DBs, backups,
+   or compiled binaries.
 
 ## Evidence update — 2026-10-25
 

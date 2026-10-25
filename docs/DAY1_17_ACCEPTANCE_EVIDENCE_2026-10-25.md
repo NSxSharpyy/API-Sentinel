@@ -42,10 +42,10 @@ The earlier 10,000-request failure is retained as evidence: the 2,500-item persi
 2. **Day 7 and Day 14:** record formal Phase 1 and Phase 2 freeze decisions.
 3. **Days 6 and 15:** controlled loopback workloads passed at the sizes above, but this is not a long-duration stability test. Production-database behavior also remains unverified.
 4. **Day 17:** the controlled WSL application-lifecycle enforcement test is recorded as passed in `docs/DAY17_POLICY_INTEGRATION.md`. Keep enforcement opt-in and lab-scoped; this result does not establish production readiness or sustained detection-to-enforcement latency.
-5. **CI verification: COMPLETE.** GitHub Actions for commit `e9f98de` succeeded
-   on both Python 3.13 and Python 3.14. Local `HEAD` and `origin/backend-parser`
-   both resolve to `e9f98de`. Keep local database files, backups, compiled
-   artifacts, and unrelated untracked files unstaged.
+5. **CI verification: COMPLETE for the verified commits.** GitHub Actions for
+   source commit `e9f98de` and documentation commit `3656ce3` succeeded on
+   both Python 3.13 and Python 3.14. Keep local database files, backups,
+   compiled artifacts, and unrelated untracked files unstaged.
 
 ## Overall status
 

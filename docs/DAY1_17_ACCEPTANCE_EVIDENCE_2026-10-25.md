@@ -42,8 +42,30 @@ The earlier 10,000-request failure is retained as evidence: the 2,500-item persi
 2. **Day 7 and Day 14:** record formal Phase 1 and Phase 2 freeze decisions.
 3. **Days 6 and 15:** controlled loopback workloads passed at the sizes above, but this is not a long-duration stability test. Production-database behavior also remains unverified.
 4. **Day 17:** the controlled WSL application-lifecycle enforcement test is recorded as passed in `docs/DAY17_POLICY_INTEGRATION.md`. Keep enforcement opt-in and lab-scoped; this result does not establish production readiness or sustained detection-to-enforcement latency.
-5. Re-run final verification after the documentation/code changes are committed, then confirm the intended commit is pushed. Do not stage local database files, backups, compiled artifacts, or unrelated untracked files.
+5. Confirm CI status for the latest pushed commit `4f2cdc0`; local tests passed and the local/remote commit hashes matched. Do not stage local database files, backups, compiled artifacts, or unrelated untracked files.
 
 ## Overall status
 
 The local tests and final controlled 10,000-request loopback benchmark pass with the updated queue capacity. **Do not mark all Days 1–17 complete yet:** the external acceptance decisions and remaining scope limits above still need to be resolved.
+
+
+## Day 16 BOLA validation update — 2026-10-25
+
+**Status: PARTIALLY VERIFIED**, based on the project team's response.
+
+- `tests/test_bola_detection.py`: 7 passed.
+- Combined BOLA, transaction-store, alert-bus and API tests: 25 passed,
+  with one existing Starlette deprecation warning.
+- Existing controlled-lab documentation records one capture-to-detection
+  latency measurement of 49.223 ms. This is one observation, not a percentile
+  or a general latency guarantee.
+- A repository search did not identify a separate billing-service
+  implementation or dedicated billing simulation script.
+- Real billing endpoint authorization has not been tested in this validation.
+  The authoritative billing-service repository, local setup, authorized
+  test-account instructions and dashboard location have not yet been provided.
+- Full live billing-service-to-dashboard delivery remains pending confirmation.
+  The project team said it would check for the authoritative details.
+
+No claim is made that a real billing endpoint was exploited or that its
+authorization behavior has been verified.

@@ -16,7 +16,7 @@ not by itself satisfy every operational acceptance criterion.
 | 3 | TCP/HTTP reassembly of fragmented requests/responses | TCP out-of-order/overlap tests, HTTP fragmentation, content-length, chunked and multi-message tests | Verified by automated tests; live mixed-traffic coverage remains part of Day 6. |
 | 4 | Broker emits structured reconstructed transactions | Legacy per-message `http.transaction` plus completed request/response payloads for downstream topics; broker tests | Repository contract verified. PUB/SUB remains best-effort and has no durable acknowledgement. |
 | 5 | Route transactions to Discovery and Heuristics | `discovery.http.transaction` and `heuristics.http.transaction` carry a complete correlated request/response pair; tests verify payloads | Partial until Member 3/4 consumers accept the exact topic/payload contract. Their services are not in this repository snapshot. |
-| 6 | End-to-end capture, throughput and memory stability | Synthetic WSL run: 4,290 transactions/s; p95 0.2874 ms; p99 0.4450 ms; traced peak 1,573 KiB; 20,000 expected/published events. Separate controlled capture-to-BOLA run was observed. | Partial. Synthetic benchmark excludes live eBPF capture, reader/ring-buffer loss, ZeroMQ network delivery and database I/O. Need a sustained live WSL run with queue drops, capture rates and memory sampled. |
+| 6 | End-to-end capture, throughput and memory stability | Controlled live WSL loopback benchmarks at 500, 1,000, 2,000, 5,000 and 10,000 HTTP requests. Final 10,000-request run persisted all 10,000 transactions at 286.6 requests/s, P95 176.292 ms, zero packet drops and zero persistence rejections; RSS growth 16.8 MiB. See `DAY1_17_ACCEPTANCE_EVIDENCE_2026-10-25.md`. | Partial. Short controlled loopback workloads pass, but long-duration stability, physical-NIC line rate and production-database behavior remain unverified. |
 | 7 | Chunked, multipart and query parsing; Phase 1 freeze | Parser tests cover chunking/trailers/extensions, multipart body preservation, query preservation, body bounds and directional HEAD/1xx handling | Parser coverage verified in tests. Formal Phase 1 freeze depends on Day 5 external acceptance and Day 6 live performance acceptance. |
 | 8 | Relational models for endpoints, transactions and incidents | SQLAlchemy model tests; transaction persistence now upserts discovered endpoint identity and links transaction/incident records; API integration test added | Repository-local model and endpoint linking verified in tests. No production database migration/operational acceptance claimed. |
 | 9 | Request/response pairing and persistence | Correlator tests in opposite directions/FIFO, persistence worker and TransactionStore tests; Day 16 controlled transaction persistence | Verified in tests and controlled runtime. |
@@ -25,22 +25,26 @@ not by itself satisfy every operational acceptance criterion.
 | 12 | Sliding-window alert deduplication | Fingerprint, window expiry/refresh, distinct event, bounded cache and metrics tests | Verified in automated tests. Suppresses notifications, not persisted incidents. |
 | 13 | Standard incident schema across modules | `SecurityIncidentSchema` contract tested across BOLA, persisted incident, alert event and API serialization | Partial until Member 3/4 producers consume/emit this contract and provide compatibility evidence. |
 | 14 | API route documentation/OpenAPI and Phase 2 freeze | API docs and OpenAPI contract test committed; Phase 2 review recorded | Documentation/API contract verified locally; formal Phase 2 freeze and external sign-off remain open. |
-| 15 | Measure queue/serialization latency and sub-millisecond serialization | Serialization benchmarks; raw queue-wait metrics; five 500-item SQLite paced runs persisted 2,500/2,500, zero failures/rejections; paced p95 queue wait 0.028–0.056 ms | Partial. Synthetic measurements are reproducible, but the actual raw-capture queue under sustained live load, raw queue overflow and production-database behavior remain open. Preloaded-burst queue wait increases significantly as expected. |
-| 16 | Capture-to-BOLA telemetry within milliseconds | Controlled live Day 16 run captured, parsed, persisted and detected BOLA with redaction checks; one observed capture-to-detection value 49.223 ms | Verified for the controlled lab scenario, not a general latency guarantee. Repeat with recorded percentiles for stronger sign-off. |
+| 15 | Measure queue/serialization latency and sub-millisecond serialization | Serialization and SQLite paced benchmarks; raw-queue capacity/high-water instrumentation; live loopback runs persisted all transactions through 5,000 requests. A 10,000-request run initially rejected 1,780 jobs with a 2,500-item persistence queue; after increasing capacity to 12,000 and allowing a 60-second drain, all 10,000 persisted with zero rejections. | Partial. Controlled burst evidence is recorded; long-duration queue stability, production-database behavior and physical-NIC capture remain open. |
+| 16 | Capture-to-BOLA telemetry within milliseconds | Existing controlled lab evidence records capture/parsing/persistence/BOLA detection and redaction checks. BOLA tests: 7 passed; combined detector/store/alert/API tests: 25 passed. One previously recorded capture-to-detection observation: 49.223 ms. | PARTIALLY VERIFIED. Real billing-service authorization, end-to-end dashboard delivery and a latency distribution remain unverified. Authoritative billing-service repository/setup, authorized test-account instructions and dashboard location are pending from the project team. |
 | 17 | Verdict worker updates the eBPF kernel hash map | WSL app/policy tests plus isolated veth runtime path: persisted BOLA incident, verdict accepted, map updated, active source dropped, unrelated source passed, expiry restored traffic and cleanup passed | Core controlled end-to-end path verified. The FastAPI application-lifecycle test is recorded as passed in docs/DAY17_POLICY_INTEGRATION.md on 2026-10-25. This is controlled WSL lab evidence only. Production readiness/sustained latency is not claimed. |
 
 ## Latest local verification evidence
 
-- WSL Python 3.14 full suite: 193 passed, one Starlette deprecation warning.
-- Source-audit workspace full suite after additional targeted regression tests:
-  200 passed (Python 3.13 audit environment).
-- `compileall` and `git diff --check` passed for the audit workspace.
-- The latest previously pushed baseline was synchronized at commit `661c35a`;
-  follow-on acceptance fixes are not part of that commit until separately applied
-  and pushed.
-- GitHub Actions succeeded for the currently pushed commit, as reported by the
-  repository owner. A new CI result is required after any subsequent patch is
-  pushed.
+- Repository Python 3.14 full suite: **202 passed**, with one existing
+  Starlette deprecation warning, after the persistence queue capacity change.
+- Focused API and packet-consumer tests: **10 passed**.
+- `git diff --check` passed on the source and documentation changes.
+- Live WSL loopback benchmarks at 500, 1,000, 2,000 and 5,000 requests passed
+  with zero reported packet drops, persistence failures or persistence rejections.
+- A 10,000-request run with a 2,500-item persistence queue and 20-second drain
+  failed with 1,780 persistence rejections. After increasing queue capacity
+  to 12,000, the 10,000-request run with a 60-second drain persisted all
+  10,000 transactions and passed the benchmark checks.
+- Code and acceptance evidence were pushed to `backend-parser` in commits
+  `44492a6` and `4f2cdc0`; local and remote commit hashes matched.
+- Confirm the CI status for the latest pushed commit separately; do not infer
+  a CI pass from the local test suite.
 
 ## Conditions before declaring all Days 1–17 complete
 
@@ -48,9 +52,9 @@ not by itself satisfy every operational acceptance criterion.
    and require the full suite to pass.
 2. The application-lifecycle enforcement test is recorded as passed in `docs/DAY17_POLICY_INTEGRATION.md` on 2026-10-25. Treat this as controlled WSL lab evidence, not production-readiness evidence. If rerun, preserve the isolated disposable lab setup and verify cleanup.
 
-3. Run a sustained live-capture workload for Day 6/15 and record event/packet
-   accepted, rejected and dropped counts, queue wait, throughput, and process
-   memory. A synthetic benchmark is not a substitute.
+3. Controlled live WSL loopback runs and queue metrics are now recorded in the
+   evidence report. Decide whether the remaining long-duration and production-
+   database acceptance requirements need additional testing.
 4. Obtain consumer-contract acceptance from Member 3/4 for Days 5 and 13.
 5. Record the formal Phase 1/Phase 2 acceptance decision for Days 7 and 14.
 6. Re-run CI after the final patch and verify the pushed commit matches local

@@ -1,6 +1,7 @@
 """Local-only BOLA attack harness for the API-Sentinel training lab."""
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -40,6 +41,28 @@ def validate_base_url(base_url):
     return base_url.rstrip("/")
 
 
+def validate_billing_override_url(url):
+    """Allow only the local Day 21 wrapper as a billing override."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in ALLOWED_HOSTS
+        or parsed.port != 8005
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "BILLING_OVERRIDE_URL must target the local Day 21 wrapper, "
+            "e.g. http://127.0.0.1:8005"
+        )
+    return url.rstrip("/")
+
+
 def classify_invoice_response(status_code, body, attacker_id):
     """Classify the observed result using the returned object's ownership."""
     if status_code == 401:
@@ -73,6 +96,9 @@ class BOLAAttack:
         logger=None,
     ):
         self.base_url = validate_base_url(base_url)
+        self.billing_override_url = validate_billing_override_url(
+            os.environ.get("BILLING_OVERRIDE_URL")
+        )
         self.timeout = timeout
         self.delay = delay
         self.session = session or requests.Session()
@@ -81,6 +107,12 @@ class BOLAAttack:
         )
 
     def _url(self, port, path):
+        if (
+            port == 5004
+            and path.startswith("/api/v2/billing/")
+            and self.billing_override_url
+        ):
+            return f"{self.billing_override_url}{path}"
         return f"{self.base_url}:{port}{path}"
 
     def login(self, customer):
@@ -140,9 +172,16 @@ class BOLAAttack:
         error = None
 
         try:
+            request_headers = dict(headers)
+            if (
+                port == 5004
+                and path.startswith("/api/v2/billing/invoices/")
+                and self.billing_override_url
+            ):
+                request_headers["X-Day21-Traffic-Class"] = "attack"
             response = self.session.get(
                 self._url(port, path),
-                headers=headers,
+                headers=request_headers,
                 timeout=self.timeout,
             )
             status_code = response.status_code

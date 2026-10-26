@@ -10,6 +10,7 @@ import random
 import sys
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from pathlib import Path
 
 import requests
@@ -29,6 +30,28 @@ except ImportError:
 BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1")
 DEFAULT_JITTER = 0.4
 REQUEST_TIMEOUT = 5
+
+def validate_billing_override_url(url):
+    """Allow only the local Day 21 wrapper as a billing override."""
+    if not url:
+        return None
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or parsed.port != 8005
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "BILLING_OVERRIDE_URL must target the local Day 21 wrapper, "
+            "e.g. http://127.0.0.1:8005"
+        )
+    return url.rstrip("/")
+
 
 LOG_FIELDS = [
     "timestamp",
@@ -93,6 +116,7 @@ class TrafficGenerator:
         seed=None,
         concurrency=10,
         use_proxy=False,
+        graceful_stop=False,
     ):
         if min_delay < 0 or max_delay < min_delay:
             raise ValueError("Delay values must satisfy 0 <= min <= max")
@@ -100,10 +124,14 @@ class TrafficGenerator:
             raise ValueError("Concurrency must be a positive integer")
 
         self.base_url = base_url.rstrip("/")
+        self.billing_override_url = validate_billing_override_url(
+            os.environ.get("BILLING_OVERRIDE_URL")
+        )
         self.use_proxy = bool(use_proxy)
         self.min_delay = min_delay
         self.max_delay = max_delay
         self.concurrency = concurrency
+        self.graceful_stop = bool(graceful_stop)
         self.rng = random.Random(seed)
         self.customers = None
         self.logger = TrafficLogger(output_dir)
@@ -113,6 +141,12 @@ class TrafficGenerator:
         self.session = requests.Session()
         self.current_customer = None
         self.action_count = 0
+
+    def _url_for_path(self, path):
+        """Override only billing URLs when explicitly configured."""
+        if self.billing_override_url and path.startswith("/api/v2/billing/"):
+            return f"{self.billing_override_url}{path}"
+        return f"{self.base_url}:{self._service_port(path)}{path}"
 
     def _service_port(self, path):
         """Return the service port, optionally using local proxy ports."""
@@ -130,11 +164,12 @@ class TrafficGenerator:
 
     def request(self, method, path, action, **kwargs):
         """Send and log a request, including network errors."""
-        port = self._service_port(path)
-        url = f"{self.base_url}:{port}{path}"
+        url = self._url_for_path(path)
         request_id = self.sent_logger.new_request_id()
         headers = dict(kwargs.pop("headers", {}) or {})
         headers["X-Request-ID"] = request_id
+        if self.billing_override_url and path.startswith("/api/v2/billing/"):
+            headers["X-Day21-Traffic-Class"] = "legitimate"
         kwargs["headers"] = headers
 
         start = time.perf_counter()
@@ -295,11 +330,12 @@ class TrafficGenerator:
 
     async def async_request(self, session, customer, method, path, action, token=None, **kwargs):
         """Send one asynchronous request and log it with explicit customer identity."""
-        port = self._service_port(path)
-        url = f"{self.base_url}:{port}{path}"
+        url = self._url_for_path(path)
         request_id = self.sent_logger.new_request_id()
         headers = dict(kwargs.pop("headers", {}) or {})
         headers["X-Request-ID"] = request_id
+        if self.billing_override_url and path.startswith("/api/v2/billing/"):
+            headers["X-Day21-Traffic-Class"] = "legitimate"
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
@@ -432,14 +468,15 @@ class TrafficGenerator:
             while deadline is None or asyncio.get_running_loop().time() < deadline:
                 customer = self.rng.choice(self.customers)
                 try:
-                    if deadline is None:
+                    if deadline is None or self.graceful_stop:
+                        # In graceful-stop mode, the deadline prevents new
+                        # customer cycles but does not cancel an in-flight cycle.
                         await self.async_customer_cycle(session, customer)
                     else:
                         remaining = deadline - asyncio.get_running_loop().time()
                         if remaining <= 0:
                             break
-                        # Prevent a multi-request customer cycle from extending
-                        # a duration-limited run by several request timeouts.
+                        # Preserve the existing hard-deadline behavior by default.
                         async with asyncio.timeout(remaining):
                             await self.async_customer_cycle(session, customer)
                 except (
@@ -547,6 +584,11 @@ def parse_args():
         action="store_true",
         help="Route through local mock rate-limit proxies on ports 7001-7004.",
     )
+    parser.add_argument(
+        "--graceful-stop",
+        action="store_true",
+        help="Stop starting new customer cycles at the duration deadline, allowing in-flight cycles to finish.",
+    )
     return parser.parse_args()
 
 
@@ -562,6 +604,7 @@ def main():
             seed=args.seed,
             concurrency=args.concurrency,
             use_proxy=args.use_proxy,
+            graceful_stop=args.graceful_stop,
         )
         generator.run(args.duration)
     except (ValueError, OSError) as exc:

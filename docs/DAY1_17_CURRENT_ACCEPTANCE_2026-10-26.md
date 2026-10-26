@@ -97,3 +97,24 @@ Details: `PERSISTENCE_QUEUE_SATURATION_FIX_2026-10-25.md`.
 - Keep Day 17 packet-drop enforcement disabled outside the isolated disposable
   lab unless the required deployment and safety controls are established.
 - Do not start Day 18 until the agreed Day 1–17 acceptance gates are resolved.
+
+## Post-batching live validation — 2026-10-26
+
+**Result: PASS — bounded 120-second live loopback test.**
+
+- Configured load duration: 120 seconds; concurrency: 8.
+- Completed and successful HTTP requests: 39,282 / 39,282.
+- Successful response rate: 327.3 requests/second.
+- Latency p50/p95/p99: 23.624 / 34.456 / 42.088 ms.
+- Persisted-record counter delta: 39,282.
+- Persistence failures/rejections: 0 / 0.
+- Packet rejections/drops: 0 / 0.
+- TCP stream-limit rejections/reassembly-buffer overflows: 0 / 0.
+- Final raw-packet, header, metadata, and persistence queue depths: 0.
+- Capture running at test completion: true.
+- RSS baseline/peak/growth: 79.0 / 86.6 / 7.6 MiB.
+- Boundary: HTTP client through the loopback capture, parser, and persistence pipeline. This was not a physical-NIC or production-database benchmark.
+
+**Interpretation:** The batching change passed this bounded workload with no observed persistence rejections or failures, complete persistence of successful requests, drained queues, and RSS growth below the configured limit.
+
+**Remaining limitation:** The earlier 30-minute run recorded 36,317 persistence rejections before the batching change. This 120-second post-change pass does not prove that the long-duration saturation issue is resolved. Sustained post-change acceptance remains open; no claim of production readiness is made.

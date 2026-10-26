@@ -287,6 +287,50 @@ class TestZombieAPIDetector(unittest.TestCase):
             "GET"
         )
 
+    def test_deprecated_endpoint_is_not_claimed_permanently_retired(self):
+        official_contract = {
+            "paths": {
+                "/api/v1/migration": {
+                    "get": {
+                        "deprecated": True
+                    }
+                }
+            }
+        }
+
+        observed_routes = [
+            {
+                "method": "GET",
+                "route": "/api/v1/migration"
+            }
+        ]
+
+        detector = ZombieAPIDetector(official_contract)
+
+        findings = detector.analyze(observed_routes)
+
+        self.assertEqual(len(findings), 1)
+
+        self.assertEqual(
+            findings[0]["status"],
+            "ZOMBIE_API"
+        )
+
+        self.assertIn(
+            "deprecated",
+            findings[0]["reason"]
+        )
+
+        self.assertIn(
+            "still receives live traffic",
+            findings[0]["reason"]
+        )
+
+        self.assertNotIn(
+            "permanently retired",
+            findings[0]["reason"].lower()
+        )
+
     def test_count(self):
         official_contract = {
             "paths": {
@@ -318,7 +362,10 @@ class TestZombieAPIDetector(unittest.TestCase):
 
         detector.analyze(observed_routes)
 
-        self.assertEqual(detector.count(), 2)
+        self.assertEqual(
+            detector.count(),
+            2
+        )
 
 
 if __name__ == "__main__":

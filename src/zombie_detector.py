@@ -27,17 +27,18 @@ class ZombieAPIDetector:
         Check whether an OpenAPI operation is explicitly deprecated
         or marked inactive.
 
-        Important:
-        deprecated=True alone is treated as Zombie according to the
-        current project contract/tests. It is not claimed to prove
-        that the endpoint has been permanently retired.
+        deprecated=True is treated as Zombie according to the
+        current project contract/tests.
         """
 
         if not isinstance(endpoint_details, dict):
             return False
 
         for method, details in endpoint_details.items():
-            if method.lower() not in self.SUPPORTED_METHODS:
+            if not isinstance(method, str):
+                continue
+
+            if method.upper() not in self.SUPPORTED_METHODS:
                 continue
 
             if not isinstance(details, dict):
@@ -88,13 +89,15 @@ class ZombieAPIDetector:
         if len(observed_segments) != len(declared_segments):
             return False
 
+        # OpenAPI path parameter:
+        # {id}, {userId}, {orderId}, etc.
         parameter_pattern = re.compile(r"^\{[^{}]+\}$")
 
         for observed_segment, declared_segment in zip(
             observed_segments,
             declared_segments,
         ):
-            # OpenAPI path parameter, e.g. {id}, {userId}
+            # Dynamic OpenAPI path parameter.
             if parameter_pattern.fullmatch(declared_segment):
                 if not observed_segment:
                     return False
@@ -124,7 +127,10 @@ class ZombieAPIDetector:
                 "Official contract paths must be a dictionary."
             )
 
-        method = method.upper()
+        method = method.strip().upper()
+
+        if method not in self.SUPPORTED_METHODS:
+            return None, None
 
         for declared_route, endpoint_details in paths.items():
             if not isinstance(endpoint_details, dict):

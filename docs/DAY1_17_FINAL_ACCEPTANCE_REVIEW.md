@@ -1,5 +1,7 @@
 # API-Sentinel — Days 1–17 Acceptance Review
 
+> **Current audit notice (2026-10-26):** This review contains historical baseline evidence. For commit `53ad9e9`, the latest test/CI result, the pre-fix persistence failure, and remaining acceptance gates, see [the current Day 1–17 acceptance report](DAY1_17_CURRENT_ACCEPTANCE_2026-10-26.md).
+
 Audit basis: `Backend_Parsing.pdf`, repository source/tests, WSL test output and
 controlled lab output available as of 2026-10-25.
 

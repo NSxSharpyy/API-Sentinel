@@ -1,5 +1,7 @@
 # API-Sentinel Daily Progress
 
+> **Current audit notice (2026-10-26):** The historical matrix below predates commit `53ad9e9` and the latest persistence validation. Use [the current Day 1–17 acceptance report](DAY1_17_CURRENT_ACCEPTANCE_2026-10-26.md) for the authoritative status and remaining gates.
+
 Last audited: 2026-10-25
 Plan period: 2026-10-08 to 2026-11-07
 Scope: Member 2 — Backend & Traffic Parsing Engineer

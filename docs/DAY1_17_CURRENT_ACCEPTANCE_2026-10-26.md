@@ -91,7 +91,7 @@ Details: `PERSISTENCE_QUEUE_SATURATION_FIX_2026-10-25.md`.
 
 ## Scope and safety
 
-- Current tracked code commit: `53ad9e9`.
+- Application-code implementation commit: `53ad9e9` (acceptance-documentation updates: `e24031c`, `4ec76d4`).
 - Local DBs, backups, compiled eBPF objects and unrelated untracked artifacts
   were not included in that commit.
 - Keep Day 17 packet-drop enforcement disabled outside the isolated disposable
@@ -118,3 +118,18 @@ Details: `PERSISTENCE_QUEUE_SATURATION_FIX_2026-10-25.md`.
 **Interpretation:** The batching change passed this bounded workload with no observed persistence rejections or failures, complete persistence of successful requests, drained queues, and RSS growth below the configured limit.
 
 **Remaining limitation:** The earlier 30-minute run recorded 36,317 persistence rejections before the batching change. This 120-second post-change pass does not prove that the long-duration saturation issue is resolved. Sustained post-change acceptance remains open; no claim of production readiness is made.
+
+
+## Final local regression verification — 2026-10-26
+
+- Command: `python -m pytest -q` with the project `.venv` active.
+- Result: **206 passed, 1 warning in 10.05 seconds**.
+- The warning is a Starlette deprecation warning related to `httpx` with
+  `starlette.testclient.TestClient`; it did not cause test failures.
+- The standalone `pytest -q` invocation failed collection because the
+  repository package `app` was not on its import path. Running pytest as
+  `python -m pytest` resolved the invocation issue without application-code
+  changes.
+- After the bounded live validation, the API, ring reader, and Day 16 producer
+  were stopped; the pinned event map was removed and the loopback ingress
+  filter was verified empty.

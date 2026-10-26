@@ -48,6 +48,9 @@ def test_parse_valid_block_verdict():
         {"source_ip": "2001:db8::1"},
         {"issued_at_ns": True},
         {"rule_id": ""},
+        {"detected_at_monotonic_ns": True},
+        {"detected_at_monotonic_ns": 0},
+        {"detected_at_monotonic_ns": "123"},
     ],
 )
 def test_reject_invalid_verdict(overrides):
@@ -122,3 +125,33 @@ def test_writer_failure_is_counted_without_crashing_worker():
 
     assert metrics["failed_count"] == 1
     assert metrics["applied_count"] == 0
+
+
+def test_detection_to_apply_latency_metrics_measure_full_path():
+    class SlowRecordingWriter(RecordingWriter):
+        def apply(self, verdict):
+            time.sleep(0.01)
+            super().apply(verdict)
+
+    async def scenario():
+        queue = asyncio.Queue()
+        worker = BlocklistSynchronizer(queue, SlowRecordingWriter())
+        stop_event = asyncio.Event()
+        task = asyncio.create_task(worker.run(stop_event))
+        queue.put_nowait(
+            make_payload(detected_at_monotonic_ns=time.monotonic_ns())
+        )
+        await asyncio.wait_for(queue.join(), timeout=2)
+        stop_event.set()
+        await asyncio.wait_for(task, timeout=2)
+        return worker.snapshot()
+
+    metrics = asyncio.run(scenario())
+
+    assert metrics["detection_to_apply_sample_count"] == 1
+    assert metrics["detection_to_apply_window_sample_count"] == 1
+    assert metrics["last_detection_to_apply_latency_ms"] > 1.0
+    assert metrics["detection_to_apply_over_1ms_count"] == 1
+    assert metrics["detection_to_apply_p50_latency_ms"] <= metrics[
+        "detection_to_apply_p95_latency_ms"
+    ] <= metrics["detection_to_apply_p99_latency_ms"]

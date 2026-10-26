@@ -8,13 +8,22 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import math
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 logger = logging.getLogger(__name__)
+
+
+def _nearest_rank_percentile(sorted_values: list[float], percentile: float) -> float:
+    """Return a nearest-rank percentile from an already sorted sample list."""
+    if not sorted_values:
+        return 0.0
+    index = max(0, math.ceil(percentile * len(sorted_values)) - 1)
+    return sorted_values[index]
 
 
 class VerdictValidationError(ValueError):
@@ -29,6 +38,7 @@ class BlockVerdict:
     rule_id: str
     issued_at_ns: int
     expires_at_ns: int | None = None
+    detected_at_monotonic_ns: int | None = None
 
     @classmethod
     def from_payload(cls, payload: object) -> "BlockVerdict":
@@ -81,6 +91,16 @@ class BlockVerdict:
         ):
             raise VerdictValidationError("issued_at_ns must be a positive integer")
 
+        detected_at_monotonic_ns = payload.get("detected_at_monotonic_ns")
+        if detected_at_monotonic_ns is not None and (
+            isinstance(detected_at_monotonic_ns, bool)
+            or not isinstance(detected_at_monotonic_ns, int)
+            or detected_at_monotonic_ns <= 0
+        ):
+            raise VerdictValidationError(
+                "detected_at_monotonic_ns must be a positive integer"
+            )
+
         expires_at_ns = payload.get("expires_at_ns")
         if expires_at_ns is not None:
             if (
@@ -106,6 +126,7 @@ class BlockVerdict:
             rule_id=rule_id,
             issued_at_ns=issued_at_ns,
             expires_at_ns=expires_at_ns,
+            detected_at_monotonic_ns=detected_at_monotonic_ns,
         )
 
 
@@ -137,6 +158,7 @@ class BlocklistSynchronizer:
         self.poll_interval_s = poll_interval_s
         self.dedupe_limit = dedupe_limit
         self._seen: OrderedDict[str, None] = OrderedDict()
+        self._detection_to_apply_samples_ms: deque[float] = deque(maxlen=10_000)
 
         self._metrics = {
             "received_count": 0,
@@ -146,8 +168,20 @@ class BlocklistSynchronizer:
             "failed_count": 0,
             "last_apply_latency_ms": 0.0,
             "total_apply_latency_ms": 0.0,
+            "detection_to_apply_sample_count": 0,
+            "last_detection_to_apply_latency_ms": 0.0,
+            "total_detection_to_apply_latency_ms": 0.0,
+            "max_detection_to_apply_latency_ms": 0.0,
+            "detection_to_apply_over_1ms_count": 0,
+            "detection_to_apply_invalid_clock_count": 0,
             "last_error_type": None,
         }
+
+    def _apply_with_timestamps(self, verdict: BlockVerdict) -> tuple[int, int]:
+        """Apply a verdict off-loop and return writer-operation timestamps."""
+        started_ns = time.monotonic_ns()
+        self.map_writer.apply(verdict)
+        return started_ns, time.monotonic_ns()
 
     async def run(self, stop_event: asyncio.Event) -> None:
         """Run until stop_event is set; account for every dequeued item."""
@@ -175,15 +209,38 @@ class BlocklistSynchronizer:
                     self._metrics["duplicate_count"] += 1
                     continue
 
-                started_ns = time.monotonic_ns()
-
-                # Keep a potentially blocking map operation off the event loop.
-                await asyncio.to_thread(self.map_writer.apply, verdict)
-
-                latency_ms = (time.monotonic_ns() - started_ns) / 1_000_000
+                # Capture timestamps in the same worker thread as the writer.
+                started_ns, completed_ns = await asyncio.to_thread(
+                    self._apply_with_timestamps, verdict
+                )
+                latency_ms = (completed_ns - started_ns) / 1_000_000
                 self._metrics["applied_count"] += 1
                 self._metrics["last_apply_latency_ms"] = latency_ms
                 self._metrics["total_apply_latency_ms"] += latency_ms
+
+                detected_ns = verdict.detected_at_monotonic_ns
+                if detected_ns is not None:
+                    detection_to_apply_ms = (completed_ns - detected_ns) / 1_000_000
+                    if detection_to_apply_ms >= 0:
+                        self._detection_to_apply_samples_ms.append(
+                            detection_to_apply_ms
+                        )
+                        self._metrics["detection_to_apply_sample_count"] += 1
+                        self._metrics["last_detection_to_apply_latency_ms"] = (
+                            detection_to_apply_ms
+                        )
+                        self._metrics["total_detection_to_apply_latency_ms"] += (
+                            detection_to_apply_ms
+                        )
+                        self._metrics["max_detection_to_apply_latency_ms"] = max(
+                            self._metrics["max_detection_to_apply_latency_ms"],
+                            detection_to_apply_ms,
+                        )
+                        if detection_to_apply_ms > 1.0:
+                            self._metrics["detection_to_apply_over_1ms_count"] += 1
+                    else:
+                        self._metrics["detection_to_apply_invalid_clock_count"] += 1
+
                 self._metrics["last_error_type"] = None
                 self._remember(verdict.verdict_id)
 
@@ -216,5 +273,17 @@ class BlocklistSynchronizer:
         result["average_apply_latency_ms"] = (
             result["total_apply_latency_ms"] / count if count else 0.0
         )
+        detection_count = result["detection_to_apply_sample_count"]
+        result["average_detection_to_apply_latency_ms"] = (
+            result["total_detection_to_apply_latency_ms"] / detection_count
+            if detection_count
+            else 0.0
+        )
+        samples = sorted(self._detection_to_apply_samples_ms)
+        result["detection_to_apply_window_sample_count"] = len(samples)
+        for percentile in (50, 95, 99):
+            result[f"detection_to_apply_p{percentile}_latency_ms"] = (
+                _nearest_rank_percentile(samples, percentile / 100)
+            )
         result["queue_depth"] = self.verdict_queue.qsize()
         return result

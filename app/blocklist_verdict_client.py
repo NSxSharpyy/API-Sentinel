@@ -55,6 +55,8 @@ class BlocklistVerdictSender:
             "issued_at_ns": verdict.issued_at_ns,
             "expires_at_ns": verdict.expires_at_ns,
         }
+        if verdict.detected_at_monotonic_ns is not None:
+            canonical["detected_at_monotonic_ns"] = verdict.detected_at_monotonic_ns
         self.socket.send_json(canonical)
         return verdict.verdict_id
 

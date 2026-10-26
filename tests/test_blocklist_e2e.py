@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from app.blocklist_policy import (
     BOLA_INCIDENT_TITLE,
@@ -61,6 +62,7 @@ def test_policy_verdict_reaches_synchronizer_and_map_writer_boundary():
             await asyncio.sleep(0.15)
             outcome = {
                 "detected": True,
+                "detected_at_monotonic_ns": time.monotonic_ns(),
                 "incident": {
                     "incident_id": 4001,
                     "severity": "high",
@@ -83,6 +85,7 @@ def test_policy_verdict_reaches_synchronizer_and_map_writer_boundary():
             assert receiver.snapshot()["receiver_messages_accepted"] == 1
             await asyncio.wait_for(verdict_queue.join(), timeout=2.0)
             assert synchronizer.snapshot()["applied_count"] == 1
+            assert synchronizer.snapshot()["detection_to_apply_sample_count"] == 1
             assert synchronizer.snapshot()["failed_count"] == 0
             assert len(writer.applied) == 1
 
@@ -93,6 +96,9 @@ def test_policy_verdict_reaches_synchronizer_and_map_writer_boundary():
             assert verdict.rule_id == BOLA_RULE_ID
             assert verdict.expires_at_ns is not None
             assert verdict.expires_at_ns > verdict.issued_at_ns
+            assert verdict.detected_at_monotonic_ns is not None
+            metrics = synchronizer.snapshot()
+            assert metrics["last_detection_to_apply_latency_ms"] >= 0
         finally:
             if sender is not None:
                 sender.close()

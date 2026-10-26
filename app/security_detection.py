@@ -1,6 +1,7 @@
 """Lab-scoped BOLA detection and sensitive-field redaction."""
 from __future__ import annotations
 
+import time
 import hashlib
 import json
 import re
@@ -181,6 +182,7 @@ class BOLADetector:
         if requester_id is None or requester_id == owner_id:
             return None
 
+        detected_at_monotonic_ns = time.monotonic_ns()
         detected_at = datetime.now(timezone.utc)
         captured_at = request.captured_at
         latency_ms = None
@@ -217,6 +219,7 @@ class BOLADetector:
         return {
             "detected": True,
             "detected_at": detected_at.isoformat(),
+            "detected_at_monotonic_ns": detected_at_monotonic_ns,
             "latency_ms": latency_ms,
             "incident": incident_payload,
         }

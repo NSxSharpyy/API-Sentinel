@@ -176,6 +176,9 @@ def test_detected_incident_is_submitted_to_policy_after_commit(store):
     assert len(policy.outcomes) == 1
     outcome = policy.outcomes[0]
     assert outcome["detected"] is True
+    assert isinstance(outcome.get("detected_at_monotonic_ns"), int)
+    assert not isinstance(outcome["detected_at_monotonic_ns"], bool)
+    assert outcome["detected_at_monotonic_ns"] > 0
     incident_data = outcome["incident"]
     assert incident_data["transaction_id"] == transaction_id
 

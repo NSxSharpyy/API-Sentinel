@@ -8,7 +8,7 @@ LIBBPF_CFLAGS := $(shell pkg-config --cflags libbpf)
 LIBBPF_LIBS := $(shell pkg-config --libs libbpf)
 
 .PHONY: all clean
-all: packet_capture.bpf.o loader
+all: packet_capture.bpf.o loader ring_reader
 
 packet_capture.bpf.o: packet_capture.bpf.c api_sentinel_event.h
 	$(CLANG) $(BPF_CFLAGS) -c packet_capture.bpf.c -o packet_capture.bpf.o
@@ -16,5 +16,8 @@ packet_capture.bpf.o: packet_capture.bpf.c api_sentinel_event.h
 loader: loader.c
 	$(CC) $(USER_CFLAGS) $(LIBBPF_CFLAGS) loader.c -o loader $(LIBBPF_LIBS)
 
+ring_reader: ring_reader.c api_sentinel_event.h
+	$(CC) $(USER_CFLAGS) $(LIBBPF_CFLAGS) ring_reader.c -o ring_reader $(LIBBPF_LIBS)
+
 clean:
-	rm -f packet_capture.bpf.o loader
+	rm -f packet_capture.bpf.o loader ring_reader

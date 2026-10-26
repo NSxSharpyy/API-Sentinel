@@ -274,6 +274,9 @@ class BlocklistPolicy:
             "issued_at_ns": issued_at_ns,
             "expires_at_ns": issued_at_ns + self.ttl_seconds * 1_000_000_000,
         }
+        detected_at_monotonic_ns = outcome.get("detected_at_monotonic_ns")
+        if detected_at_monotonic_ns is not None:
+            payload["detected_at_monotonic_ns"] = detected_at_monotonic_ns
         try:
             self.sender.send(payload)
         except Exception as exc:

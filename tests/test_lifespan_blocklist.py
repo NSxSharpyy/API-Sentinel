@@ -102,10 +102,16 @@ async def _fake_supervise_capture(command, stop_event, on_status=None):
     await stop_event.wait()
 
 
+async def _noop_initialize_async_database():
+    return None
+
+
 def _patch_common(monkeypatch):
-    monkeypatch.setattr(main, "initialize_database", lambda: None)
+    monkeypatch.setattr(
+        main, "initialize_async_database", _noop_initialize_async_database
+    )
     monkeypatch.setattr(main, "HTTPTransactionPublisher", FakePublisher)
-    monkeypatch.setattr(main, "TransactionStore", FakeStore)
+    monkeypatch.setattr(main, "AsyncTransactionStore", FakeStore)
     monkeypatch.setattr(main, "TransactionPersistenceWorker", FakePersistenceWorker)
     monkeypatch.setattr(main, "packet_worker", _wait_for_stop)
     monkeypatch.setattr(main, "supervise_capture", _fake_supervise_capture)

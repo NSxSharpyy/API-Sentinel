@@ -12,7 +12,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import AsyncSessionLocal, SessionLocal
 from app.models import BlockedTransactionAudit
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ class BlockedTransactionAuditStore:
             raise ValueError(f"{field} must be an integer from 0 to 65535")
         return value
 
-    def record_drop(self, event: Mapping[str, object]) -> int:
+    def _build_record(self, event: Mapping[str, object]) -> BlockedTransactionAudit:
+        """Validate an event and build its audit row without performing I/O."""
         if not isinstance(event, Mapping):
             raise ValueError("Drop event must be an object")
 
@@ -97,7 +98,7 @@ class BlockedTransactionAuditStore:
             f"{target_ip}:{target_port}" if target_port else str(target_ip)
         )
 
-        record = BlockedTransactionAudit(
+        return BlockedTransactionAudit(
             dropped_at=dropped_at,
             attacker_identifier=str(source_ip),
             attacker_ip=str(source_ip),
@@ -110,6 +111,9 @@ class BlockedTransactionAuditStore:
             interface_index=interface_index,
         )
 
+    def record_drop(self, event: Mapping[str, object]) -> int:
+        """Validate and persist one kernel drop event using a sync session."""
+        record = self._build_record(event)
         with self.session_factory() as session:
             try:
                 session.add(record)
@@ -117,6 +121,25 @@ class BlockedTransactionAuditStore:
                 return int(record.id)
             except Exception:
                 session.rollback()
+                raise
+
+
+class AsyncBlockedTransactionAuditStore(BlockedTransactionAuditStore):
+    """Persist validated kernel drop events using SQLAlchemy AsyncSession."""
+
+    def __init__(self, session_factory=AsyncSessionLocal) -> None:
+        self.session_factory = session_factory
+
+    async def record_drop_async(self, event: Mapping[str, object]) -> int:
+        """Write an audit row without blocking the event-loop thread."""
+        record = self._build_record(event)
+        async with self.session_factory() as session:
+            try:
+                session.add(record)
+                await session.commit()
+                return int(record.id)
+            except Exception:
+                await session.rollback()
                 raise
 
 
@@ -186,7 +209,11 @@ async def supervise_blocklist_drop_audit(
                     event = json.loads(line)
                     if not isinstance(event, dict):
                         raise ValueError("event must be a JSON object")
-                    await asyncio.to_thread(audit_store.record_drop, event)
+                    record_drop_async = getattr(audit_store, "record_drop_async", None)
+                    if callable(record_drop_async):
+                        await record_drop_async(event)
+                    else:
+                        await asyncio.to_thread(audit_store.record_drop, event)
                 except (json.JSONDecodeError, ValueError):
                     logger.warning("Ignoring invalid Day 19 audit event")
                 except Exception:

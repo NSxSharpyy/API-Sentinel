@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import math
 import os
@@ -257,6 +258,60 @@ class TransactionPersistenceWorker:
         ]
 
 
+    async def _measure_async_store_call(
+        self, transaction: HTTPTransaction
+    ) -> tuple[int, Exception | None]:
+        """Measure one awaited async-store call without blocking the event loop."""
+        started_ns = time.perf_counter_ns()
+        error = None
+        try:
+            await self.store.save_async(transaction)
+        except Exception as exc:
+            error = exc
+        return time.perf_counter_ns() - started_ns, error
+
+    async def _measure_async_batch_store_calls(
+        self, jobs: list[PersistenceJob]
+    ) -> list[tuple[int, Exception | None]]:
+        """Batch safe async writes and keep BOLA-sensitive writes ordered."""
+        transactions = [job.transaction for job in jobs]
+        store_type = type(self.store)
+        supports_batch = (
+            callable(getattr(store_type, "can_batch", None))
+            and callable(getattr(store_type, "save_batch_async", None))
+        )
+
+        if supports_batch and self.store.can_batch(transactions):
+            try:
+                durations = await self.store.save_batch_async(transactions)
+            except Exception:
+                logger.exception(
+                    "Async batched persistence failed; retrying jobs individually"
+                )
+                results = []
+                for job in jobs:
+                    results.append(
+                        await self._measure_async_store_call(job.transaction)
+                    )
+                return results
+
+            # Do not retry a potentially committed batch because its metrics
+            # result is malformed; retrying could create duplicate records.
+            if len(durations) != len(jobs):
+                raise RuntimeError(
+                    "save_batch_async duration count does not match job count"
+                )
+
+            return [(duration, None) for duration in durations]
+
+        # Process sequentially: BOLA-sensitive transactions must preserve order.
+        results = []
+        for job in jobs:
+            results.append(
+                await self._measure_async_store_call(job.transaction)
+            )
+        return results
+
     async def run(self, stop_event: asyncio.Event) -> None:
         """Persist jobs in small batches while preserving per-job commits."""
         while not stop_event.is_set() or not self.queue.empty():
@@ -284,16 +339,22 @@ class TransactionPersistenceWorker:
             cancelled = False
 
             try:
-                thread_task = asyncio.create_task(
-                    asyncio.to_thread(self._measure_batch_store_calls, jobs)
-                )
+                async_save = getattr(type(self.store), "save_async", None)
+                if inspect.iscoroutinefunction(async_save):
+                    persistence_task = asyncio.create_task(
+                        self._measure_async_batch_store_calls(jobs)
+                    )
+                else:
+                    persistence_task = asyncio.create_task(
+                        asyncio.to_thread(self._measure_batch_store_calls, jobs)
+                    )
+
                 try:
-                    results = await asyncio.shield(thread_task)
+                    results = await asyncio.shield(persistence_task)
                 except asyncio.CancelledError:
-                    # Let already-started database work finish before marking
-                    # its queue jobs done during shutdown.
+                    # Finish started database work before acknowledging queue jobs.
                     cancelled = True
-                    results = await thread_task
+                    results = await persistence_task
 
                 batch_elapsed_ns = time.perf_counter_ns() - batch_started_ns
                 amortized_elapsed_ns = batch_elapsed_ns // len(jobs)

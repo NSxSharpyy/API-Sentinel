@@ -178,3 +178,148 @@ def test_queue_wait_metrics_aggregate_and_report_recent_p95():
     assert worker.average_queue_wait_ms == pytest.approx(2.0)
     assert worker.max_queue_wait_ms == pytest.approx(3.0)
     assert worker.p95_queue_wait_ms == pytest.approx(3.0)
+
+
+
+def test_async_worker_uses_async_batch_save():
+    async def run_test():
+        class AsyncBatchStore:
+            def __init__(self):
+                self.batches = []
+
+            def can_batch(self, transactions):
+                return True
+
+            async def save_batch_async(self, transactions):
+                self.batches.append(list(transactions))
+                return [1_000_000 for _ in transactions]
+
+            async def save_async(self, transaction):
+                raise AssertionError("safe batch should use save_batch_async")
+
+        store = AsyncBatchStore()
+        worker = TransactionPersistenceWorker(store=store)
+        first = make_transaction()
+        second = make_transaction()
+        worker.enqueue(first)
+        worker.enqueue(second)
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.batches == [[first, second]]
+        assert worker.persisted_count == 2
+        assert worker.failed_count == 0
+        assert worker.queue.empty()
+
+    asyncio.run(run_test())
+
+
+def test_async_worker_falls_back_to_individual_saves_when_batch_fails(caplog):
+    async def run_test():
+        class AsyncFallbackStore:
+            def __init__(self):
+                self.batch_attempts = 0
+                self.saved = []
+
+            def can_batch(self, transactions):
+                return True
+
+            async def save_batch_async(self, transactions):
+                self.batch_attempts += 1
+                raise RuntimeError("synthetic async batch failure")
+
+            async def save_async(self, transaction):
+                self.saved.append(transaction)
+
+        store = AsyncFallbackStore()
+        worker = TransactionPersistenceWorker(store=store)
+        first = make_transaction()
+        second = make_transaction()
+        worker.enqueue(first)
+        worker.enqueue(second)
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.batch_attempts == 1
+        assert store.saved == [first, second]
+        assert worker.persisted_count == 2
+        assert worker.failed_count == 0
+        assert worker.queue.empty()
+        assert "retrying jobs individually" in caplog.text
+
+    asyncio.run(run_test())
+
+
+def test_async_worker_keeps_non_batchable_transactions_ordered():
+    async def run_test():
+        class OrderedAsyncStore:
+            def __init__(self):
+                self.saved = []
+
+            def can_batch(self, transactions):
+                return False
+
+            async def save_batch_async(self, transactions):
+                raise AssertionError("non-batchable work must remain individual")
+
+            async def save_async(self, transaction):
+                self.saved.append(transaction)
+
+        store = OrderedAsyncStore()
+        worker = TransactionPersistenceWorker(store=store)
+        first = make_transaction()
+        second = make_transaction()
+        worker.enqueue(first)
+        worker.enqueue(second)
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.saved == [first, second]
+        assert worker.persisted_count == 2
+        assert worker.failed_count == 0
+
+    asyncio.run(run_test())
+
+
+
+def test_async_worker_does_not_retry_batch_on_bad_duration_count(caplog):
+    async def run_test():
+        class BadDurationStore:
+            def __init__(self):
+                self.batch_attempts = 0
+                self.individual_saves = []
+
+            def can_batch(self, transactions):
+                return True
+
+            async def save_batch_async(self, transactions):
+                self.batch_attempts += 1
+                # Simulate a committed batch with malformed metrics output.
+                return [1_000_000]
+
+            async def save_async(self, transaction):
+                self.individual_saves.append(transaction)
+
+        store = BadDurationStore()
+        worker = TransactionPersistenceWorker(store=store)
+        worker.enqueue(make_transaction())
+        worker.enqueue(make_transaction())
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.batch_attempts == 1
+        assert store.individual_saves == []
+        assert worker.persisted_count == 0
+        assert worker.failed_count == 2
+        assert worker.queue.empty()
+        assert "duration count does not match" in caplog.text
+
+    asyncio.run(run_test())

@@ -21,10 +21,14 @@ from app.persistence_worker import TransactionPersistenceWorker
 from app.queues import header_queue, metadata_queue, raw_packet_queue
 from app.blocklist_drop_audit import (
     DROP_EVENTS_PIN,
-    BlockedTransactionAuditStore,
+    AsyncBlockedTransactionAuditStore,
     supervise_blocklist_drop_audit,
 )
-from app.transaction_store import TransactionStore, initialize_database
+from app.async_transaction_store import (
+    AsyncTransactionStore,
+    initialize_async_database,
+)
+from app.database import async_engine
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +51,16 @@ async def lifespan(app: FastAPI):
 
     drop_audit_stop_event = asyncio.Event()
     drop_audit_task = None
-    drop_audit_store = BlockedTransactionAuditStore()
+    drop_audit_store = AsyncBlockedTransactionAuditStore()
 
     stop_event = asyncio.Event()
     persistence_stop_event = asyncio.Event()
 
-    initialize_database()
+    await initialize_async_database()
 
     publisher = HTTPTransactionPublisher()
     alert_bus = AlertBus()
-    transaction_store = TransactionStore(alert_bus=alert_bus)
+    transaction_store = AsyncTransactionStore(alert_bus=alert_bus)
     persistence_worker = TransactionPersistenceWorker(transaction_store)
 
     pipeline = HTTPMessagePipeline(
@@ -379,6 +383,11 @@ async def lifespan(app: FastAPI):
 
         if blocklist_sender is not None:
             blocklist_sender.close()
+
+        try:
+            await async_engine.dispose()
+        except Exception:
+            logger.exception("Failed to dispose async database engine")
 
         logger.info("API-Sentinel background services stopped")
 

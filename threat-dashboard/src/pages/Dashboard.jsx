@@ -10,6 +10,7 @@ import SystemLatencyWidget from "../components/ui/SystemLatencyWidget";
 import AlertResponsivenessMonitor from "../components/ui/AlertResponsivenessMonitor";
 import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
 import EnforcementToggle from "../components/ui/EnforcementToggle";
+import BlockedAttacksLiveStream from "../components/ui/BlockedAttacksLiveStream";
 
 export default function Dashboard() {
   const {
@@ -37,11 +38,11 @@ export default function Dashboard() {
 
   const latencySource = isMockMode
     ? "Simulated telemetry value"
-  : typeof latestLatencyMs === "number" &&
-      Number.isFinite(latestLatencyMs) &&
-      latestLatencyMs >= 0
-    ? "Telemetry field; measurement boundary unverified"
-    : "";
+    : typeof latestLatencyMs === "number" &&
+        Number.isFinite(latestLatencyMs) &&
+        latestLatencyMs >= 0
+      ? "Telemetry field; measurement boundary unverified"
+      : "";
 
   // Transactions are stored newest first by useTelemetry.
   const latestEvent = transactions[0] ?? null;
@@ -150,6 +151,9 @@ export default function Dashboard() {
 
       {/* Day 17 — Global Enforcement Demo Control */}
       <EnforcementToggle />
+
+      {/* Day 18 — Blocked Attacks Metrics and Event Stream */}
+      <BlockedAttacksLiveStream />
 
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />

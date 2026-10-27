@@ -1,6 +1,7 @@
 
 import asyncio
 import math
+import os
 from collections import deque
 
 from app.schemas import HeaderData, PacketMetadata, RawPacketChunk
@@ -50,8 +51,23 @@ class QueueWaitMetrics:
         }
 
 
-QUEUE_MAX_SIZE = 10000
-BLOCK_VERDICT_QUEUE_MAX_SIZE = 1024
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+QUEUE_MAX_SIZE = _positive_int_env("API_SENTINEL_QUEUE_MAX_SIZE", 10000)
+BLOCK_VERDICT_QUEUE_MAX_SIZE = _positive_int_env(
+    "API_SENTINEL_BLOCK_VERDICT_QUEUE_MAX_SIZE", 1024
+)
 
 # Explicit block/unblock verdicts only. Detection incidents do not enter this
 # queue automatically; a policy component must submit validated verdict data.

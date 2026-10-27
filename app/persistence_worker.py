@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import os
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -10,10 +11,27 @@ from app.transaction_store import TransactionStore
 
 logger = logging.getLogger(__name__)
 
-PERSISTENCE_QUEUE_MAX_SIZE = 12000
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+PERSISTENCE_QUEUE_MAX_SIZE = _positive_int_env(
+    "API_SENTINEL_PERSISTENCE_QUEUE_MAX_SIZE", 12000
+)
 QUEUE_WAIT_SAMPLE_CAPACITY = 10_000
 PERSISTENCE_DURATION_SAMPLE_CAPACITY = 10_000
-PERSISTENCE_BATCH_MAX_SIZE = 32
+PERSISTENCE_BATCH_MAX_SIZE = _positive_int_env(
+    "API_SENTINEL_PERSISTENCE_BATCH_MAX_SIZE", 32
+)
 
 
 @dataclass(frozen=True)
@@ -29,11 +47,17 @@ class TransactionPersistenceWorker:
         self,
         store: TransactionStore,
         max_queue_size: int = PERSISTENCE_QUEUE_MAX_SIZE,
+        batch_max_size: int | None = None,
     ) -> None:
         if max_queue_size <= 0:
             raise ValueError("max_queue_size must be positive")
+        if batch_max_size is None:
+            batch_max_size = PERSISTENCE_BATCH_MAX_SIZE
+        if batch_max_size <= 0:
+            raise ValueError("batch_max_size must be positive")
 
         self.store = store
+        self.batch_max_size = batch_max_size
         self.queue: asyncio.Queue[PersistenceJob] = asyncio.Queue(
             maxsize=max_queue_size
         )
@@ -245,7 +269,7 @@ class TransactionPersistenceWorker:
                 continue
 
             jobs = [first_job]
-            while len(jobs) < PERSISTENCE_BATCH_MAX_SIZE:
+            while len(jobs) < self.batch_max_size:
                 try:
                     jobs.append(self.queue.get_nowait())
                 except asyncio.QueueEmpty:

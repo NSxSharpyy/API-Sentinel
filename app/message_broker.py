@@ -3,12 +3,27 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from datetime import timezone
 
 import zmq
 
 from app.http_reassembly import HTTPMessage
 from app.transaction_correlator import HTTPTransaction
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    """Read a positive integer environment setting or use its default."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
 
 # Backward-compatible per-message topic. Existing consumers can continue to
 # consume individual parsed request/response events from this topic.
@@ -70,8 +85,10 @@ class HTTPTransactionPublisher:
     """Publish parsed messages and completed transactions through ZeroMQ PUB."""
 
     def __init__(self, endpoint: str = "tcp://127.0.0.1:5557"):
+        send_hwm = _positive_int_env("API_SENTINEL_ZMQ_SNDHWM", 1000)
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.PUB)
+        self.socket.setsockopt(zmq.SNDHWM, send_hwm)
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.bind(endpoint)
 
@@ -108,9 +125,11 @@ class HTTPTransactionSubscriber:
             raise ValueError(
                 "topic must be one of the configured HTTP transaction topics"
             )
+        receive_hwm = _positive_int_env("API_SENTINEL_ZMQ_RCVHWM", 1000)
         self.topic = topic
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.SUB)
+        self.socket.setsockopt(zmq.RCVHWM, receive_hwm)
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.setsockopt(zmq.SUBSCRIBE, topic)
         self.socket.connect(endpoint)

@@ -83,6 +83,33 @@ class TransactionLog(Base):
     )
 
 
+class BlockedTransactionAudit(Base):
+    """Audit record for a packet actually dropped by kernel enforcement."""
+
+    __tablename__ = "blocked_transaction_audits"
+    __table_args__ = (
+        Index("ix_blocked_audit_dropped_at", "dropped_at"),
+        Index("ix_blocked_audit_attacker_time", "attacker_ip", "dropped_at"),
+        Index("ix_blocked_audit_rule_id", "rule_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dropped_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    attacker_identifier: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    attacker_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    target_endpoint: Mapped[str] = mapped_column(String(320), nullable=False)
+    target_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    source_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    protocol: Mapped[str] = mapped_column(String(8), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    interface_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class SecurityIncident(Base):
     __tablename__ = "security_incidents"
     __table_args__ = (

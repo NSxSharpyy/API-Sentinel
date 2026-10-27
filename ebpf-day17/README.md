@@ -91,3 +91,28 @@ Compilation is not runtime verification. Keep
 `packet_drop_enforcement_configured: false` until controlled tests verify
 matching packets drop, unrelated and expired-entry packets pass, and
 detachment restores normal traffic.
+
+
+## Day 19 — Blocked-packet audit stream
+
+The enforcement program emits a record to the pinned ring buffer
+`/sys/fs/bpf/api_sentinel_day17_drop_events` immediately before returning
+`TC_ACT_SHOT`. The event includes the monotonic capture timestamp, ingress
+interface index, attacker/source IPv4 address, target IPv4 address, TCP/UDP
+ports when present, protocol, and the matched enforcement rule identifier.
+
+Build the reader with:
+
+    make blocklist_drop_reader
+
+Build the updated enforcement object and loader before attaching the updated
+program to a disposable `api-sntl-*` test interface. Follow the explicit
+opt-in and detach procedure above. The application-side audit collector is
+disabled by default; set `API_SENTINEL_BLOCKLIST_DROP_AUDIT_ENABLED=1` only
+after the reader has been built and the drop-event map is pinned.
+
+The audit rule identifier `day17.ipv4_source_blocklist` names the kernel
+enforcement rule. It is not the originating heuristic rule ID: the existing
+Day 17 blocklist map stores only expiration timestamps, not the original
+verdict rule ID. A ring-buffer reservation failure does not allow a packet,
+but means that particular packet's audit event could not be emitted.

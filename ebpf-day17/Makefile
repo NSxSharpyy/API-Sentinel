@@ -9,7 +9,7 @@ BPF_CFLAGS := -O2 -g -target bpf -D__TARGET_ARCH_x86 -Wall -Werror \
 
 .PHONY: all clean
 
-all: blocklist_map_ctl blocklist_enforce.bpf.o blocklist_enforcer_loader
+all: blocklist_map_ctl blocklist_enforce.bpf.o blocklist_enforcer_loader blocklist_drop_reader
 
 blocklist_map_ctl: map_ctl.c blocklist_map.h
 	$(CC) $(CFLAGS) $(WARNINGS) $(LIBBPF_CFLAGS) \
@@ -21,5 +21,8 @@ blocklist_enforce.bpf.o: blocklist_enforce.bpf.c blocklist_map.h
 blocklist_enforcer_loader: blocklist_enforcer_loader.c blocklist_map.h
 	$(CC) $(CFLAGS) $(WARNINGS) $(LIBBPF_CFLAGS) $< -o $@ $(LIBBPF_LIBS)
 
+blocklist_drop_reader: blocklist_drop_reader.c blocklist_drop_event.h
+	$(CC) $(CFLAGS) $(WARNINGS) $(LIBBPF_CFLAGS) $< -o $@ $(LIBBPF_LIBS)
+
 clean:
-	rm -f blocklist_map_ctl blocklist_enforce.bpf.o blocklist_enforcer_loader
+	rm -f blocklist_map_ctl blocklist_enforce.bpf.o blocklist_enforcer_loader blocklist_drop_reader

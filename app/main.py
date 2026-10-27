@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 import queue
 from contextlib import asynccontextmanager
 
@@ -18,6 +19,11 @@ from app.message_broker import HTTPTransactionPublisher
 from app.packet_worker import packet_worker
 from app.persistence_worker import TransactionPersistenceWorker
 from app.queues import header_queue, metadata_queue, raw_packet_queue
+from app.blocklist_drop_audit import (
+    DROP_EVENTS_PIN,
+    BlockedTransactionAuditStore,
+    supervise_blocklist_drop_audit,
+)
 from app.transaction_store import TransactionStore, initialize_database
 
 logger = logging.getLogger(__name__)
@@ -26,6 +32,23 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize persistence and start packet capture services."""
+    drop_audit_enabled = os.getenv(
+        "API_SENTINEL_BLOCKLIST_DROP_AUDIT_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes"}
+    drop_audit_reader = (
+        Path(__file__).resolve().parent.parent
+        / "ebpf-day17"
+        / "blocklist_drop_reader"
+    )
+    if drop_audit_enabled and not drop_audit_reader.is_file():
+        raise RuntimeError(
+            "Day 19 audit reader is missing; build ebpf-day17/blocklist_drop_reader"
+        )
+
+    drop_audit_stop_event = asyncio.Event()
+    drop_audit_task = None
+    drop_audit_store = BlockedTransactionAuditStore()
+
     stop_event = asyncio.Event()
     persistence_stop_event = asyncio.Event()
 
@@ -157,6 +180,8 @@ async def lifespan(app: FastAPI):
     app.state.alert_bus = alert_bus
     app.state.persistence_worker = persistence_worker
     app.state.capture_status = "starting"
+    app.state.blocked_transaction_audit_enabled = drop_audit_enabled
+    app.state.blocked_transaction_audit_task = None
 
     def update_capture_status(status: str) -> None:
         app.state.capture_status = status
@@ -212,9 +237,36 @@ async def lifespan(app: FastAPI):
     logger.info("API-Sentinel packet worker started")
     logger.info("API-Sentinel capture supervisor started")
 
+    if drop_audit_enabled:
+        drop_audit_task = asyncio.create_task(
+            supervise_blocklist_drop_audit(
+                ["sudo", "-n", str(drop_audit_reader), DROP_EVENTS_PIN],
+                drop_audit_stop_event,
+                drop_audit_store,
+            ),
+            name="api-sentinel-blocked-transaction-audit",
+        )
+        app.state.blocked_transaction_audit_task = drop_audit_task
+
     try:
         yield
     finally:
+        # Stop the audit reader and reap its child process before shutdown.
+        if drop_audit_task is not None:
+            drop_audit_stop_event.set()
+            try:
+                await asyncio.wait_for(drop_audit_task, timeout=4.0)
+            except asyncio.TimeoutError:
+                drop_audit_task.cancel()
+                try:
+                    await drop_audit_task
+                except asyncio.CancelledError:
+                    pass
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Day 19 drop-audit worker failed during shutdown")
+
         # Stop capture and packet processing first.
         stop_event.set()
         capture_task.cancel()

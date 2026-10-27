@@ -14,6 +14,8 @@
 #include <bpf/libbpf.h>
 
 #include "blocklist_map.h"
+#include "blocklist_drop_event.h"
+#include <errno.h>
 
 #define FILTER_HANDLE 0xA517U
 #define FILTER_PRIORITY 49151U
@@ -179,13 +181,16 @@ int main(int argc, char **argv)
 
     int result = 1;
     bool attached = false;
+    bool drop_events_was_pinned = false;
     struct bpf_tc_hook hook;
     struct bpf_tc_opts opts;
     struct bpf_map *map = bpf_object__find_map_by_name(obj, "blocklist");
+    struct bpf_map *drop_events_map =
+        bpf_object__find_map_by_name(obj, "drop_events");
     struct bpf_program *prog =
         bpf_object__find_program_by_name(obj, "enforce_blocklist");
 
-    if (!map || !prog) {
+    if (!map || !prog || !drop_events_map) {
         fprintf(stderr, "Object is missing the expected map/program.\n");
         goto cleanup;
     }
@@ -198,10 +203,33 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
+    int drop_events_fd = bpf_obj_get(API_SENTINEL_DROP_EVENTS_PIN);
+    if (drop_events_fd >= 0) {
+        err = bpf_map__reuse_fd(drop_events_map, drop_events_fd);
+        close(drop_events_fd);
+        if (err < 0) {
+            report_error("Reuse pinned drop-event ring buffer", err);
+            goto cleanup;
+        }
+        drop_events_was_pinned = true;
+    } else if (drop_events_fd != -ENOENT && errno != ENOENT) {
+        int code = drop_events_fd < -1 ? drop_events_fd : -errno;
+        report_error("Open pinned drop-event ring buffer", code);
+        goto cleanup;
+    }
+
     err = bpf_object__load(obj);
     if (err < 0) {
         report_error("Load enforcement program", err);
         goto cleanup;
+    }
+
+    if (!drop_events_was_pinned) {
+        err = bpf_map__pin(drop_events_map, API_SENTINEL_DROP_EVENTS_PIN);
+        if (err < 0) {
+            report_error("Pin Day 19 drop-event ring buffer", err);
+            goto cleanup;
+        }
     }
 
     init_hook(&hook, (int)index);

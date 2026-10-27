@@ -7,6 +7,9 @@
 #include <bpf/bpf_endian.h>
 
 #include "blocklist_map.h"
+#include "blocklist_drop_event.h"
+#include <linux/tcp.h>
+#include <linux/udp.h>
 
 struct vlan_hdr_local {
     __be16 tci;
@@ -20,6 +23,12 @@ struct {
     __type(key, __u32);
     __type(value, struct api_sentinel_blocklist_value);
 } blocklist SEC(".maps");
+
+/* A separate event stream keeps the existing blocklist map ABI unchanged. */
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 1 << 20);
+} drop_events SEC(".maps");
 
 static __always_inline int is_vlan_proto(__be16 protocol)
 {
@@ -82,6 +91,43 @@ int enforce_blocklist(struct __sk_buff *skb)
     __u64 expires_at = value->expires_at_mono_ns;
     if (expires_at != 0 && expires_at <= bpf_ktime_get_ns())
         return TC_ACT_OK;
+
+    /*
+     * Emit an event at the actual drop decision. A full ring buffer must
+     * never turn a blocked packet into an allowed packet.
+     */
+    struct api_sentinel_drop_event *event = bpf_ringbuf_reserve(
+        &drop_events, sizeof(*event), 0
+    );
+    if (event) {
+        __builtin_memset(event, 0, sizeof(*event));
+        event->captured_at_ns = bpf_ktime_get_ns();
+        event->interface_index = skb->ifindex;
+        event->source_ip = ip->saddr;
+        event->destination_ip = ip->daddr;
+        event->protocol = ip->protocol;
+        event->rule_id = API_SENTINEL_DROP_RULE_ID;
+
+        /* Non-initial IPv4 fragments do not contain transport ports. */
+        if ((bpf_ntohs(ip->frag_off) & 0x1fff) == 0) {
+            void *transport = (void *)ip + ip_header_length;
+            if (ip->protocol == 6) {
+                struct tcphdr *tcp = transport;
+                if ((char *)(tcp + 1) <= data_end) {
+                    event->source_port = bpf_ntohs(tcp->source);
+                    event->destination_port = bpf_ntohs(tcp->dest);
+                }
+            } else if (ip->protocol == 17) {
+                struct udphdr *udp = transport;
+                if ((char *)(udp + 1) <= data_end) {
+                    event->source_port = bpf_ntohs(udp->source);
+                    event->destination_port = bpf_ntohs(udp->dest);
+                }
+            }
+        }
+
+        bpf_ringbuf_submit(event, 0);
+    }
 
     return TC_ACT_SHOT;
 }

@@ -123,15 +123,38 @@ int main(int argc, char **argv)
 
 cleanup:
     if (tc_attached) {
-        int detach_err = bpf_tc_detach(&hook, &opts);
-        if (detach_err && detach_err != -ENOENT)
+        /*
+         * Detach options must not reuse prog_fd or other attachment
+         * fields. libbpf expects only the handle and priority here.
+         */
+        struct bpf_tc_opts detach_opts = {};
+        detach_opts.sz = sizeof(detach_opts);
+        detach_opts.handle = API_SENTINEL_TC_HANDLE;
+        detach_opts.priority = API_SENTINEL_TC_PRIORITY;
+
+        int detach_err = bpf_tc_detach(&hook, &detach_opts);
+        if (detach_err && detach_err != -ENOENT) {
             report_libbpf_error("Detach TC ingress program", detach_err);
+            if (!err)
+                err = detach_err;
+        } else {
+            tc_attached = 0;
+        }
     }
-    if (map_pinned) {
+
+    if (map_pinned && !tc_attached) {
         int unpin_err = bpf_map__unpin(map, API_SENTINEL_PIN_PATH);
-        if (unpin_err && unpin_err != -ENOENT)
+        if (unpin_err && unpin_err != -ENOENT) {
             report_libbpf_error("Unpin ring-buffer map", unpin_err);
+            if (!err)
+                err = unpin_err;
+        }
+    } else if (map_pinned && tc_attached) {
+        fprintf(stderr,
+                "Keeping ring-buffer pin because TC detach failed: %s\n",
+                API_SENTINEL_PIN_PATH);
     }
+
     bpf_object__close(object);
     return err ? 1 : 0;
 }

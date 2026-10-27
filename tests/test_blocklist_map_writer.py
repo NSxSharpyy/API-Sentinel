@@ -86,6 +86,112 @@ def build_writer(fake):
     )
 
 
+
+class BatchFakeLibbpf(FakeLibbpf):
+    def __init__(self, *, partial_update=False):
+        super().__init__()
+        self.batch_update_calls = 0
+        self.batch_delete_calls = 0
+        self.partial_update = partial_update
+
+    def bpf_map_update_batch(self, fd, keys, values, count_ptr, opts):
+        assert fd == 73
+        self.batch_update_calls += 1
+        requested = count_ptr._obj.value
+        processed = 1 if self.partial_update else requested
+
+        for i in range(processed):
+            key = ctypes.string_at(ctypes.addressof(keys) + i * 4, 4)
+            value = struct.unpack(
+                "=Q", ctypes.string_at(ctypes.addressof(values) + i * 8, 8)
+            )[0]
+            self.entries[key] = value
+
+        count_ptr._obj.value = processed
+        return -errno.EFAULT if self.partial_update else 0
+
+    def bpf_map_delete_batch(self, fd, keys, count_ptr, opts):
+        assert fd == 73
+        self.batch_delete_calls += 1
+        requested = count_ptr._obj.value
+
+        for i in range(requested):
+            key = ctypes.string_at(ctypes.addressof(keys) + i * 4, 4)
+            self.entries.pop(key, None)
+
+        count_ptr._obj.value = requested
+        return 0
+
+
+def test_writer_uses_native_update_batch():
+    fake = BatchFakeLibbpf()
+    writer = build_writer(fake)
+    verdicts = [
+        make_verdict(source_ip=f"198.51.100.{last}")
+        for last in (21, 22, 23)
+    ]
+
+    try:
+        results = writer.apply_many(verdicts)
+    finally:
+        writer.close()
+
+    assert results == [None, None, None]
+    assert fake.batch_update_calls == 1
+    assert all(
+        ipaddress.IPv4Address(f"198.51.100.{last}").packed in fake.entries
+        for last in (21, 22, 23)
+    )
+
+
+def test_writer_uses_native_delete_batch():
+    fake = BatchFakeLibbpf()
+    addresses = [
+        ipaddress.IPv4Address(f"198.51.100.{last}")
+        for last in (31, 32, 33)
+    ]
+    for address in addresses:
+        fake.entries[address.packed] = 0
+
+    writer = build_writer(fake)
+    verdicts = [
+        make_verdict(action="unblock", source_ip=str(address))
+        for address in addresses
+    ]
+
+    try:
+        results = writer.apply_many(verdicts)
+    finally:
+        writer.close()
+
+    assert results == [None, None, None]
+    assert fake.batch_delete_calls == 1
+    assert all(address.packed not in fake.entries for address in addresses)
+
+
+def test_writer_recovers_from_partial_native_batch_update():
+    fake = BatchFakeLibbpf(partial_update=True)
+    writer = build_writer(fake)
+    verdicts = [
+        make_verdict(source_ip=f"198.51.100.{last}")
+        for last in (41, 42, 43)
+    ]
+
+    try:
+        results = writer.apply_many(verdicts)
+    finally:
+        writer.close()
+
+    # The simulated batch writes only the first key before reporting failure.
+    # Ordered single-element retries should reconcile every requested entry.
+    assert results == [None, None, None]
+    assert fake.batch_update_calls == 1
+    assert all(
+        ipaddress.IPv4Address(f"198.51.100.{last}").packed in fake.entries
+        for last in (41, 42, 43)
+    )
+
+
 def test_writer_validates_map_and_updates_permanent_entry():
     fake = FakeLibbpf()
     writer = build_writer(fake)

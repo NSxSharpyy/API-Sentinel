@@ -75,9 +75,14 @@ async def lifespan(app: FastAPI):
             from app.blocklist_verdict_receiver import BlocklistVerdictReceiver
 
             blocklist_writer = LibbpfBlocklistMapWriter()
+            # Configurable batch size; default favors lower burst latency.
+            blocklist_batch_size = int(
+                os.getenv("API_SENTINEL_BLOCKLIST_BATCH_SIZE", "5")
+            )
             blocklist_synchronizer = BlocklistSynchronizer(
                 queues.blocklist_verdict_queue,
                 blocklist_writer,
+                batch_size=blocklist_batch_size,
             )
             verdict_endpoint = os.getenv(
                 "API_SENTINEL_BLOCKLIST_VERDICT_ENDPOINT",

@@ -127,6 +127,145 @@ def test_writer_failure_is_counted_without_crashing_worker():
     assert metrics["applied_count"] == 0
 
 
+
+
+def test_batched_worker_preserves_order_and_deduplicates_within_batch():
+    async def scenario():
+        queue = asyncio.Queue()
+        writer = RecordingWriter()
+        worker = BlocklistSynchronizer(queue, writer, batch_size=8)
+        stop_event = asyncio.Event()
+        task = asyncio.create_task(worker.run(stop_event))
+
+        payloads = [
+            make_payload(verdict_id="ordered-1", action="block"),
+            make_payload(verdict_id="ordered-2", action="unblock"),
+            make_payload(verdict_id="ordered-1", action="block"),
+            make_payload(
+                verdict_id="ordered-3",
+                action="block",
+                source_ip="198.51.100.26",
+            ),
+        ]
+        for payload in payloads:
+            queue.put_nowait(payload)
+
+        await asyncio.wait_for(queue.join(), timeout=2)
+        stop_event.set()
+        await asyncio.wait_for(task, timeout=2)
+        return writer.applied, worker.snapshot()
+
+    applied, metrics = asyncio.run(scenario())
+
+    assert [verdict.verdict_id for verdict in applied] == [
+        "ordered-1", "ordered-2", "ordered-3"
+    ]
+    assert metrics["applied_count"] == 3
+    assert metrics["duplicate_count"] == 1
+    assert metrics["failed_count"] == 0
+    assert metrics["queue_depth"] == 0
+
+
+def test_batched_worker_allows_retry_after_writer_failure():
+    class FailOnceWriter:
+        def __init__(self):
+            self.calls = 0
+            self.applied = []
+
+        def apply(self, verdict):
+            self.calls += 1
+            if self.calls == 1:
+                raise OSError("simulated first-attempt failure")
+            self.applied.append(verdict)
+
+    async def scenario():
+        queue = asyncio.Queue()
+        writer = FailOnceWriter()
+        worker = BlocklistSynchronizer(queue, writer, batch_size=8)
+        stop_event = asyncio.Event()
+        task = asyncio.create_task(worker.run(stop_event))
+        payload = make_payload(verdict_id="retry-after-failure")
+
+        queue.put_nowait(payload)
+        await asyncio.wait_for(queue.join(), timeout=2)
+
+        # A failed verdict must not be remembered as successfully applied.
+        queue.put_nowait(payload)
+        await asyncio.wait_for(queue.join(), timeout=2)
+
+        stop_event.set()
+        await asyncio.wait_for(task, timeout=2)
+        return writer, worker.snapshot()
+
+    writer, metrics = asyncio.run(scenario())
+
+    assert writer.calls == 2
+    assert len(writer.applied) == 1
+    assert writer.applied[0].verdict_id == "retry-after-failure"
+    assert metrics["failed_count"] == 1
+    assert metrics["applied_count"] == 1
+    assert metrics["duplicate_count"] == 0
+    assert metrics["queue_depth"] == 0
+
+
+def test_synchronizer_uses_apply_many_when_available():
+    class BatchRecordingWriter(RecordingWriter):
+        def __init__(self):
+            super().__init__()
+            self.batch_calls = 0
+
+        def apply_many(self, verdicts):
+            self.batch_calls += 1
+            errors = []
+            for verdict in verdicts:
+                try:
+                    self.apply(verdict)
+                except Exception as exc:
+                    errors.append(exc)
+                else:
+                    errors.append(None)
+            return errors
+
+    async def scenario():
+        queue = asyncio.Queue()
+        writer = BatchRecordingWriter()
+        worker = BlocklistSynchronizer(queue, writer, batch_size=8)
+        stop_event = asyncio.Event()
+        task = asyncio.create_task(worker.run(stop_event))
+
+        for number in (1, 2, 3):
+            queue.put_nowait(
+                make_payload(
+                    verdict_id=f"native-path-{number}",
+                    source_ip=f"198.51.100.{number + 40}",
+                )
+            )
+
+        await asyncio.wait_for(queue.join(), timeout=2)
+        stop_event.set()
+        await asyncio.wait_for(task, timeout=2)
+        return writer, worker.snapshot()
+
+    writer, metrics = asyncio.run(scenario())
+
+    assert writer.batch_calls == 1
+    assert [item.verdict_id for item in writer.applied] == [
+        "native-path-1", "native-path-2", "native-path-3"
+    ]
+    assert metrics["applied_count"] == 3
+    assert metrics["failed_count"] == 0
+    assert metrics["queue_depth"] == 0
+
+
+def test_batch_size_must_be_positive():
+    with pytest.raises(ValueError, match="batch_size"):
+        BlocklistSynchronizer(
+            asyncio.Queue(),
+            RecordingWriter(),
+            batch_size=0,
+        )
+
+
 def test_detection_to_apply_latency_metrics_measure_full_path():
     class SlowRecordingWriter(RecordingWriter):
         def apply(self, verdict):

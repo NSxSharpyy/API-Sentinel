@@ -147,16 +147,20 @@ class BlocklistSynchronizer:
         *,
         poll_interval_s: float = 0.1,
         dedupe_limit: int = 10_000,
+        batch_size: int = 64,
     ) -> None:
         if poll_interval_s <= 0:
             raise ValueError("poll_interval_s must be positive")
         if dedupe_limit < 1:
             raise ValueError("dedupe_limit must be at least 1")
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
 
         self.verdict_queue = verdict_queue
         self.map_writer = map_writer
         self.poll_interval_s = poll_interval_s
         self.dedupe_limit = dedupe_limit
+        self.batch_size = batch_size
         self._seen: OrderedDict[str, None] = OrderedDict()
         self._detection_to_apply_samples_ms: deque[float] = deque(maxlen=10_000)
 
@@ -177,14 +181,127 @@ class BlocklistSynchronizer:
             "last_error_type": None,
         }
 
-    def _apply_with_timestamps(self, verdict: BlockVerdict) -> tuple[int, int]:
-        """Apply a verdict off-loop and return writer-operation timestamps."""
-        started_ns = time.monotonic_ns()
-        self.map_writer.apply(verdict)
-        return started_ns, time.monotonic_ns()
+    def _apply_batch_with_timestamps(
+        self,
+        payloads: list[object],
+        seen: OrderedDict[str, None],
+    ) -> tuple[list[dict[str, object]], OrderedDict[str, None]]:
+        """Validate and apply ordered verdicts, using optional writer batching."""
+        results: list[dict[str, object] | None] = [None] * len(payloads)
+        index = 0
+
+        while index < len(payloads):
+            try:
+                verdict = BlockVerdict.from_payload(payloads[index])
+            except VerdictValidationError as exc:
+                results[index] = {"status": "rejected", "error": exc}
+                index += 1
+                continue
+            except Exception as exc:
+                results[index] = {"status": "failed", "error": exc}
+                index += 1
+                continue
+
+            if verdict.verdict_id in seen:
+                results[index] = {"status": "duplicate", "verdict": verdict}
+                index += 1
+                continue
+
+            # Never put the same verdict ID into one call: if the first
+            # application fails, a later occurrence must still be retryable.
+            group_indices = [index]
+            group_verdicts = [verdict]
+            group_ids = {verdict.verdict_id}
+            cursor = index + 1
+
+            while cursor < len(payloads) and len(group_verdicts) < self.batch_size:
+                try:
+                    candidate = BlockVerdict.from_payload(payloads[cursor])
+                except Exception:
+                    # Process this item separately so its precise error status
+                    # is retained and earlier operations remain ordered.
+                    break
+
+                if (
+                    candidate.verdict_id in seen
+                    or candidate.verdict_id in group_ids
+                ):
+                    break
+
+                group_indices.append(cursor)
+                group_verdicts.append(candidate)
+                group_ids.add(candidate.verdict_id)
+                cursor += 1
+
+            apply_many = getattr(self.map_writer, "apply_many", None)
+
+            if callable(apply_many):
+                started_ns = time.monotonic_ns()
+                try:
+                    errors = apply_many(group_verdicts)
+                    if not isinstance(errors, (list, tuple)) or len(errors) != len(
+                        group_verdicts
+                    ):
+                        raise RuntimeError(
+                            "apply_many returned an invalid result count"
+                        )
+                    errors = [
+                        error if error is None or isinstance(error, Exception)
+                        else RuntimeError("apply_many returned an invalid error")
+                        for error in errors
+                    ]
+                except Exception as exc:
+                    errors = [exc] * len(group_verdicts)
+                completed_ns = time.monotonic_ns()
+
+                for item_index, item, error in zip(
+                    group_indices, group_verdicts, errors
+                ):
+                    if error is not None:
+                        results[item_index] = {
+                            "status": "failed",
+                            "verdict": item,
+                            "error": error,
+                        }
+                        continue
+
+                    self._remember(item.verdict_id, seen)
+                    results[item_index] = {
+                        "status": "applied",
+                        "verdict": item,
+                        "started_ns": started_ns,
+                        "completed_ns": completed_ns,
+                    }
+            else:
+                # Compatibility path for existing writers and test doubles.
+                for item_index, item in zip(group_indices, group_verdicts):
+                    started_ns = time.monotonic_ns()
+                    try:
+                        self.map_writer.apply(item)
+                    except Exception as exc:
+                        results[item_index] = {
+                            "status": "failed",
+                            "verdict": item,
+                            "error": exc,
+                        }
+                        continue
+
+                    completed_ns = time.monotonic_ns()
+                    self._remember(item.verdict_id, seen)
+                    results[item_index] = {
+                        "status": "applied",
+                        "verdict": item,
+                        "started_ns": started_ns,
+                        "completed_ns": completed_ns,
+                    }
+
+            index += len(group_verdicts)
+
+        # Every input slot is filled by the ordered processing loop above.
+        return [result for result in results if result is not None], seen
 
     async def run(self, stop_event: asyncio.Event) -> None:
-        """Run until stop_event is set; account for every dequeued item."""
+        """Consume ordered batches while accounting for every queue item."""
         logger.info("Blocklist synchronization worker started")
 
         while True:
@@ -192,7 +309,7 @@ class BlocklistSynchronizer:
                 break
 
             try:
-                payload = await asyncio.wait_for(
+                first = await asyncio.wait_for(
                     self.verdict_queue.get(),
                     timeout=self.poll_interval_s,
                 )
@@ -201,70 +318,107 @@ class BlocklistSynchronizer:
                     break
                 continue
 
+            payloads = [first]
+            while len(payloads) < self.batch_size:
+                try:
+                    payloads.append(self.verdict_queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+
+            self._metrics["received_count"] += len(payloads)
+            seen_snapshot = OrderedDict(self._seen)
+
             try:
-                self._metrics["received_count"] += 1
-                verdict = BlockVerdict.from_payload(payload)
-
-                if verdict.verdict_id in self._seen:
-                    self._metrics["duplicate_count"] += 1
-                    continue
-
-                # Capture timestamps in the same worker thread as the writer.
-                started_ns, completed_ns = await asyncio.to_thread(
-                    self._apply_with_timestamps, verdict
+                results, updated_seen = await asyncio.to_thread(
+                    self._apply_batch_with_timestamps,
+                    payloads,
+                    seen_snapshot,
                 )
-                latency_ms = (completed_ns - started_ns) / 1_000_000
-                self._metrics["applied_count"] += 1
-                self._metrics["last_apply_latency_ms"] = latency_ms
-                self._metrics["total_apply_latency_ms"] += latency_ms
+                self._seen = updated_seen
 
-                detected_ns = verdict.detected_at_monotonic_ns
-                if detected_ns is not None:
-                    detection_to_apply_ms = (completed_ns - detected_ns) / 1_000_000
-                    if detection_to_apply_ms >= 0:
-                        self._detection_to_apply_samples_ms.append(
-                            detection_to_apply_ms
-                        )
-                        self._metrics["detection_to_apply_sample_count"] += 1
-                        self._metrics["last_detection_to_apply_latency_ms"] = (
-                            detection_to_apply_ms
-                        )
-                        self._metrics["total_detection_to_apply_latency_ms"] += (
-                            detection_to_apply_ms
-                        )
-                        self._metrics["max_detection_to_apply_latency_ms"] = max(
-                            self._metrics["max_detection_to_apply_latency_ms"],
-                            detection_to_apply_ms,
-                        )
-                        if detection_to_apply_ms > 1.0:
-                            self._metrics["detection_to_apply_over_1ms_count"] += 1
-                    else:
-                        self._metrics["detection_to_apply_invalid_clock_count"] += 1
+                for result in results:
+                    status = result["status"]
 
-                self._metrics["last_error_type"] = None
-                self._remember(verdict.verdict_id)
+                    if status == "rejected":
+                        exc = result["error"]
+                        self._metrics["rejected_count"] += 1
+                        self._metrics["last_error_type"] = type(exc).__name__
+                        logger.warning("Rejected block verdict: %s", exc)
+                        continue
 
-            except VerdictValidationError as exc:
-                self._metrics["rejected_count"] += 1
-                self._metrics["last_error_type"] = type(exc).__name__
-                logger.warning("Rejected block verdict: %s", exc)
+                    if status == "duplicate":
+                        self._metrics["duplicate_count"] += 1
+                        continue
+
+                    if status == "failed":
+                        exc = result["error"]
+                        self._metrics["failed_count"] += 1
+                        self._metrics["last_error_type"] = type(exc).__name__
+                        logger.error("Blocklist map update failed: %s", exc)
+                        continue
+
+                    verdict = result["verdict"]
+                    started_ns = result["started_ns"]
+                    completed_ns = result["completed_ns"]
+
+                    apply_latency_ms = (completed_ns - started_ns) / 1_000_000
+                    self._metrics["applied_count"] += 1
+                    self._metrics["last_apply_latency_ms"] = apply_latency_ms
+                    self._metrics["total_apply_latency_ms"] += apply_latency_ms
+
+                    detected_ns = verdict.detected_at_monotonic_ns
+                    if detected_ns is not None:
+                        detection_to_apply_ms = (
+                            completed_ns - detected_ns
+                        ) / 1_000_000
+
+                        if detection_to_apply_ms >= 0:
+                            self._detection_to_apply_samples_ms.append(
+                                detection_to_apply_ms
+                            )
+                            self._metrics["detection_to_apply_sample_count"] += 1
+                            self._metrics["last_detection_to_apply_latency_ms"] = (
+                                detection_to_apply_ms
+                            )
+                            self._metrics["total_detection_to_apply_latency_ms"] += (
+                                detection_to_apply_ms
+                            )
+                            self._metrics["max_detection_to_apply_latency_ms"] = max(
+                                self._metrics["max_detection_to_apply_latency_ms"],
+                                detection_to_apply_ms,
+                            )
+                            if detection_to_apply_ms > 1.0:
+                                self._metrics["detection_to_apply_over_1ms_count"] += 1
+                        else:
+                            self._metrics["detection_to_apply_invalid_clock_count"] += 1
+
+                    self._metrics["last_error_type"] = None
 
             except Exception as exc:
-                self._metrics["failed_count"] += 1
+                # The per-verdict path handles expected validation/writer
+                # errors. This branch protects queue accounting if the batch
+                # worker itself fails unexpectedly.
+                self._metrics["failed_count"] += len(payloads)
                 self._metrics["last_error_type"] = type(exc).__name__
-                logger.exception("Blocklist map update failed")
+                logger.exception("Blocklist batch processing failed")
 
             finally:
-                self.verdict_queue.task_done()
+                for _ in payloads:
+                    self.verdict_queue.task_done()
 
         logger.info("Blocklist synchronization worker stopped")
 
-    def _remember(self, verdict_id: str) -> None:
-        self._seen[verdict_id] = None
-        self._seen.move_to_end(verdict_id)
+    def _remember(
+        self,
+        verdict_id: str,
+        seen: OrderedDict[str, None] | None = None,
+    ) -> None:
+        target = self._seen if seen is None else seen
+        target[verdict_id] = None
+        target.move_to_end(verdict_id)
 
-        while len(self._seen) > self.dedupe_limit:
-            self._seen.popitem(last=False)
+        while len(target) > self.dedupe_limit:
+            target.popitem(last=False)
 
     def snapshot(self) -> dict:
         """Return a copy of worker counters for diagnostics."""

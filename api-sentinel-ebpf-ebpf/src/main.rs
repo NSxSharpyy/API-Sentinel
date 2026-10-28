@@ -24,6 +24,11 @@ static SOCKET_TGID: HashMap<u64, u32> = HashMap::with_max_entries(10240, 0);
 #[map]
 static CLIENT_IDENTIFIERS: HashMap<u32, u32> = HashMap::with_max_entries(1024, 0);
 
+// Day 20: IPv4 blocklist map, managed by userspace.
+// Value 1 means the IPv4 address is listed for blocking.
+#[map]
+static BLOCKLIST: HashMap<u32, u32> = HashMap::with_max_entries(1024, 0);
+
 // Ring buffer: kernel -> userspace network events.
 #[map]
 static EVENTS: RingBuf = RingBuf::with_byte_size(1 << 24, 0);

@@ -198,6 +198,34 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // Day 20: measure userspace-to-kernel BLOCKLIST map update latency.
+    {
+        let mut blocklist = HashMap::<_, u32, u32>::try_from(
+            ebpf.map_mut("BLOCKLIST")
+                .context("BLOCKLIST map not found")?,
+        )?;
+
+        // TEST-NET address reserved for documentation and examples.
+        let test_ip = u32::from_ne_bytes([192, 0, 2, 20]);
+        let block_value = 1u32;
+
+        let start = std::time::Instant::now();
+        blocklist.insert(test_ip, block_value, 0)?;
+        let update_elapsed = start.elapsed();
+
+        let stored_value = blocklist.get(&test_ip, 0)?;
+        if stored_value != block_value {
+            anyhow::bail!("BLOCKLIST map read-back mismatch");
+        }
+
+        println!(
+            "DAY20 blocklist_update_latency_us={:.3} target_us=1000 result={}",
+            update_elapsed.as_secs_f64() * 1_000_000.0,
+            if update_elapsed.as_micros() < 1000 { "UNDER_1MS" } else { "AT_OR_OVER_1MS" }
+        );
+        println!("DAY20 BLOCKLIST read-back verified for 192.0.2.20");
+    }
+
     let event_map = ebpf
         .take_map("EVENTS")
         .context("EVENTS ring-buffer map not found")?;

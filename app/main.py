@@ -480,6 +480,7 @@ async def queue_status():
     persistence_worker = getattr(
         app.state, "persistence_worker", None
     )
+    persistence_store = getattr(persistence_worker, "store", None)
     persistence_task = getattr(
         app.state, "persistence_worker_task", None
     )
@@ -549,6 +550,42 @@ async def queue_status():
             persistence_worker.max_batch_amortized_per_job_duration_ms
             if persistence_worker is not None else 0.0
         ),
+        "persistence_batch_attempt_count": (
+            persistence_worker.batch_attempt_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_attempted_job_count": (
+            persistence_worker.batch_attempted_job_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_success_count": (
+            persistence_worker.batch_success_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_successful_job_count": (
+            persistence_worker.batch_successful_job_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_failure_count": (
+            persistence_worker.batch_failure_count
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_size_avg": (
+            persistence_worker.average_batch_size
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_batch_size_p95": (
+            persistence_worker.p95_batch_size
+            if persistence_worker is not None else 0.0
+        ),
+        "persistence_batch_size_max": (
+            persistence_worker.max_observed_batch_size
+            if persistence_worker is not None else 0
+        ),
+        "persistence_batch_size_sample_count": (
+            persistence_worker.batch_size_sample_count
+            if persistence_worker is not None else 0
+        ),
         "persistence_store_call_count": (
             persistence_worker.store_call_duration_count
             if persistence_worker is not None else 0
@@ -564,6 +601,30 @@ async def queue_status():
         "persistence_store_call_max_ms": (
             persistence_worker.max_store_call_duration_ms
             if persistence_worker is not None else 0.0
+        ),
+        "persistence_store_batch_preparation_count": getattr(
+            persistence_store, "batch_preparation_duration_count", 0
+        ),
+        "persistence_store_batch_preparation_avg_ms": getattr(
+            persistence_store, "average_batch_preparation_duration_ms", 0.0
+        ),
+        "persistence_store_batch_preparation_p95_ms": getattr(
+            persistence_store, "p95_batch_preparation_duration_ms", 0.0
+        ),
+        "persistence_store_batch_preparation_max_ms": getattr(
+            persistence_store, "max_batch_preparation_duration_ms", 0.0
+        ),
+        "persistence_store_batch_commit_count": getattr(
+            persistence_store, "batch_commit_duration_count", 0
+        ),
+        "persistence_store_batch_commit_avg_ms": getattr(
+            persistence_store, "average_batch_commit_duration_ms", 0.0
+        ),
+        "persistence_store_batch_commit_p95_ms": getattr(
+            persistence_store, "p95_batch_commit_duration_ms", 0.0
+        ),
+        "persistence_store_batch_commit_max_ms": getattr(
+            persistence_store, "max_batch_commit_duration_ms", 0.0
         ),
         "http_completed_transaction_count": (
             len(pipeline.completed_transactions)

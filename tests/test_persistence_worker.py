@@ -323,3 +323,42 @@ def test_async_worker_does_not_retry_batch_on_bad_duration_count(caplog):
         assert "duration count does not match" in caplog.text
 
     asyncio.run(run_test())
+
+def test_async_batch_metrics_report_actual_batch_sizes():
+    async def run_test():
+        class AsyncBatchStore:
+            def __init__(self):
+                self.batches = []
+
+            def can_batch(self, transactions):
+                return True
+
+            async def save_batch_async(self, transactions):
+                self.batches.append(list(transactions))
+                return [1_000_000 for _ in transactions]
+
+            async def save_async(self, transaction):
+                raise AssertionError("safe work should use the batch API")
+
+        store = AsyncBatchStore()
+        worker = TransactionPersistenceWorker(store=store, batch_max_size=8)
+        transactions = [make_transaction() for _ in range(3)]
+        for transaction in transactions:
+            assert worker.enqueue(transaction)
+
+        stop_event = asyncio.Event()
+        stop_event.set()
+        await asyncio.wait_for(worker.run(stop_event), timeout=2)
+
+        assert store.batches == [transactions]
+        assert worker.batch_attempt_count == 1
+        assert worker.batch_attempted_job_count == 3
+        assert worker.batch_success_count == 1
+        assert worker.batch_successful_job_count == 3
+        assert worker.batch_failure_count == 0
+        assert worker.average_batch_size == 3.0
+        assert worker.p95_batch_size == 3.0
+        assert worker.max_observed_batch_size == 3
+        assert worker.batch_size_sample_count == 1
+
+    asyncio.run(run_test())

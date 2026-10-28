@@ -76,6 +76,17 @@ class TransactionPersistenceWorker:
         )
         self.max_queue_depth = 0
 
+        # Track actual submissions to the store's batch API.
+        self.batch_attempt_count = 0
+        self.batch_attempted_job_count = 0
+        self.batch_success_count = 0
+        self.batch_successful_job_count = 0
+        self.batch_failure_count = 0
+        self.max_observed_batch_size = 0
+        self._batch_size_samples: deque[int] = deque(
+            maxlen=PERSISTENCE_DURATION_SAMPLE_CAPACITY
+        )
+
         self.batch_amortized_per_job_duration_count = 0
         self.total_batch_amortized_per_job_duration_ns = 0
         self.last_batch_amortized_per_job_duration_ms = 0.0
@@ -212,6 +223,47 @@ class TransactionPersistenceWorker:
         index = max(0, math.ceil(0.95 * len(samples)) - 1)
         return samples[index] / 1_000_000
 
+    def _record_batch_attempt(self, batch_size: int) -> None:
+        """Record a real submission to save_batch/save_batch_async."""
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        self.batch_attempt_count += 1
+        self.batch_attempted_job_count += batch_size
+        self.max_observed_batch_size = max(
+            self.max_observed_batch_size, batch_size
+        )
+        self._batch_size_samples.append(batch_size)
+
+    def _record_batch_success(self, batch_size: int) -> None:
+        """Record a batch result with one duration per submitted job."""
+        self.batch_success_count += 1
+        self.batch_successful_job_count += batch_size
+
+    def _record_batch_failure(self) -> None:
+        """Record a failed batch call or invalid duration count."""
+        self.batch_failure_count += 1
+
+    @property
+    def average_batch_size(self) -> float:
+        """Lifetime average size of batches submitted to the store."""
+        if self.batch_attempt_count == 0:
+            return 0.0
+        return self.batch_attempted_job_count / self.batch_attempt_count
+
+    @property
+    def p95_batch_size(self) -> float:
+        """Nearest-rank p95 of the recent bounded batch-size sample."""
+        if not self._batch_size_samples:
+            return 0.0
+        samples = sorted(self._batch_size_samples)
+        index = max(0, math.ceil(0.95 * len(samples)) - 1)
+        return float(samples[index])
+
+    @property
+    def batch_size_sample_count(self) -> int:
+        """Number of batch-size samples retained for recent statistics."""
+        return len(self._batch_size_samples)
+
     def _measure_store_call(
         self, transaction: HTTPTransaction
     ) -> tuple[int, Exception | None]:
@@ -235,9 +287,11 @@ class TransactionPersistenceWorker:
             and callable(getattr(store_type, "save_batch", None))
         )
         if supports_batch and self.store.can_batch(transactions):
+            self._record_batch_attempt(len(jobs))
             try:
                 durations = self.store.save_batch(transactions)
             except Exception:
+                self._record_batch_failure()
                 logger.exception(
                     "Batched persistence failed; retrying jobs individually"
                 )
@@ -247,9 +301,11 @@ class TransactionPersistenceWorker:
                 ]
 
             if len(durations) != len(jobs):
+                self._record_batch_failure()
                 raise RuntimeError(
                     "save_batch duration count does not match job count"
                 )
+            self._record_batch_success(len(jobs))
             return [(duration, None) for duration in durations]
 
         return [
@@ -282,9 +338,11 @@ class TransactionPersistenceWorker:
         )
 
         if supports_batch and self.store.can_batch(transactions):
+            self._record_batch_attempt(len(jobs))
             try:
                 durations = await self.store.save_batch_async(transactions)
             except Exception:
+                self._record_batch_failure()
                 logger.exception(
                     "Async batched persistence failed; retrying jobs individually"
                 )
@@ -298,10 +356,12 @@ class TransactionPersistenceWorker:
             # Do not retry a potentially committed batch because its metrics
             # result is malformed; retrying could create duplicate records.
             if len(durations) != len(jobs):
+                self._record_batch_failure()
                 raise RuntimeError(
                     "save_batch_async duration count does not match job count"
                 )
 
+            self._record_batch_success(len(jobs))
             return [(duration, None) for duration in durations]
 
         # Process sequentially: BOLA-sensitive transactions must preserve order.

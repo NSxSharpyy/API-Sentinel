@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
@@ -70,6 +71,16 @@ def test_async_batch_persists_transactions_and_endpoint():
                 make_transaction(),
             ])
             assert len(ids) == 2
+
+            assert store.batch_preparation_duration_count == 1
+            assert store.batch_commit_duration_count == 1
+            assert store.average_batch_preparation_duration_ms >= 0.0
+            assert store.p95_batch_preparation_duration_ms >= 0.0
+            assert store.max_batch_preparation_duration_ms >= 0.0
+            assert store.average_batch_commit_duration_ms >= 0.0
+            assert store.p95_batch_commit_duration_ms >= 0.0
+            assert store.max_batch_commit_duration_ms >= 0.0
+
             assert ids[0] != ids[1]
 
             async with factory() as session:
@@ -158,6 +169,51 @@ def test_async_save_rolls_back_when_commit_fails(monkeypatch):
 
             assert records == []
             assert endpoints == []
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+def test_async_batch_reuses_endpoint_upsert_and_keeps_latest_seen(monkeypatch):
+    async def scenario():
+        engine, factory, store = await make_store()
+        try:
+            first = make_transaction()
+            second = make_transaction()
+
+            first_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            second_time = first_time + timedelta(seconds=30)
+            first.request.captured_at = first_time
+            second.request.captured_at = second_time
+
+            original_upsert = store._upsert_endpoint
+            upsert_calls = 0
+
+            def counting_upsert(
+                session, transaction, destination_ip, observed_at
+            ):
+                nonlocal upsert_calls
+                upsert_calls += 1
+                return original_upsert(
+                    session, transaction, destination_ip, observed_at
+                )
+
+            monkeypatch.setattr(store, "_upsert_endpoint", counting_upsert)
+
+            ids = await store.save_batch_async([first, second])
+            assert len(ids) == 2
+            assert upsert_calls == 1
+
+            async with factory() as session:
+                endpoints = (
+                    await session.scalars(select(DiscoveredEndpoint))
+                ).all()
+
+            assert len(endpoints) == 1
+            last_seen = endpoints[0].last_seen
+            if last_seen.tzinfo is None or last_seen.utcoffset() is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            assert last_seen == second_time
         finally:
             await engine.dispose()
 

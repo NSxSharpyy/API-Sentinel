@@ -473,6 +473,124 @@ async def root():
     }
 
 
+from fastapi.responses import JSONResponse
+
+
+def _runtime_memory_snapshot():
+    """Read process RSS and host-memory utilization on Linux."""
+    process_rss_bytes = None
+    system_total_bytes = None
+    system_available_bytes = None
+
+    try:
+        with open("/proc/self/status", encoding="utf-8") as stream:
+            for line in stream:
+                if line.startswith("VmRSS:"):
+                    process_rss_bytes = int(line.split()[1]) * 1024
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as stream:
+            for line in stream:
+                if line.startswith("MemTotal:"):
+                    system_total_bytes = int(line.split()[1]) * 1024
+                elif line.startswith("MemAvailable:"):
+                    system_available_bytes = int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+
+    used_percent = None
+    if (
+        system_total_bytes is not None
+        and system_total_bytes > 0
+        and system_available_bytes is not None
+    ):
+        used_percent = round(
+            100 * (system_total_bytes - system_available_bytes)
+            / system_total_bytes,
+            2,
+        )
+
+    return {
+        "process_rss_bytes": process_rss_bytes,
+        "system_total_bytes": system_total_bytes,
+        "system_available_bytes": system_available_bytes,
+        "system_used_percent": used_percent,
+    }
+
+
+def _queue_health_snapshot():
+    persistence_worker = getattr(app.state, "persistence_worker", None)
+    persistence_queue = (
+        getattr(persistence_worker, "queue", None)
+        if persistence_worker is not None else None
+    )
+    queues_by_name = {
+        "raw_packet": raw_packet_queue,
+        "header": header_queue,
+        "metadata": metadata_queue,
+        "persistence": persistence_queue,
+    }
+
+    result = {}
+    for name, queue in queues_by_name.items():
+        result[name] = {
+            "depth": queue.qsize() if queue is not None else None,
+            "capacity": queue.maxsize if queue is not None else None,
+        }
+    return result
+
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness probe: the API process can answer HTTP requests."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe: report critical worker status and runtime resources."""
+    capture_task = getattr(app.state, "capture_task", None)
+    capture_running = (
+        getattr(app.state, "capture_status", "stopped") == "running"
+        and capture_task is not None
+        and not capture_task.done()
+    )
+
+    persistence_worker = getattr(app.state, "persistence_worker", None)
+    persistence_task = getattr(
+        app.state, "persistence_worker_task", None
+    )
+    persistence_running = (
+        persistence_worker is not None
+        and persistence_task is not None
+        and not persistence_task.done()
+    )
+    pipeline_initialized = (
+        getattr(app.state, "http_pipeline", None) is not None
+    )
+
+    checks = {
+        "capture_running": capture_running,
+        "persistence_worker_running": persistence_running,
+        "http_pipeline_initialized": pipeline_initialized,
+    }
+    ready = all(checks.values())
+
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "checks": checks,
+        "memory": _runtime_memory_snapshot(),
+        "queue_depths": _queue_health_snapshot(),
+    }
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content=payload,
+    )
+
+
 @app.get("/queue-status")
 async def queue_status():
     capture_task = getattr(app.state, "capture_task", None)

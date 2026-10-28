@@ -208,3 +208,28 @@ use `git add .`.
 
 Do not start Day 18 until the Day 1–17 acceptance gates are resolved or all
 remaining external blockers are explicitly documented.
+
+## Day 15 serialization follow-up — 2026-10-28
+
+**Result: PASS for the measured serializer-function sub-millisecond objective.**
+This follow-up supersedes the earlier status that serialization latency had
+not yet been measured.
+
+Live loopback HTTP-message serializer evidence:
+- Samples: 201; p50 29.904 us; p95 34.893 us; p99 69.582 us.
+- Maximum: 75.032 us; 201/201 samples below 1 ms.
+
+Isolated serializer benchmarks, 1,000 iterations per function:
+- HTTP message: p50 3.559 us; p95 3.688 us; p99 5.701 us;
+  maximum 37.723 us; 100% below 1 ms.
+- Completed transaction: p50 5.476 us; p95 5.688 us; p99 9.134 us;
+  maximum 37.903 us; 100% below 1 ms.
+
+The measured interval includes event construction, Base64 conversion where
+applicable, JSON encoding, and UTF-8 encoding. The live HTTP-message path
+was measured, but the completed-transaction serializer had zero live samples;
+its result is based on isolated benchmarking only. These local WSL results
+do not establish production or end-to-end transaction-path latency.
+
+Verification: 255 tests passed, with one existing Starlette/httpx
+deprecation warning. The focused serialization/API tests passed 27 tests.

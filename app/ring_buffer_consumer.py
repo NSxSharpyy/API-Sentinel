@@ -29,6 +29,14 @@ async def consume_events(
     stats = ConsumerStats()
 
     async for event in events:
+        dispatch_started_ns = time.perf_counter_ns()
+        reader_read_ns = event.get("_ring_buffer_read_at_ns")
+        if (
+            isinstance(reader_read_ns, int)
+            and not isinstance(reader_read_ns, bool)
+            and 0 < reader_read_ns <= dispatch_started_ns
+        ):
+            dispatch_started_ns = reader_read_ns
         try:
             packet = RawPacketChunk.model_validate(event)
         except ValidationError:
@@ -45,6 +53,9 @@ async def consume_events(
             logger.warning("Dropped packet because raw packet queue is full")
             continue
 
+        queues.ring_buffer_dispatch_metrics.record(
+            time.perf_counter_ns() - dispatch_started_ns
+        )
         queues.record_raw_packet_queue_depth()
         stats.accepted += 1
         queues.accepted_packet_count += 1

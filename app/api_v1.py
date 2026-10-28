@@ -1,15 +1,22 @@
 """Read-only REST API v1 for discovered endpoints, alerts, and metrics."""
 from __future__ import annotations
+from contextlib import asynccontextmanager
+from inspect import isawaitable
 
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import queues
 from app.database import SessionLocal
 from app.models import DiscoveredEndpoint, SecurityIncident, TransactionLog
 from app.schemas import SecurityIncidentSchema
+from app.serialization_metrics import (
+    http_message_serialization_metrics,
+    http_transaction_serialization_metrics,
+)
 from app.queues import header_queue, metadata_queue, raw_packet_queue
 
 router = APIRouter(prefix="/api/v1", tags=["API v1"])
@@ -20,6 +27,32 @@ def _session_factory(request: Request):
     store = getattr(request.app.state, "transaction_store", None)
     factory = getattr(store, "session_factory", None)
     return factory if factory is not None else SessionLocal
+
+
+
+@asynccontextmanager
+async def _session_context(request: Request):
+    session = _session_factory(request)()
+    if isinstance(session, AsyncSession):
+        async with session as managed:
+            yield managed
+    else:
+        with session as managed:
+            yield managed
+
+
+async def _session_scalar(session: Any, statement: Any) -> Any:
+    result = session.scalar(statement)
+    if isawaitable(result):
+        result = await result
+    return result
+
+
+async def _session_scalars(session: Any, statement: Any) -> Any:
+    result = session.scalars(statement)
+    if isawaitable(result):
+        result = await result
+    return result.all()
 
 
 def _endpoint_dict(endpoint: DiscoveredEndpoint) -> dict[str, Any]:
@@ -39,18 +72,18 @@ def _incident_dict(incident: SecurityIncident) -> dict[str, Any]:
 
 
 @router.get("/endpoints")
-def list_endpoints(
+async def list_endpoints(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
     """List discovered API endpoints with bounded pagination."""
-    with _session_factory(request)() as session:
-        total = session.scalar(
+    async with _session_context(request) as session:
+        total = await _session_scalar(session,
             select(func.count()).select_from(DiscoveredEndpoint)
         ) or 0
 
-        endpoints = session.scalars(
+        endpoints = await _session_scalars(session,
             select(DiscoveredEndpoint)
             .order_by(
                 DiscoveredEndpoint.last_seen.desc(),
@@ -58,7 +91,7 @@ def list_endpoints(
             )
             .offset(offset)
             .limit(limit)
-        ).all()
+        )
 
         return {
             "items": [_endpoint_dict(item) for item in endpoints],
@@ -69,7 +102,7 @@ def list_endpoints(
 
 
 @router.get("/alerts")
-def list_alerts(
+async def list_alerts(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -83,7 +116,7 @@ def list_alerts(
     if status is not None:
         conditions.append(SecurityIncident.status == status)
 
-    with _session_factory(request)() as session:
+    async with _session_context(request) as session:
         count_query = select(func.count()).select_from(SecurityIncident)
         items_query = select(SecurityIncident)
 
@@ -91,8 +124,8 @@ def list_alerts(
             count_query = count_query.where(*conditions)
             items_query = items_query.where(*conditions)
 
-        total = session.scalar(count_query) or 0
-        incidents = session.scalars(
+        total = await _session_scalar(session, count_query) or 0
+        incidents = await _session_scalars(session,
             items_query
             .order_by(
                 SecurityIncident.detected_at.desc(),
@@ -100,7 +133,7 @@ def list_alerts(
             )
             .offset(offset)
             .limit(limit)
-        ).all()
+        )
 
         return {
             "items": [_incident_dict(item) for item in incidents],
@@ -112,7 +145,7 @@ def list_alerts(
 
 
 @router.get("/metrics")
-def get_metrics(request: Request):
+async def get_metrics(request: Request):
     """Expose current ingestion, persistence, detection, and alert metrics."""
     capture_task = getattr(request.app.state, "capture_task", None)
     persistence_worker = getattr(
@@ -126,17 +159,17 @@ def get_metrics(request: Request):
     detector = getattr(store, "bola_detector", None)
     alert_bus = getattr(request.app.state, "alert_bus", None)
 
-    with _session_factory(request)() as session:
-        endpoint_count = session.scalar(
+    async with _session_context(request) as session:
+        endpoint_count = await _session_scalar(session,
             select(func.count()).select_from(DiscoveredEndpoint)
         ) or 0
-        transaction_count = session.scalar(
+        transaction_count = await _session_scalar(session,
             select(func.count()).select_from(TransactionLog)
         ) or 0
-        incident_count = session.scalar(
+        incident_count = await _session_scalar(session,
             select(func.count()).select_from(SecurityIncident)
         ) or 0
-        open_incident_count = session.scalar(
+        open_incident_count = await _session_scalar(session,
             select(func.count())
             .select_from(SecurityIncident)
             .where(SecurityIncident.status == "open")
@@ -171,6 +204,10 @@ def get_metrics(request: Request):
     })
 
     return {
+        "serialization": {
+            "http_message": http_message_serialization_metrics.snapshot(),
+            "http_transaction": http_transaction_serialization_metrics.snapshot(),
+        },
         "ingestion": {
             "raw_packet_queue": raw_packet_queue.qsize(),
             "raw_packet_queue_capacity": raw_packet_queue.maxsize,
@@ -178,6 +215,7 @@ def get_metrics(request: Request):
             "header_queue": header_queue.qsize(),
             "metadata_queue": metadata_queue.qsize(),
             "raw_packet_queue_wait": queues.raw_packet_queue_wait_metrics.snapshot(),
+            "ring_buffer_read_to_queue_dispatch": queues.ring_buffer_dispatch_metrics.snapshot(),
             "accepted_packet_count": queues.accepted_packet_count,
             "accepted_tcp_event_count": queues.accepted_tcp_event_count,
             "accepted_udp_event_count": queues.accepted_udp_event_count,

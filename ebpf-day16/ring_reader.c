@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <time.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,14 @@ static int handle_event(
 {
     (void)context;
 
+    struct timespec reader_started;
+    uint64_t reader_read_at_ns = 0;
+    if (clock_gettime(CLOCK_MONOTONIC, &reader_started) == 0) {
+        reader_read_at_ns =
+            (uint64_t)reader_started.tv_sec * 1000000000ULL +
+            (uint64_t)reader_started.tv_nsec;
+    }
+
     if (data_size < sizeof(struct api_sentinel_event)) {
         fprintf(stderr, "Unexpected event size: %zu\n", data_size);
         return 0;
@@ -51,6 +60,7 @@ static int handle_event(
 
     printf(
         "{\"packet_id\":\"ebpf-%llu\","
+        "\"reader_read_at_ns\":%llu,"
         "\"captured_at_ns\":%llu,"
         "\"packet_length\":%u,"
         "\"interface_index\":%u,"
@@ -63,6 +73,7 @@ static int handle_event(
         "\"tcp_flags\":%u,"
         "\"payload_hex\":\"",
         (unsigned long long)++packet_counter,
+        (unsigned long long)reader_read_at_ns,
         (unsigned long long)event->captured_at_ns,
         event->packet_length,
         event->interface_index,

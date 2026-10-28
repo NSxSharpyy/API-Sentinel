@@ -4,12 +4,17 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from datetime import timezone
 
 import zmq
 
 from app.http_reassembly import HTTPMessage
 from app.transaction_correlator import HTTPTransaction
+from app.serialization_metrics import (
+    http_message_serialization_metrics,
+    http_transaction_serialization_metrics,
+)
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -65,12 +70,18 @@ def _message_payload(message: HTTPMessage) -> dict:
 
 def serialize_http_message(message: HTTPMessage) -> bytes:
     """Serialize one parsed HTTP request or response as JSON."""
+    started_ns = time.perf_counter_ns()
     event = {"event_type": "http.transaction", **_message_payload(message)}
-    return json.dumps(event, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(event, separators=(",", ":")).encode("utf-8")
+    http_message_serialization_metrics.record(
+        time.perf_counter_ns() - started_ns
+    )
+    return payload
 
 
 def serialize_http_transaction(transaction: HTTPTransaction) -> bytes:
     """Serialize a completed request/response pair for downstream analysis."""
+    started_ns = time.perf_counter_ns()
     event = {
         "event_type": "http.transaction",
         "message_type": "completed_transaction",
@@ -78,7 +89,11 @@ def serialize_http_transaction(transaction: HTTPTransaction) -> bytes:
         "request": _message_payload(transaction.request),
         "response": _message_payload(transaction.response),
     }
-    return json.dumps(event, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(event, separators=(",", ":")).encode("utf-8")
+    http_transaction_serialization_metrics.record(
+        time.perf_counter_ns() - started_ns
+    )
+    return payload
 
 
 class HTTPTransactionPublisher:

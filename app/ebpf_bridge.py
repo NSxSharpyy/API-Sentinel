@@ -129,7 +129,7 @@ async def read_capture_events(
                 if flags_value & mask
             ]
 
-            yield {
+            decoded_event = {
                 "packet_id": str(packet_id),
                 "captured_at": captured_at,
                 "payload": payload,
@@ -141,6 +141,15 @@ async def read_capture_events(
                 "sequence_number": event.get("sequence_number"),
                 "tcp_flags": flag_names,
             }
+            reader_read_at_ns = event.get("reader_read_at_ns")
+            if (
+                isinstance(reader_read_at_ns, int)
+                and not isinstance(reader_read_at_ns, bool)
+                and reader_read_at_ns > 0
+            ):
+                decoded_event["_ring_buffer_read_at_ns"] = reader_read_at_ns
+
+            yield decoded_event
 
         return_code = await process.wait()
         if return_code != 0:

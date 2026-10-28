@@ -24,3 +24,4 @@ uvicorn==0.54.0
 pyzmq==27.2.0
 SQLAlchemy[asyncio]>=2.0,<3.0
 aiosqlite>=0.20,<1.0
+asyncpg>=0.31,<1.0

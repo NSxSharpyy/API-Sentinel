@@ -26,9 +26,14 @@ Recorded terminal evidence on 2026-10-28:
 - The warning is an existing Starlette deprecation warning involving
   `httpx` and `starlette.testclient.TestClient`.
 
-These results apply to the local working tree at the time of that run.
-The six modified tracked files have not been shown to be committed or pushed.
-No GitHub Actions result for these latest uncommitted changes is established.
+These results apply to the local working tree at the time of that run. The
+seven reviewed source, test, and report files were subsequently committed as
+`7cba105` (`Instrument async persistence and record acceptance status`) and
+pushed to `origin/backend-parser`. Remote synchronization was verified. GitHub
+Actions workflow `Python tests`, run
+[40690053691](https://github.com/NSxSharpyy/API-Sentinel/actions/runs/40690053691),
+completed successfully for commit `7cba105`. This CI result does not establish
+sustained persistence acceptance.
 
 ## 3. Latest sustained-ingestion evidence
 
@@ -140,8 +145,12 @@ Untracked databases, backups, diagnostic scripts, eBPF objects/loaders and
 other local artifacts were also present. They must be preserved until their
 purpose is understood.
 
-This report does not claim that the current source changes are committed,
-pushed, accepted by an external team or covered by a new GitHub Actions run.
+Commit `7cba105` was pushed to `origin/backend-parser` and remote
+synchronization was verified. GitHub Actions workflow `Python tests` passed
+for that commit (run
+[40690053691](https://github.com/NSxSharpyy/API-Sentinel/actions/runs/40690053691)).
+External team acceptance has not been obtained; remaining dependencies are
+listed above.
 
 ## 7. Final disposition
 
@@ -150,7 +159,7 @@ pushed, accepted by an external team or covered by a new GitHub Actions run.
 - Day 6 sustained-ingestion acceptance: **OPEN**.
 - Day 15 queue-stability acceptance: **OPEN**.
 - External integration and formal phase decisions: **OPEN**.
-- Current local Git synchronization and CI for uncommitted changes: **NOT VERIFIED**.
+- Remote synchronization and CI for commit `7cba105`: **VERIFIED** (Python tests workflow passed; run `40690053691`).
 
 Do not start Day 18 until the Day 1–17 acceptance gates are resolved or all
 remaining external blockers are explicitly documented.

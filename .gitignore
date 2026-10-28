@@ -1,15 +1,18 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyd
+
+# Rust build artifacts
+target/
 .venv/
-venv/
+__pycache__/
+*.pyc
+.pytest_cache/
 .env
 
-# Testing and coverage
-.pytest_cache/
-.coverage
-htmlcov/
+# Local SQLite databases and transient database files
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 
-# Generated reports
-reports/
+# Local test databases
+appsec-testing/tests/.test_shop.db*
+appsec-testing/benchmarks/results/

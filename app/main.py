@@ -614,6 +614,18 @@ async def queue_status():
         "persistence_store_batch_preparation_max_ms": getattr(
             persistence_store, "max_batch_preparation_duration_ms", 0.0
         ),
+        "persistence_store_batch_insert_count": getattr(
+            persistence_store, "batch_insert_duration_count", 0
+        ),
+        "persistence_store_batch_insert_avg_ms": getattr(
+            persistence_store, "average_batch_insert_duration_ms", 0.0
+        ),
+        "persistence_store_batch_insert_p95_ms": getattr(
+            persistence_store, "p95_batch_insert_duration_ms", 0.0
+        ),
+        "persistence_store_batch_insert_max_ms": getattr(
+            persistence_store, "max_batch_insert_duration_ms", 0.0
+        ),
         "persistence_store_batch_commit_count": getattr(
             persistence_store, "batch_commit_duration_count", 0
         ),

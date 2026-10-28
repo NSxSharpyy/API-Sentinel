@@ -77,6 +77,10 @@ def test_async_batch_persists_transactions_and_endpoint():
             assert store.average_batch_preparation_duration_ms >= 0.0
             assert store.p95_batch_preparation_duration_ms >= 0.0
             assert store.max_batch_preparation_duration_ms >= 0.0
+            assert store.batch_insert_duration_count == 1
+            assert store.average_batch_insert_duration_ms >= 0.0
+            assert store.p95_batch_insert_duration_ms >= 0.0
+            assert store.max_batch_insert_duration_ms >= 0.0
             assert store.average_batch_commit_duration_ms >= 0.0
             assert store.p95_batch_commit_duration_ms >= 0.0
             assert store.max_batch_commit_duration_ms >= 0.0

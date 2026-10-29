@@ -1,4 +1,4 @@
-#![no_std]
+	#![no_std]
 #![no_main]
 
 use aya_ebpf::{
@@ -36,6 +36,19 @@ static EVENTS: RingBuf = RingBuf::with_byte_size(1 << 24, 0);
 /* Per-CPU counter for events that could not be submitted to EVENTS. */
 #[map]
 static EVENT_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+// Per-CPU counter for packets rejected by IPv4 blocklist enforcement.
+#[map]
+static BLOCKLIST_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[inline(always)]
+fn count_blocklist_drop() {
+    if let Some(counter) = BLOCKLIST_DROPS.get_ptr_mut(0) {
+        unsafe {
+            *counter = (*counter).wrapping_add(1);
+        }
+    }
+}
 
 #[inline(always)]
 fn count_event_drop() {
@@ -264,6 +277,7 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
     );
 
     if src_blocked || dst_blocked {
+        count_blocklist_drop();
         return TC_ACT_SHOT;
     }
 

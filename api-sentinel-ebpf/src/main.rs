@@ -126,6 +126,9 @@ fn print_event(event: &NetworkEvent) {
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
+    let interface = std::env::var("API_SENTINEL_INTERFACE")
+        .unwrap_or_else(|_| INTERFACE.to_string());
+
     let rlim = libc::rlimit {
         rlim_cur: libc::RLIM_INFINITY,
         rlim_max: libc::RLIM_INFINITY,
@@ -161,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
         println!("TCP connect kprobe attached");
     }
 
-    ensure_clsact(INTERFACE)?;
+    ensure_clsact(&interface)?;
 
     {
         let program: &mut SchedClassifier = ebpf
@@ -169,8 +172,8 @@ async fn main() -> anyhow::Result<()> {
             .context("HTTP classifier program not found in eBPF object")?
             .try_into()?;
         program.load()?;
-        program.attach(INTERFACE, TcAttachType::Egress)?;
-        println!("HTTP classifier attached to {INTERFACE} egress");
+        program.attach(&interface, TcAttachType::Egress)?;
+        println!("HTTP classifier attached to {interface} egress");
     }
 
     // Day 10: userspace-to-kernel client-map smoke test.
@@ -206,7 +209,12 @@ async fn main() -> anyhow::Result<()> {
         )?;
 
         // TEST-NET address reserved for documentation and examples.
-        let test_ip = u32::from_ne_bytes([192, 0, 2, 20]);
+        let blocklist_ip: std::net::Ipv4Addr =
+            std::env::var("API_SENTINEL_BLOCKLIST_IP")
+                .unwrap_or_else(|_| "192.0.2.20".to_string())
+                .parse()
+                .context("Invalid API_SENTINEL_BLOCKLIST_IP IPv4 address")?;
+        let test_ip = u32::from_ne_bytes(blocklist_ip.octets());
         let block_value = 1u32;
 
         let start = std::time::Instant::now();
@@ -223,7 +231,7 @@ async fn main() -> anyhow::Result<()> {
             update_elapsed.as_secs_f64() * 1_000_000.0,
             if update_elapsed.as_micros() < 1000 { "UNDER_1MS" } else { "AT_OR_OVER_1MS" }
         );
-        println!("DAY20 BLOCKLIST read-back verified for 192.0.2.20");
+        println!("DAY20 BLOCKLIST read-back verified for {blocklist_ip}");
     }
 
     let event_map = ebpf
@@ -242,7 +250,7 @@ async fn main() -> anyhow::Result<()> {
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
 
-    println!("API-Sentinel listening on {INTERFACE}");
+    println!("API-Sentinel listening on {interface}");
     println!("Press Ctrl-C to stop.");
 
     loop {

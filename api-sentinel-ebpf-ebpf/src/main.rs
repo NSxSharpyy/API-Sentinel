@@ -2,7 +2,7 @@
 #![no_main]
 
 use aya_ebpf::{
-    bindings::TC_ACT_PIPE,
+    bindings::{TC_ACT_PIPE, TC_ACT_SHOT},
     cty::c_void,
     helpers::{bpf_get_current_pid_tgid, generated::bpf_skb_load_bytes},
     macros::{classifier, kprobe, map, tracepoint},
@@ -244,7 +244,32 @@ pub fn api_sentinel_http_classifier(ctx: TcContext) -> i32 {
             HTTP_IP_LEN as u32,
         )
     };
-    if ret < 0 || ip[0] >> 4 != 4 || ip[9] != 6 {
+    if ret < 0 || ip[0] >> 4 != 4 {
+        return TC_ACT_PIPE;
+    }
+
+    // Day 21: enforce BLOCKLIST for IPv4 source or destination.
+    let src = [ip[12], ip[13], ip[14], ip[15]];
+    let dst = [ip[16], ip[17], ip[18], ip[19]];
+    let src_key = u32::from_ne_bytes(src);
+    let dst_key = u32::from_ne_bytes(dst);
+
+    let src_blocked = matches!(
+        unsafe { BLOCKLIST.get(&src_key) },
+        Some(value) if *value != 0
+    );
+    let dst_blocked = matches!(
+        unsafe { BLOCKLIST.get(&dst_key) },
+        Some(value) if *value != 0
+    );
+
+    if src_blocked || dst_blocked {
+        return TC_ACT_SHOT;
+    }
+
+    // Blocklist enforcement applies to all IPv4 protocols.
+    // HTTP inspection below remains TCP-only.
+    if ip[9] != 6 {
         return TC_ACT_PIPE;
     }
 

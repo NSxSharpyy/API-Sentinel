@@ -19,24 +19,9 @@ const OpenApiContractViewer = lazy(
   () => import("../components/ui/OpenApiContractViewer")
 );
 
-// Reusable placeholder page for features scheduled for later.
-function PlaceholderPage({ title, description }) {
-  return (
-    <section className="rounded-xl border border-gray-200 bg-white p-6">
-      <h1 className="text-2xl font-bold text-gray-900">
-        {title}
-      </h1>
-
-      <p className="mt-2 text-sm text-gray-600">
-        {description}
-      </p>
-
-      <p className="mt-4 text-xs text-gray-500">
-        Placeholder only - functionality is scheduled for a later day.
-      </p>
-    </section>
-  );
-}
+const RateLimitConfiguration = lazy(
+  () => import("../components/ui/RateLimitConfiguration")
+);
 
 // Display a loading message while a page's JavaScript is downloaded.
 function PageLoading() {
@@ -90,15 +75,10 @@ export default function AppRouter() {
               element={<OpenApiContractViewer />}
             />
 
-            {/* Settings placeholder */}
+            {/* Rate Limiting Configuration */}
             <Route
               path="/settings"
-              element={
-                <PlaceholderPage
-                  title="Settings"
-                  description="Project settings and enforcement controls will be implemented on their scheduled days."
-                />
-              }
+              element={<RateLimitConfiguration />}
             />
 
             {/* Redirect unknown URLs to the dashboard */}

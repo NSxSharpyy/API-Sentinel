@@ -11,6 +11,7 @@ import AlertResponsivenessMonitor from "../components/ui/AlertResponsivenessMoni
 import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
 import EnforcementToggle from "../components/ui/EnforcementToggle";
 import BlockedAttacksLiveStream from "../components/ui/BlockedAttacksLiveStream";
+import VirtualizedIncidentList from "../components/ui/VirtualizedIncidentList";
 
 export default function Dashboard() {
   const {
@@ -20,20 +21,17 @@ export default function Dashboard() {
     latestLatencyMs = null,
   } = useOutletContext();
 
-  const [renderMeasurement, setRenderMeasurement] =
-    useState(null);
+  const [renderMeasurement, setRenderMeasurement] = useState(null);
 
   // Existing demo incidents, not live telemetry alerts.
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
-    (incident) =>
-      incident.severity?.toLowerCase() === "critical"
+    (incident) => incident.severity?.toLowerCase() === "critical"
   ).length;
 
   const highCount = incidents.filter(
-    (incident) =>
-      incident.severity?.toLowerCase() === "high"
+    (incident) => incident.severity?.toLowerCase() === "high"
   ).length;
 
   const latencySource = isMockMode
@@ -64,22 +62,19 @@ export default function Dashboard() {
     latestEvent !== null &&
     latestEvent.receivedAtMs !== null &&
     renderMeasurement?.eventId === latestEvent.id &&
-    renderMeasurement?.receivedAtMs ===
-      latestEvent.receivedAtMs;
+    renderMeasurement?.receivedAtMs === latestEvent.receivedAtMs;
 
-  const displayedRenderLatency =
-    measurementMatchesLatestEvent
-      ? renderMeasurement.latencyMs
-      : null;
+  const displayedRenderLatency = measurementMatchesLatestEvent
+    ? renderMeasurement.latencyMs
+    : null;
 
-  const measurementSource =
-    measurementMatchesLatestEvent
-      ? renderMeasurement.source === "mock"
-        ? "Mock telemetry: receipt-to-render measurement"
-        : "Live telemetry: browser receipt-to-render measurement"
-      : latestEvent
-        ? "Measuring the latest telemetry event"
-        : "Waiting for telemetry timing";
+  const measurementSource = measurementMatchesLatestEvent
+    ? renderMeasurement.source === "mock"
+      ? "Mock telemetry: receipt-to-render measurement"
+      : "Live telemetry: browser receipt-to-render measurement"
+    : latestEvent
+      ? "Measuring the latest telemetry event"
+      : "Waiting for telemetry timing";
 
   return (
     <section className="space-y-6">
@@ -157,6 +152,9 @@ export default function Dashboard() {
 
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />
+
+      {/* Day 21 — Virtualized Incident List */}
+      <VirtualizedIncidentList />
 
       {/* API Endpoint Activity */}
       <section className="space-y-4">

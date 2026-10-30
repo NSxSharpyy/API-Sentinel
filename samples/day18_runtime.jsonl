@@ -1,0 +1,1 @@
+{"method":"POST","path":"/api/users","request":{"name":"Rahul","email":"rahul@example.com","role":"admin"},"response":{"id":101,"name":"Rahul","email":"rahul@example.com","internal_status":"verified"}}

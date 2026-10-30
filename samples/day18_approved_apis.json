@@ -1,0 +1,8 @@
+{
+    "approved_apis": [
+        {
+            "method": "POST",
+            "path": "/api/users"
+        }
+    ]
+}

@@ -1,17 +1,17 @@
-from src.reporter import save_findings
+
+from pathlib import Path
+import argparse
+import json
+import re
+
+import yaml  # type: ignore
+
 from src.repo_crawler import (
     discover_openapi_files,
     fetch_openapi_spec,
     extract_api_contracts,
     save_api_contracts,
 )
-from pathlib import Path
-import argparse
-import json
-import re
-import yaml # type: ignore
-
-
 
 from src.inventory import (
     load_approved_apis,
@@ -26,6 +26,8 @@ from src.runtime import (
     save_findings as save_runtime_findings,
 )
 
+from src.parameter_drift import detect_parameter_drift
+
 
 def parse_openapi_spec(file_path: str) -> dict:
     """Load and validate an OpenAPI JSON or YAML specification."""
@@ -33,19 +35,16 @@ def parse_openapi_spec(file_path: str) -> dict:
     path = Path(file_path)
 
     if not path.exists():
-        raise FileNotFoundError(
-            f"Specification not found: {path}"
-        )
+        raise FileNotFoundError(f"Specification not found: {path}")
 
     if not path.is_file():
-        raise ValueError(
-            "The supplied specification path is not a file."
-        )
+        raise ValueError("The supplied specification path is not a file.")
 
     suffix = path.suffix.lower()
 
     try:
-        with path.open("r", encoding="utf-8") as file:
+        # Supports UTF-8 files with or without BOM.
+        with path.open("r", encoding="utf-8-sig") as file:
             if suffix == ".json":
                 spec = json.load(file)
             elif suffix in {".yaml", ".yml"}:
@@ -67,9 +66,7 @@ def parse_openapi_spec(file_path: str) -> dict:
         )
 
     if not isinstance(spec.get("openapi"), str):
-        raise ValueError(
-            "Missing or invalid OpenAPI version field."
-        )
+        raise ValueError("Missing or invalid OpenAPI version field.")
 
     if "paths" not in spec:
         raise ValueError(
@@ -77,14 +74,10 @@ def parse_openapi_spec(file_path: str) -> dict:
         )
 
     if not isinstance(spec["paths"], dict):
-        raise ValueError(
-            "The 'paths' field must be a mapping/object."
-        )
+        raise ValueError("The 'paths' field must be a mapping/object.")
 
     if not isinstance(spec.get("info"), dict):
-        raise ValueError(
-            "The 'info' field must be a mapping/object."
-        )
+        raise ValueError("The 'info' field must be a mapping/object.")
 
     return spec
 
@@ -139,7 +132,7 @@ def build_approved_runtime_endpoints(
 
         escaped_path = re.escape(path)
 
-        # Convert {id} parameters into a single path segment.
+        # Convert templates such as /users/{id} into one path segment.
         pattern = re.sub(
             r"\\\{[^{}]+\\\}",
             r"[^/]+",
@@ -153,6 +146,21 @@ def build_approved_runtime_endpoints(
         ))
 
     return approved_endpoints
+
+
+def save_parameter_drift_report(
+    report: dict,
+    output_path: str,
+) -> str:
+    """Save parameter drift findings and summary as JSON."""
+
+    report_path = Path(output_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with report_path.open("w", encoding="utf-8") as file:
+        json.dump(report, file, indent=4, ensure_ascii=False)
+
+    return str(report_path)
 
 
 def main() -> None:
@@ -209,7 +217,18 @@ def main() -> None:
         help="Output path for runtime findings",
     )
 
+    parser.add_argument(
+        "--drift-report",
+        default="reports/parameter_drift_findings.json",
+        help="Output path for parameter drift findings",
+    )
+
     args = parser.parse_args()
+
+    # ==========================================
+    # PHASE 0: REPOSITORY CONTRACT DISCOVERY
+    # ==========================================
+
     if args.repo_owner and args.repo_name:
         try:
             discovered_files = discover_openapi_files(
@@ -249,6 +268,7 @@ def main() -> None:
         except RuntimeError as error:
             print(f"Repository crawler error: {error}")
             return
+
     try:
 
         # ==========================================
@@ -277,18 +297,14 @@ def main() -> None:
         print(f"Unapproved endpoints: {len(unapproved)}")
 
         if unapproved:
-
             print("\nPotential Shadow API Findings:")
 
             for api in unapproved:
-
                 print(
                     f"[REVIEW] {api['method']} {api['path']} "
                     f"- {api.get('summary') or 'No summary'}"
                 )
-
         else:
-
             print("\nNo unapproved endpoints found.")
 
         static_report = save_findings(
@@ -325,19 +341,65 @@ def main() -> None:
             )
 
             print("\n=== API-Sentinel: Runtime BOLO Detection ===")
-
             print(f"Runtime events: {len(runtime_events)}")
             print(f"Potential findings: {len(runtime_findings)}")
-
-            print(
-                f"Runtime report saved to: {runtime_report}"
-            )
+            print(f"Runtime report saved to: {runtime_report}")
 
             for finding in runtime_findings:
-
                 print(
                     f"[REVIEW] {finding['method']} "
                     f"{finding['path']}"
+                )
+
+            # ==========================================
+            # PHASE 3: PARAMETER DRIFT DETECTION
+            # ==========================================
+
+            drift_report = detect_parameter_drift(
+                spec,
+                runtime_events,
+            )
+
+            drift_report_path = save_parameter_drift_report(
+                drift_report,
+                args.drift_report,
+            )
+
+            print("\n=== API-Sentinel: Parameter Drift Detection ===")
+
+            # Summary counters are nested inside report["summary"].
+            summary = drift_report.get("summary", {})
+
+            print(
+                "Runtime events checked: "
+                f"{summary.get('total_runtime_events_checked', 0)}"
+            )
+
+            print(
+                "Total drift findings: "
+                f"{summary.get('total_drift_findings', 0)}"
+            )
+
+            print(
+                "Undocumented request fields: "
+                f"{summary.get('undocumented_request_fields', 0)}"
+            )
+
+            print(
+                "Undocumented response fields: "
+                f"{summary.get('undocumented_response_fields', 0)}"
+            )
+
+            print(
+                f"Parameter drift report saved to: {drift_report_path}"
+            )
+
+            for finding in drift_report.get("findings", []):
+                print(
+                    f"[DRIFT] {finding.get('method')} "
+                    f"{finding.get('path')} | "
+                    f"{finding.get('location')} | "
+                    f"{finding.get('field')}"
                 )
 
         else:
@@ -345,6 +407,11 @@ def main() -> None:
             print(
                 "\nRuntime detection skipped: "
                 f"{runtime_log_path} was not found."
+            )
+
+            print(
+                "Parameter drift detection skipped because "
+                "runtime events are unavailable."
             )
 
     except (

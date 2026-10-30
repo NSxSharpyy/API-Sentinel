@@ -1,3 +1,4 @@
+
 """
 Runtime BOLO engine for API-Sentinel.
 
@@ -7,17 +8,15 @@ against an approved OpenAPI JSON specification.
 Unmatched endpoints are reported as potential review findings;
 they are not automatically classified as vulnerabilities.
 
-Expected runtime log format (one JSON object per line):
+Runtime log format:
 
 {"method": "GET", "path": "/users"}
-{"method": "DELETE", "path": "/users/42"}
+{"method": "POST", "path": "/users", "request": {"name": "John"}}
+{"method": "GET", "path": "/users/42", "response": {"id": 42}}
 
-Usage from the project root:
+Usage:
 
 python -m src.runtime --spec approved_apis.json --logs runtime_logs.jsonl
-
-The OpenAPI specification should be a JSON file containing
-a "paths" object.
 """
 
 from __future__ import annotations
@@ -85,11 +84,7 @@ def normalize_path(path: str) -> str:
     """
     Normalize a URL path for comparison.
 
-    Removes:
-    - query strings
-    - surrounding whitespace
-    - trailing slash
-
+    Removes query strings, surrounding whitespace and trailing slashes.
     Adds a leading slash when missing.
     """
 
@@ -106,19 +101,11 @@ def normalize_path(path: str) -> str:
 
 def _openapi_path_to_regex(path: str) -> re.Pattern[str]:
     """
-    Convert an OpenAPI template such as:
-
-        /users/{userId}
-
-    into a regular expression that matches:
-
-        /users/123
-        /users/abc
-        /users/anything
+    Convert an OpenAPI template such as /users/{userId}
+    into a regex matching /users/123 or /users/abc.
     """
 
     normalized = normalize_path(path)
-
     escaped = re.escape(normalized)
 
     escaped = re.sub(
@@ -127,9 +114,7 @@ def _openapi_path_to_regex(path: str) -> re.Pattern[str]:
         escaped,
     )
 
-    return re.compile(
-        r"^" + escaped + r"$"
-    )
+    return re.compile(r"^" + escaped + r"$")
 
 
 def build_approved_endpoints(
@@ -139,22 +124,12 @@ def build_approved_endpoints(
     Return approved method/path matchers from an OpenAPI specification.
 
     Each entry contains:
-
-        (
-            HTTP method,
-            compiled path matcher,
-            summary
-        )
+        (HTTP method, compiled path matcher, summary)
     """
 
-    approved: list[
-        tuple[str, re.Pattern[str], str]
-    ] = []
+    approved: list[tuple[str, re.Pattern[str], str]] = []
 
-    for route, operations in spec.get(
-        "paths",
-        {},
-    ).items():
+    for route, operations in spec.get("paths", {}).items():
 
         if not isinstance(route, str):
             continue
@@ -172,12 +147,7 @@ def build_approved_endpoints(
             summary = ""
 
             if isinstance(details, dict):
-                summary = str(
-                    details.get(
-                        "summary",
-                        "",
-                    )
-                )
+                summary = str(details.get("summary", ""))
 
             approved.append(
                 (
@@ -192,10 +162,17 @@ def build_approved_endpoints(
 
 def load_runtime_events(
     log_path: str | Path,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """
-    Read JSON Lines runtime events containing method and path fields.
+    Read JSON Lines runtime events.
 
+    Preserves:
+    - method
+    - path
+    - request payload, when present
+    - response payload, when present
+
+    Older logs containing only method and path remain supported.
     Invalid or unsupported HTTP methods are ignored.
     """
 
@@ -211,17 +188,11 @@ def load_runtime_events(
             f"The runtime log path is not a file: {path}"
         )
 
-    events: list[dict[str, str]] = []
+    events: list[dict[str, Any]] = []
 
-    with path.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
+    with path.open("r", encoding="utf-8") as file:
 
-        for line_number, line in enumerate(
-            file,
-            start=1,
-        ):
+        for line_number, line in enumerate(file, start=1):
 
             if not line.strip():
                 continue
@@ -242,18 +213,12 @@ def load_runtime_events(
                 )
 
             method = str(
-                event.get(
-                    "method",
-                    "",
-                )
+                event.get("method", "")
             ).upper().strip()
 
             endpoint = event.get(
                 "path",
-                event.get(
-                    "url",
-                    "",
-                ),
+                event.get("url", ""),
             )
 
             if (
@@ -261,29 +226,29 @@ def load_runtime_events(
                 or not isinstance(endpoint, str)
                 or not endpoint.strip()
             ):
-                # Ignore records that do not describe
-                # an HTTP endpoint.
                 continue
 
             if method not in HTTP_METHODS:
-                # Ignore unsupported/invalid HTTP methods.
                 continue
 
-            events.append(
-                {
-                    "method": method,
-                    "path": normalize_path(endpoint),
-                }
-            )
+            runtime_event: dict[str, Any] = {
+                "method": method,
+                "path": normalize_path(endpoint),
+            }
+
+            # Preserve payloads for parameter drift analysis.
+            for payload_field in ("request", "response"):
+                if payload_field in event:
+                    runtime_event[payload_field] = event[payload_field]
+
+            events.append(runtime_event)
 
     return events
 
 
 def find_unapproved_endpoints(
-    events: list[dict[str, str]],
-    approved: list[
-        tuple[str, re.Pattern[str], str]
-    ],
+    events: list[dict[str, Any]],
+    approved: list[tuple[str, re.Pattern[str], str]],
 ) -> list[dict[str, str]]:
     """
     Return unique observed method/path pairs
@@ -291,30 +256,19 @@ def find_unapproved_endpoints(
     """
 
     findings: list[dict[str, str]] = []
-
-    seen: set[
-        tuple[str, str]
-    ] = set()
+    seen: set[tuple[str, str]] = set()
 
     for event in events:
 
         method = str(
-            event.get(
-                "method",
-                "",
-            )
+            event.get("method", "")
         ).upper().strip()
 
-        endpoint = event.get(
-            "path",
-            "",
-        )
+        endpoint = event.get("path", "")
 
-        # Ignore invalid HTTP methods.
         if method not in HTTP_METHODS:
             continue
 
-        # Ignore invalid/empty endpoints.
         if (
             not isinstance(endpoint, str)
             or not endpoint.strip()
@@ -323,12 +277,8 @@ def find_unapproved_endpoints(
 
         endpoint = normalize_path(endpoint)
 
-        key = (
-            method,
-            endpoint,
-        )
+        key = (method, endpoint)
 
-        # Avoid duplicate findings.
         if key in seen:
             continue
 
@@ -341,14 +291,11 @@ def find_unapproved_endpoints(
         )
 
         if not is_approved:
-
             findings.append(
                 {
                     "method": method,
                     "path": endpoint,
-                    "classification": (
-                        "potential_unapproved_endpoint"
-                    ),
+                    "classification": "potential_unapproved_endpoint",
                     "status": "needs_review",
                 }
             )
@@ -358,9 +305,7 @@ def find_unapproved_endpoints(
 
 def save_findings(
     findings: list[dict[str, str]],
-    output_path: str | Path = (
-        "reports/runtime_bolo_findings.json"
-    ),
+    output_path: str | Path = "reports/runtime_bolo_findings.json",
 ) -> str:
     """Write findings to a JSON report and return its path."""
 
@@ -376,16 +321,8 @@ def save_findings(
         "findings": findings,
     }
 
-    with report_path.open(
-        "w",
-        encoding="utf-8",
-    ) as file:
-
-        json.dump(
-            report,
-            file,
-            indent=4,
-        )
+    with report_path.open("w", encoding="utf-8") as file:
+        json.dump(report, file, indent=4)
 
     return str(report_path)
 
@@ -403,47 +340,27 @@ def main() -> int:
     parser.add_argument(
         "--spec",
         required=True,
-        help=(
-            "Path to an approved OpenAPI "
-            "JSON specification."
-        ),
+        help="Path to an approved OpenAPI JSON specification.",
     )
 
     parser.add_argument(
         "--logs",
         required=True,
-        help=(
-            "Path to a JSON Lines "
-            "runtime log file."
-        ),
+        help="Path to a JSON Lines runtime log file.",
     )
 
     parser.add_argument(
         "--output",
-        default=(
-            "reports/runtime_bolo_findings.json"
-        ),
-        help=(
-            "Output JSON report path "
-            "(default: "
-            "reports/runtime_bolo_findings.json)."
-        ),
+        default="reports/runtime_bolo_findings.json",
+        help="Output JSON report path.",
     )
 
     args = parser.parse_args()
 
     try:
-        spec = load_openapi_spec(
-            args.spec
-        )
-
-        approved = build_approved_endpoints(
-            spec
-        )
-
-        events = load_runtime_events(
-            args.logs
-        )
+        spec = load_openapi_spec(args.spec)
+        approved = build_approved_endpoints(spec)
+        events = load_runtime_events(args.logs)
 
         findings = find_unapproved_endpoints(
             events,
@@ -460,7 +377,6 @@ def main() -> int:
             f"[ERROR] {exc}",
             file=sys.stderr,
         )
-
         return 1
 
     print(
@@ -478,12 +394,9 @@ def main() -> int:
         f"{len(findings)}"
     )
 
-    print(
-        f"Report saved to: {report_path}"
-    )
+    print(f"Report saved to: {report_path}")
 
     for finding in findings:
-
         print(
             f"[REVIEW] "
             f"{finding['method']} "

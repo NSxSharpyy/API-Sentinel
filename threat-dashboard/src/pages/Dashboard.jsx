@@ -12,6 +12,7 @@ import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
 import EnforcementToggle from "../components/ui/EnforcementToggle";
 import BlockedAttacksLiveStream from "../components/ui/BlockedAttacksLiveStream";
 import VirtualizedIncidentList from "../components/ui/VirtualizedIncidentList";
+import HighPriorityNotifications from "../components/ui/HighPriorityNotifications";
 
 export default function Dashboard() {
   const {
@@ -27,11 +28,11 @@ export default function Dashboard() {
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
-    (incident) => incident.severity?.toLowerCase() === "critical"
+    (incident) => incident.severity?.toLowerCase() === "critical",
   ).length;
 
   const highCount = incidents.filter(
-    (incident) => incident.severity?.toLowerCase() === "high"
+    (incident) => incident.severity?.toLowerCase() === "high",
   ).length;
 
   const latencySource = isMockMode
@@ -54,7 +55,7 @@ export default function Dashboard() {
         source,
       });
     },
-    []
+    [],
   );
 
   // Only show a timing measurement matching the latest event.
@@ -93,6 +94,12 @@ export default function Dashboard() {
           Endpoint transactions depend on telemetry availability.
         </p>
       </div>
+
+      {/* Day 22 — High-Priority Toast and Banner Notifications */}
+      <HighPriorityNotifications
+        events={transactions}
+        isMockMode={isMockMode}
+      />
 
       {/* Incident Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

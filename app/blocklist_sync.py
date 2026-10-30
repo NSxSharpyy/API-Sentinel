@@ -329,11 +329,28 @@ class BlocklistSynchronizer:
             seen_snapshot = OrderedDict(self._seen)
 
             try:
-                results, updated_seen = await asyncio.to_thread(
-                    self._apply_batch_with_timestamps,
-                    payloads,
-                    seen_snapshot,
+                apply_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self._apply_batch_with_timestamps,
+                        payloads,
+                        seen_snapshot,
+                    ),
+                    name="api-sentinel-blocklist-map-apply",
                 )
+                try:
+                    results, updated_seen = await asyncio.shield(apply_task)
+                except asyncio.CancelledError:
+                    logger.warning(
+                        "Cancellation received during blocklist map update; "
+                        "waiting for the in-flight update to finish"
+                    )
+                    try:
+                        await asyncio.shield(apply_task)
+                    except Exception:
+                        logger.exception(
+                            "In-flight blocklist map update failed during shutdown"
+                        )
+                    raise
                 self._seen = updated_seen
 
                 for result in results:

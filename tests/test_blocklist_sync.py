@@ -294,3 +294,46 @@ def test_detection_to_apply_latency_metrics_measure_full_path():
     assert metrics["detection_to_apply_p50_latency_ms"] <= metrics[
         "detection_to_apply_p95_latency_ms"
     ] <= metrics["detection_to_apply_p99_latency_ms"]
+
+
+
+def test_cancellation_waits_for_inflight_map_write_to_finish():
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    class BlockingWriter:
+        def apply(self, verdict):
+            started.set()
+            if not release.wait(timeout=3):
+                raise TimeoutError("test did not release the map writer")
+            finished.set()
+
+    async def scenario():
+        queue = asyncio.Queue()
+        worker = BlocklistSynchronizer(queue, BlockingWriter())
+        task = asyncio.create_task(worker.run(asyncio.Event()))
+        queue.put_nowait(make_payload(verdict_id="cancel-in-flight"))
+
+        try:
+            started_ok = await asyncio.wait_for(
+                asyncio.to_thread(started.wait, 1),
+                timeout=2,
+            )
+            assert started_ok
+
+            task.cancel()
+            await asyncio.sleep(0.05)
+            assert not task.done(), "worker exited before map write completed"
+        finally:
+            release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=2)
+
+        assert finished.is_set()
+        await asyncio.wait_for(queue.join(), timeout=1)
+
+    asyncio.run(scenario())

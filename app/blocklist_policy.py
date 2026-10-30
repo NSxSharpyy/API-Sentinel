@@ -17,7 +17,6 @@ BOLA_RULE_ID = "lab_scoped_bola_invoice_owner_mismatch"
 BOLA_INCIDENT_TITLE = "Potential BOLA: cross-user invoice access (lab heuristic)"
 DEFAULT_VERDICT_TTL_SECONDS = 60
 MAX_VERDICT_TTL_SECONDS = 3600
-_STOP = object()
 
 
 class VerdictSender(Protocol):
@@ -58,6 +57,7 @@ class ThreadOwnedVerdictSender:
         self._ready = threading.Event()
         self._lock = threading.Lock()
         self._closed = False
+        self._stop_requested = threading.Event()
         self._worker_error: BaseException | None = None
         self._thread = threading.Thread(
             target=self._run,
@@ -94,10 +94,14 @@ class ThreadOwnedVerdictSender:
             with self._sender_factory() as sender:
                 self._ready.set()
                 while True:
-                    item = self._requests.get()
                     try:
-                        if item is _STOP:
+                        item = self._requests.get(timeout=0.05)
+                    except queue.Empty:
+                        if self._stop_requested.is_set():
                             return
+                        continue
+
+                    try:
                         if item.completion.cancelled():
                             continue
                         try:
@@ -144,21 +148,12 @@ class ThreadOwnedVerdictSender:
 
     def close(self) -> None:
         with self._lock:
-            if self._closed:
-                return
             self._closed = True
-            if self._thread.is_alive():
-                try:
-                    self._requests.put(
-                        _STOP, timeout=self._request_timeout_s
-                    )
-                except queue.Full:
-                    logger.error("Unable to enqueue blocklist sender shutdown")
-                    return
+            self._stop_requested.set()
 
         self._thread.join(timeout=self._request_timeout_s)
         if self._thread.is_alive():
-            logger.error("Blocklist sender thread did not stop cleanly")
+            logger.error("Blocklist sender thread is still draining or stopping")
 
     def __enter__(self) -> "ThreadOwnedVerdictSender":
         return self

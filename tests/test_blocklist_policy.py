@@ -238,3 +238,69 @@ def test_policy_real_sender_delivers_to_loopback_receiver_queue():
                 receiver.close()
 
     asyncio.run(scenario())
+
+
+
+def test_thread_owned_sender_close_signals_stop_when_queue_is_full():
+    import threading
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+
+    started = threading.Event()
+    release = threading.Event()
+    closed = threading.Event()
+
+    class BlockingSender:
+        def __enter__(self):
+            return self
+
+        def send(self, payload):
+            started.set()
+            if not release.wait(timeout=3):
+                raise TimeoutError("test did not release the sender")
+            return payload["verdict_id"]
+
+        def __exit__(self, exc_type, exc, tb):
+            closed.set()
+            return False
+
+    sender = ThreadOwnedVerdictSender(
+        BlockingSender,
+        max_queue_size=1,
+        startup_timeout_s=1,
+        request_timeout_s=0.2,
+    )
+
+    first = SimpleNamespace(
+        payload={"verdict_id": "first"},
+        completion=Future(),
+    )
+    sender._requests.put_nowait(first)
+    assert started.wait(timeout=1)
+
+    pending = Future()
+    sender._requests.put_nowait(
+        SimpleNamespace(
+            payload={"verdict_id": "pending"},
+            completion=pending,
+        )
+    )
+
+    # Queue is full, but shutdown signaling does not need a queue slot.
+    sender.close()
+    assert sender._closed
+    assert sender._stop_requested.is_set()
+    assert sender._thread.is_alive()
+
+    # The worker finishes the active request, delivers the queued request,
+    # observes the stop event while the queue is empty, and exits.
+    release.set()
+    sender._thread.join(timeout=2)
+
+    assert not sender._thread.is_alive()
+    assert closed.is_set()
+    assert first.completion.result(timeout=0.1) == "first"
+    assert pending.result(timeout=0.1) == "pending"
+    assert sender._requests.unfinished_tasks == 0
+
+    sender.close()

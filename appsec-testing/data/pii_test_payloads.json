@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "seed": 2024,
+  "safety_note": "Synthetic test values only. Payment cards are published processor test numbers; SSN-shaped values use invalid 900-series area numbers; tokens are random and nonfunctional; emails use example.test; phone numbers use the fictional 555-0100\u20130199 range.",
+  "categories": {
+    "credit_cards": [
+      {
+        "marker": "PII-TEST-CARD-000",
+        "value": "4242424242424242",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "4242"
+      },
+      {
+        "marker": "PII-TEST-CARD-001",
+        "value": "4000056655665556",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "5556"
+      },
+      {
+        "marker": "PII-TEST-CARD-002",
+        "value": "4000000000009995",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "9995"
+      },
+      {
+        "marker": "PII-TEST-CARD-003",
+        "value": "4000000000009987",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "9987"
+      },
+      {
+        "marker": "PII-TEST-CARD-004",
+        "value": "4000000000009979",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "9979"
+      },
+      {
+        "marker": "PII-TEST-CARD-005",
+        "value": "4000000000000069",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "0069"
+      },
+      {
+        "marker": "PII-TEST-CARD-006",
+        "value": "4000000000000127",
+        "network": "visa_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "0127"
+      },
+      {
+        "marker": "PII-TEST-CARD-007",
+        "value": "5555555555554444",
+        "network": "mastercard_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "4444"
+      },
+      {
+        "marker": "PII-TEST-CARD-008",
+        "value": "5200828282828210",
+        "network": "mastercard_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "8210"
+      },
+      {
+        "marker": "PII-TEST-CARD-009",
+        "value": "378282246310005",
+        "network": "amex_test",
+        "format": "luhn-valid-processor-test-number",
+        "last4": "0005"
+      }
+    ],
+    "ssns": [
+      {
+        "marker": "PII-TEST-SSN-000",
+        "value": "960-24-9476",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-001",
+        "value": "938-26-6719",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-002",
+        "value": "996-92-4346",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-003",
+        "value": "968-32-8165",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-004",
+        "value": "945-54-8640",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-005",
+        "value": "993-79-3574",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-006",
+        "value": "939-70-5411",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-007",
+        "value": "966-10-3382",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-008",
+        "value": "988-97-7677",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      },
+      {
+        "marker": "PII-TEST-SSN-009",
+        "value": "990-84-2431",
+        "format": "###-##-####",
+        "safety_basis": "invalid-ssa-area-900-series"
+      }
+    ],
+    "bearer_tokens": [
+      {
+        "marker": "PII-TEST-TOKEN-000",
+        "value": "iDbeafoOxVmgancfub4jw1NjVFjLM1NtalGRNufeaDo.NAq_OcME-N1C2IFRxfWRzQ",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-001",
+        "value": "tGudHFTZp5vHOzz-dl0iM15-mNagJENjn1ZV8LX_tnc.3CuvssTcIVTsNJSvEBnw1w",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-002",
+        "value": "LAHmJnC0PFk6FDLNSD2xdppDe4bhb6n4ajPXEk1NRyI.kKm7QIYZfjfkMshjLYPZOQ",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-003",
+        "value": "UVrAs-TMC5Tm7q2LYO-9uPOiEh46DoQg8dQ16KKd7BY.8oEsPHyVzLsqKRYgnhrP8Q",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-004",
+        "value": "mI_P_pqhB5gbjy6LslAAH0cHLg8aotufrJ67NZQ1pTA.di95UEW7dKJw1bfO0jdmlg",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-005",
+        "value": "3XLda5izIuE1KU9lMsAtW3SvAx5VrADFOcCBa6j5CTY.m3aNf4zODG5VAoJXjfnm8A",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-006",
+        "value": "4EGquyg5mvgb08vYbhH14SIsBtxWTvLqQH4pXNV37W8.8X2dUygJxR8eXWyi9C6BtA",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-007",
+        "value": "GA2ob-QGz-nj8EU7HlGL3pEjNpGVG24a8Zm0skRvjyg.wzvwAIMfMmCJkmhyksks1A",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-008",
+        "value": "pew_jevDSubQRpdbc6McZ2XCSFGAhTo80sfOWzpryXc.kk9J9ayv7DF3pYoNQGHTpg",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      },
+      {
+        "marker": "PII-TEST-TOKEN-009",
+        "value": "NUNphCKnUEiwic7xIsMXgTh2m0dLP6WEY71I9C_25Ok.93rOXfcHmKVgsRDBueciGQ",
+        "format": "opaque-bearer-shaped-test-token",
+        "credential_status": "synthetic-not-valid"
+      }
+    ],
+    "emails": [
+      {
+        "marker": "PII-TEST-EMAIL-000",
+        "value": "pii.test.user000@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-001",
+        "value": "pii.test.user001@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-002",
+        "value": "pii.test.user002@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-003",
+        "value": "pii.test.user003@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-004",
+        "value": "pii.test.user004@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-005",
+        "value": "pii.test.user005@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-006",
+        "value": "pii.test.user006@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-007",
+        "value": "pii.test.user007@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-008",
+        "value": "pii.test.user008@example.test",
+        "format": "reserved-test-domain"
+      },
+      {
+        "marker": "PII-TEST-EMAIL-009",
+        "value": "pii.test.user009@example.test",
+        "format": "reserved-test-domain"
+      }
+    ],
+    "phone_numbers": [
+      {
+        "marker": "PII-TEST-PHONE-000",
+        "value": "202-555-0100",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-001",
+        "value": "202-555-0101",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-002",
+        "value": "202-555-0102",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-003",
+        "value": "202-555-0103",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-004",
+        "value": "202-555-0104",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-005",
+        "value": "202-555-0105",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-006",
+        "value": "202-555-0106",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-007",
+        "value": "202-555-0107",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-008",
+        "value": "202-555-0108",
+        "format": "nanpa-fictional-555-01xx"
+      },
+      {
+        "marker": "PII-TEST-PHONE-009",
+        "value": "202-555-0109",
+        "format": "nanpa-fictional-555-01xx"
+      }
+    ]
+  },
+  "total_payloads": 50
+}

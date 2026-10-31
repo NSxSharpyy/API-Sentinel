@@ -10,3 +10,8 @@ data/
 *.db
 *.db-journal
 logs/
+
+# Keep the committed synthetic PII fixture; ignore other local data files.
+!data/
+data/*
+!data/pii_test_payloads.json

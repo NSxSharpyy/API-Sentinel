@@ -1,0 +1,55 @@
+{
+  "_notice": "MOCK DATA — TEMPORARY; NOT REAL MEMBER 3 ENGINE OUTPUT",
+  "scan_timestamp": "2026-10-19T09:00:00Z",
+  "findings": [
+    {
+      "service": "auth",
+      "method": "GET",
+      "path": "/debug/dump-tokens",
+      "classification": "shadow",
+      "confidence": 0.95
+    },
+    {
+      "service": "auth",
+      "method": "GET",
+      "path": "/api/v1/login-status",
+      "classification": "zombie",
+      "confidence": 0.88
+    },
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/internal/config",
+      "classification": "shadow",
+      "confidence": 0.91
+    },
+    {
+      "service": "order",
+      "method": "GET",
+      "path": "/api/v1/orders/1",
+      "classification": "zombie",
+      "confidence": 0.93
+    },
+    {
+      "service": "billing",
+      "method": "POST",
+      "path": "/_admin/reset-cache",
+      "classification": "shadow",
+      "confidence": 0.97
+    },
+    {
+      "service": "billing",
+      "method": "GET",
+      "path": "/api/v1/invoices/1",
+      "classification": "zombie",
+      "confidence": 0.90
+    },
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/api/v2/users/me",
+      "classification": "unknown",
+      "confidence": 0.30
+    }
+  ]
+}

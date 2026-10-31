@@ -5,6 +5,7 @@ that the Day 21 adapter proves eBPF or kernel packet drops.
 """
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -77,20 +78,26 @@ def newest_traffic_log(directory):
     return candidates[-1] if candidates else None
 
 
+def port_is_free(port):
+    """Return True only when the local TCP port can be bound."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
 def run():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    traffic_dir = LOG_DIR / "day21-traffic"
-    attack_dir = LOG_DIR / "day21-attack"
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    report_path = LOG_DIR / f"zero_drop_report_{run_id}.json"
+    traffic_dir = LOG_DIR / f"day21-traffic-{run_id}"
+    attack_dir = LOG_DIR / f"day21-attack-{run_id}"
     traffic_dir.mkdir(parents=True, exist_ok=True)
     attack_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use a fresh traffic directory so this run cannot count stale records.
-    for old_file in traffic_dir.glob("*"):
-        if old_file.is_file():
-            old_file.unlink()
-    for old_file in attack_dir.glob("*"):
-        if old_file.is_file():
-            old_file.unlink()
+    # Run-specific directories preserve all evidence from previous runs.
 
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
@@ -120,7 +127,15 @@ def run():
     }
 
     try:
-        adapter_log = (LOG_DIR / "day21-adapter-process.log").open("w")
+        for port in (8004, 8005):
+            if not port_is_free(port):
+                raise RuntimeError(
+                    f"Port {port} is already in use; refusing to start Day21."
+                )
+
+        adapter_log = (
+            LOG_DIR / f"day21-adapter-process-{run_id}.log"
+        ).open("w", encoding="utf-8")
         opened_logs.append(adapter_log)
         adapter = subprocess.Popen(
             [sys.executable, str(PROJECT_ROOT / "scripts/enforcement/day21_test_enforcer.py")],
@@ -131,7 +146,7 @@ def run():
         adapter_health = wait_for_health(f"{ENFORCER_URL}/__enforcer_health", adapter)
         report["adapter_health"] = adapter_health
 
-        wrapper_log = (LOG_DIR / "day21-wrapper-process.log").open("w")
+        wrapper_log = (LOG_DIR / f"day21-wrapper-process-{run_id}.log").open("w", encoding="utf-8")
         opened_logs.append(wrapper_log)
         wrapper = subprocess.Popen(
             [sys.executable, str(PROJECT_ROOT / "scripts/enforcement/fail_open_wrapper.py")],
@@ -145,7 +160,7 @@ def run():
         # Start legitimate traffic first, then launch the attack during its run.
         traffic_env = env.copy()
         traffic_env["BILLING_OVERRIDE_URL"] = WRAPPER_URL
-        traffic_log = (LOG_DIR / "day21-traffic-process.log").open("w")
+        traffic_log = (LOG_DIR / f"day21-traffic-process-{run_id}.log").open("w", encoding="utf-8")
         opened_logs.append(traffic_log)
         traffic = subprocess.Popen(
             [
@@ -165,7 +180,7 @@ def run():
 
         attack_env = env.copy()
         attack_env["BILLING_OVERRIDE_URL"] = WRAPPER_URL
-        attack_log = (LOG_DIR / "day21-attack-process.log").open("w")
+        attack_log = (LOG_DIR / f"day21-attack-process-{run_id}.log").open("w", encoding="utf-8")
         opened_logs.append(attack_log)
         attack = subprocess.Popen(
             [
@@ -190,11 +205,11 @@ def run():
 
         if traffic_return != 0:
             raise RuntimeError(
-                f"Traffic generator failed; inspect {LOG_DIR / 'day21-traffic-process.log'}"
+                f"Traffic generator failed; inspect the Day21 log for run {run_id}"
             )
         if attack_return != 0:
             raise RuntimeError(
-                f"BOLA sweep failed; inspect {LOG_DIR / 'day21-attack-process.log'}"
+                f"BOLA sweep failed; inspect the Day21 log for run {run_id}"
             )
 
         traffic_log_path = newest_traffic_log(traffic_dir)
@@ -257,12 +272,12 @@ def run():
         for stream in opened_logs:
             stream.close()
 
-        REPORT_PATH.write_text(
+        report_path.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         print(json.dumps(report, indent=2))
-        print(f"\nReport written to: {REPORT_PATH}")
+        print(f"\nReport written to: {report_path}")
 
     return 0 if report.get("overall") == "PASS" else 1
 

@@ -28,6 +28,13 @@ from src.runtime import (
 
 from src.parameter_drift import detect_parameter_drift
 
+from src.zombie_detector import ZombieAPIDetector
+
+from src.zombie_alerts import (
+    generate_zombie_alerts,
+    save_zombie_alerts,
+)
+
 
 def parse_openapi_spec(file_path: str) -> dict:
     """Load and validate an OpenAPI JSON or YAML specification."""
@@ -43,7 +50,6 @@ def parse_openapi_spec(file_path: str) -> dict:
     suffix = path.suffix.lower()
 
     try:
-        # Supports UTF-8 files with or without BOM.
         with path.open("r", encoding="utf-8-sig") as file:
             if suffix == ".json":
                 spec = json.load(file)
@@ -105,6 +111,9 @@ def extract_endpoints(spec: dict) -> list[dict]:
 
         for method, operation in details.items():
 
+            if not isinstance(method, str):
+                continue
+
             if method.lower() not in http_methods:
                 continue
 
@@ -132,7 +141,6 @@ def build_approved_runtime_endpoints(
 
         escaped_path = re.escape(path)
 
-        # Convert templates such as /users/{id} into one path segment.
         pattern = re.sub(
             r"\\\{[^{}]+\\\}",
             r"[^/]+",
@@ -158,7 +166,12 @@ def save_parameter_drift_report(
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     with report_path.open("w", encoding="utf-8") as file:
-        json.dump(report, file, indent=4, ensure_ascii=False)
+        json.dump(
+            report,
+            file,
+            indent=4,
+            ensure_ascii=False,
+        )
 
     return str(report_path)
 
@@ -223,6 +236,12 @@ def main() -> None:
         help="Output path for parameter drift findings",
     )
 
+    parser.add_argument(
+        "--zombie-alert-report",
+        default="reports/zombie_alerts.json",
+        help="Output path for Zombie API traffic alerts",
+    )
+
     args = parser.parse_args()
 
     # ==========================================
@@ -247,14 +266,14 @@ def main() -> None:
             for file_path in discovered_files:
                 print(f"[FETCH] {file_path}")
 
-                spec = fetch_openapi_spec(
+                repo_spec = fetch_openapi_spec(
                     args.repo_owner,
                     args.repo_name,
                     args.repo_branch,
                     file_path,
                 )
 
-                contracts = extract_api_contracts(spec)
+                contracts = extract_api_contracts(repo_spec)
 
                 for contract in contracts:
                     contract["source_file"] = file_path
@@ -367,7 +386,6 @@ def main() -> None:
 
             print("\n=== API-Sentinel: Parameter Drift Detection ===")
 
-            # Summary counters are nested inside report["summary"].
             summary = drift_report.get("summary", {})
 
             print(
@@ -402,6 +420,60 @@ def main() -> None:
                     f"{finding.get('field')}"
                 )
 
+            # ==========================================
+            # PHASE 4: ZOMBIE API TRAFFIC ALERTS
+            # ==========================================
+
+            observed_zombie_routes = [
+                {
+                    "method": event["method"],
+                    "route": event["path"],
+                }
+                for event in runtime_events
+            ]
+
+            zombie_detector = ZombieAPIDetector(spec)
+
+            zombie_findings = zombie_detector.analyze(
+                observed_zombie_routes
+            )
+
+            zombie_alert_report = generate_zombie_alerts(
+                zombie_findings
+            )
+
+            zombie_report_path = save_zombie_alerts(
+                zombie_alert_report,
+                args.zombie_alert_report,
+            )
+
+            print("\n=== API-Sentinel: Zombie API Traffic Alerts ===")
+
+            print(
+                f"Zombie endpoints detected: {len(zombie_findings)}"
+            )
+
+            print(
+                "Total alerts generated: "
+                f"{zombie_alert_report['total_alerts']}"
+            )
+
+            print(
+                "Total zombie traffic observations: "
+                f"{zombie_alert_report['total_observations']}"
+            )
+
+            print(
+                f"Zombie alert report saved to: {zombie_report_path}"
+            )
+
+            for alert in zombie_alert_report["alerts"]:
+                print(
+                    f"[ALERT] [{alert['severity']}] "
+                    f"{alert['method']} {alert['route']} "
+                    f"| Occurrences: {alert['occurrence_count']}"
+                )
+
         else:
 
             print(
@@ -411,6 +483,11 @@ def main() -> None:
 
             print(
                 "Parameter drift detection skipped because "
+                "runtime events are unavailable."
+            )
+
+            print(
+                "Zombie API alert detection skipped because "
                 "runtime events are unavailable."
             )
 

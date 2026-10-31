@@ -1,0 +1,42 @@
+
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "API-Sentinel Day 19 Demo",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/users": {
+      "get": {
+        "summary": "Get active users",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v1/old-users": {
+      "get": {
+        "deprecated": true,
+        "summary": "Deprecated users endpoint",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v1/legacy-orders": {
+      "post": {
+        "inactive": true,
+        "summary": "Inactive legacy orders endpoint",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    }
+  }
+}

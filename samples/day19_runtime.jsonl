@@ -1,0 +1,7 @@
+
+{"method":"GET","path":"/api/v1/users"}
+{"method":"GET","path":"/api/v1/old-users"}
+{"method":"GET","path":"/api/v1/old-users"}
+{"method":"POST","path":"/api/v1/legacy-orders"}
+{"method":"POST","path":"/api/v1/legacy-orders"}
+{"method":"POST","path":"/api/v1/legacy-orders"}

@@ -10,6 +10,9 @@ import SystemLatencyWidget from "../components/ui/SystemLatencyWidget";
 import AlertResponsivenessMonitor from "../components/ui/AlertResponsivenessMonitor";
 import TelemetryRenderProbe from "../components/ui/TelemetryRenderProbe";
 import EnforcementToggle from "../components/ui/EnforcementToggle";
+import BlockedAttacksLiveStream from "../components/ui/BlockedAttacksLiveStream";
+import VirtualizedIncidentList from "../components/ui/VirtualizedIncidentList";
+import HighPriorityNotifications from "../components/ui/HighPriorityNotifications";
 
 export default function Dashboard() {
   const {
@@ -19,29 +22,26 @@ export default function Dashboard() {
     latestLatencyMs = null,
   } = useOutletContext();
 
-  const [renderMeasurement, setRenderMeasurement] =
-    useState(null);
+  const [renderMeasurement, setRenderMeasurement] = useState(null);
 
   // Existing demo incidents, not live telemetry alerts.
   const incidents = mockIncidents;
 
   const criticalCount = incidents.filter(
-    (incident) =>
-      incident.severity?.toLowerCase() === "critical"
+    (incident) => incident.severity?.toLowerCase() === "critical",
   ).length;
 
   const highCount = incidents.filter(
-    (incident) =>
-      incident.severity?.toLowerCase() === "high"
+    (incident) => incident.severity?.toLowerCase() === "high",
   ).length;
 
   const latencySource = isMockMode
     ? "Simulated telemetry value"
-  : typeof latestLatencyMs === "number" &&
-      Number.isFinite(latestLatencyMs) &&
-      latestLatencyMs >= 0
-    ? "Telemetry field; measurement boundary unverified"
-    : "";
+    : typeof latestLatencyMs === "number" &&
+        Number.isFinite(latestLatencyMs) &&
+        latestLatencyMs >= 0
+      ? "Telemetry field; measurement boundary unverified"
+      : "";
 
   // Transactions are stored newest first by useTelemetry.
   const latestEvent = transactions[0] ?? null;
@@ -55,7 +55,7 @@ export default function Dashboard() {
         source,
       });
     },
-    []
+    [],
   );
 
   // Only show a timing measurement matching the latest event.
@@ -63,22 +63,19 @@ export default function Dashboard() {
     latestEvent !== null &&
     latestEvent.receivedAtMs !== null &&
     renderMeasurement?.eventId === latestEvent.id &&
-    renderMeasurement?.receivedAtMs ===
-      latestEvent.receivedAtMs;
+    renderMeasurement?.receivedAtMs === latestEvent.receivedAtMs;
 
-  const displayedRenderLatency =
-    measurementMatchesLatestEvent
-      ? renderMeasurement.latencyMs
-      : null;
+  const displayedRenderLatency = measurementMatchesLatestEvent
+    ? renderMeasurement.latencyMs
+    : null;
 
-  const measurementSource =
-    measurementMatchesLatestEvent
-      ? renderMeasurement.source === "mock"
-        ? "Mock telemetry: receipt-to-render measurement"
-        : "Live telemetry: browser receipt-to-render measurement"
-      : latestEvent
-        ? "Measuring the latest telemetry event"
-        : "Waiting for telemetry timing";
+  const measurementSource = measurementMatchesLatestEvent
+    ? renderMeasurement.source === "mock"
+      ? "Mock telemetry: receipt-to-render measurement"
+      : "Live telemetry: browser receipt-to-render measurement"
+    : latestEvent
+      ? "Measuring the latest telemetry event"
+      : "Waiting for telemetry timing";
 
   return (
     <section className="space-y-6">
@@ -97,6 +94,12 @@ export default function Dashboard() {
           Endpoint transactions depend on telemetry availability.
         </p>
       </div>
+
+      {/* Day 22 — High-Priority Toast and Banner Notifications */}
+      <HighPriorityNotifications
+        events={transactions}
+        isMockMode={isMockMode}
+      />
 
       {/* Incident Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -151,8 +154,14 @@ export default function Dashboard() {
       {/* Day 17 — Global Enforcement Demo Control */}
       <EnforcementToggle />
 
+      {/* Day 18 — Blocked Attacks Metrics and Event Stream */}
+      <BlockedAttacksLiveStream />
+
       {/* Day 11 — Attack Distribution Over Time */}
       <AttackDistributionChart />
+
+      {/* Day 21 — Virtualized Incident List */}
+      <VirtualizedIncidentList />
 
       {/* API Endpoint Activity */}
       <section className="space-y-4">

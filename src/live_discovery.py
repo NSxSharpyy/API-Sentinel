@@ -1,3 +1,4 @@
+
 """
 Live Shadow API Discovery
 
@@ -11,7 +12,6 @@ and classifies each observed endpoint as:
 
 from typing import Any, Dict, Iterable, List, Tuple
 
-from src.contract_differ import compare_route_to_contract
 from src.risk_scoring import EndpointRiskScorer
 
 
@@ -40,12 +40,8 @@ class LiveShadowDiscovery:
         Extract HTTP method and path pairs from the OpenAPI contract.
 
         Returns:
-            A list containing dictionaries with:
-            - method
-            - path
-            - deprecated
+            A list containing method, path, deprecated and inactive.
         """
-
         declared_routes = []
 
         paths = self.official_contract.get("paths", {})
@@ -54,12 +50,10 @@ class LiveShadowDiscovery:
             return declared_routes
 
         for path, path_item in paths.items():
-
             if not isinstance(path_item, dict):
                 continue
 
             for method, operation in path_item.items():
-
                 normalized_method = str(method).strip().upper()
 
                 if normalized_method not in self.SUPPORTED_METHODS:
@@ -72,10 +66,8 @@ class LiveShadowDiscovery:
                     {
                         "method": normalized_method,
                         "path": str(path).strip(),
-                        "deprecated": operation.get(
-                            "deprecated",
-                            False,
-                        ),
+                        "deprecated": operation.get("deprecated", False),
+                        "inactive": operation.get("inactive", False),
                     }
                 )
 
@@ -86,21 +78,14 @@ class LiveShadowDiscovery:
         observed_route: Any,
     ) -> Tuple[str, str]:
         """
-        Normalize an observed route into:
-
-            (HTTP_METHOD, PATH)
+        Normalize an observed route into (HTTP_METHOD, PATH).
 
         Supported input formats:
-
             "/users"
-
             ("GET", "/users")
-
             {"method": "GET", "route": "/users"}
-
             {"method": "GET", "path": "/users"}
         """
-
         if isinstance(observed_route, tuple):
             if len(observed_route) != 2:
                 raise ValueError(
@@ -117,8 +102,7 @@ class LiveShadowDiscovery:
             )
 
         elif isinstance(observed_route, str):
-            # Backward compatibility:
-            # old callers can still provide route-only values.
+            # Backward compatibility for route-only callers.
             method = None
             route = observed_route
 
@@ -158,9 +142,7 @@ class LiveShadowDiscovery:
         declared_method: str,
         declared_path: str,
     ) -> bool:
-        """
-        Match an observed method/path against one declared contract route.
-        """
+        """Match an observed method/path against a declared contract route."""
 
         if observed_method and observed_method != declared_method:
             return False
@@ -171,9 +153,6 @@ class LiveShadowDiscovery:
         if normalized_observed == normalized_declared:
             return True
 
-        # Support OpenAPI path parameters such as:
-        # /users/{id}
-        # /orders/{order_id}
         observed_segments = normalized_observed.strip("/").split("/")
         declared_segments = normalized_declared.strip("/").split("/")
 
@@ -188,6 +167,8 @@ class LiveShadowDiscovery:
                 declared_segment.startswith("{")
                 and declared_segment.endswith("}")
             ):
+                if not observed_segment:
+                    return False
                 continue
 
             if observed_segment != declared_segment:
@@ -199,37 +180,15 @@ class LiveShadowDiscovery:
         self,
         observed_routes: Iterable[Any],
     ) -> List[Dict[str, str]]:
-        """
-        Analyze observed routes and return their classifications.
-
-        Method-aware input is preferred.
-
-        Examples:
-
-            [
-                ("GET", "/users"),
-                ("DELETE", "/users"),
-            ]
-
-        or:
-
-            [
-                {"method": "GET", "path": "/users"},
-                {"method": "DELETE", "path": "/users"},
-            ]
-
-        Route-only strings remain supported for backward compatibility.
-        """
+        """Classify observed routes against the official API contract."""
 
         if observed_routes is None:
             raise ValueError("observed_routes cannot be None")
 
         results = []
-
         declared_routes = self._extract_declared_routes()
 
         for observed_route in observed_routes:
-
             try:
                 method, route = self._normalize_observed_route(
                     observed_route
@@ -248,16 +207,18 @@ class LiveShadowDiscovery:
                 )
             ]
 
-            if matching_contracts:
+            if not matching_contracts:
+                status = "SHADOW_API"
+            else:
                 contract = matching_contracts[0]
 
-                if contract["deprecated"] is True:
+                if (
+                    contract["deprecated"] is True
+                    or contract["inactive"] is True
+                ):
                     status = "ZOMBIE_API"
                 else:
                     status = "OFFICIAL_API"
-
-            else:
-                status = "SHADOW_API"
 
             result = {
                 "route": route,
@@ -304,14 +265,10 @@ class LiveShadowDiscovery:
         observed_routes: Iterable[Any],
         scorer: EndpointRiskScorer = None,
     ) -> List[Dict[str, Any]]:
-            """
-            Discover observed APIs and attach risk scores.
+        """Discover observed APIs and attach risk scores."""
 
-        Existing discovery classification remains unchanged.
-        """
+        risk_scorer = scorer or EndpointRiskScorer()
 
-            risk_scorer = scorer or EndpointRiskScorer()
+        discovered_endpoints = self.discover(observed_routes)
 
-            discovered_endpoints = self.discover(observed_routes)
-
-            return risk_scorer.score_endpoints(discovered_endpoints)
+        return risk_scorer.score_endpoints(discovered_endpoints)

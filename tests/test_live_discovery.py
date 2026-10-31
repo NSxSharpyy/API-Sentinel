@@ -54,7 +54,6 @@ class TestLiveShadowDiscovery(unittest.TestCase):
             "/old-api",
         ]
 
-        # Initialize discovery object for every test
         self.discovery = LiveShadowDiscovery(
             self.official_contract
         )
@@ -115,25 +114,10 @@ class TestLiveShadowDiscovery(unittest.TestCase):
             for item in results
         }
 
-        self.assertEqual(
-            status_map["/users"],
-            "OFFICIAL_API",
-        )
-
-        self.assertEqual(
-            status_map["/orders"],
-            "OFFICIAL_API",
-        )
-
-        self.assertEqual(
-            status_map["/admin/debug"],
-            "SHADOW_API",
-        )
-
-        self.assertEqual(
-            status_map["/old-api"],
-            "ZOMBIE_API",
-        )
+        self.assertEqual(status_map["/users"], "OFFICIAL_API")
+        self.assertEqual(status_map["/orders"], "OFFICIAL_API")
+        self.assertEqual(status_map["/admin/debug"], "SHADOW_API")
+        self.assertEqual(status_map["/old-api"], "ZOMBIE_API")
 
     def test_shadow_api_detection(self):
         shadows = self.discovery.discover_shadow_apis(
@@ -152,6 +136,35 @@ class TestLiveShadowDiscovery(unittest.TestCase):
         self.assertEqual(len(zombies), 1)
         self.assertEqual(zombies[0]["route"], "/old-api")
         self.assertEqual(zombies[0]["status"], "ZOMBIE_API")
+
+    def test_inactive_endpoint_is_classified_as_zombie(self):
+        contract = {
+            "paths": {
+                "/api/v1/legacy": {
+                    "get": {
+                        "inactive": True,
+                    }
+                }
+            }
+        }
+
+        discovery = LiveShadowDiscovery(contract)
+
+        results = discovery.discover([
+            ("GET", "/api/v1/legacy"),
+        ])
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(
+            results[0]["status"],
+            "ZOMBIE_API",
+        )
+
+        zombies = discovery.discover_zombie_apis([
+            ("GET", "/api/v1/legacy"),
+        ])
+
+        self.assertEqual(len(zombies), 1)
 
     def test_empty_routes(self):
         results = self.discovery.discover([])

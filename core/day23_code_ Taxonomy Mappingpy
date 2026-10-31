@@ -1,0 +1,57 @@
+# core/day23_code_freeze_tests.py
+"""
+Day 23 Master Milestone: Detection & Rate Limiting Integrated Code Freeze Verification Suite.
+"""
+import unittest
+import json
+import time
+from day19_rate_limiter import InMemoryRateLimiter
+from day20_token_bucket import BehavioralTokenBucket
+
+class TestDetectionAndRateLimitingCodeFreeze(unittest.TestCase):
+    def setUp(self):
+        # Action A: Initialize the real Day 19 In-Memory Counters database matrix instance
+        self.atomic_counter_limiter = InMemoryRateLimiter()
+        
+        # Action B: Initialize the real Day 20 Dynamic Token Bucket allocation model instance
+        self.dynamic_token_bucket = BehavioralTokenBucket(bucket_capacity=3, refill_rate_per_sec=1.0)
+        
+        self.test_session_token = "sess_harish_freeze_934371"
+
+    def test_day19_in_memory_counter_threshold_enforcement(self):
+        """Boundary T: Exercise the atomic transaction loop increments to enforce structural bursts blocking limits."""
+        for idx in range(5):
+            res = self.atomic_counter_limiter.process_request_rate(self.test_session_token)
+            self.assertEqual(res["rate_limit_status"], "REQUEST_ALLOWED_CLEAN")
+            
+        breach_res = self.atomic_counter_limiter.process_request_rate(self.test_session_token)
+        self.assertEqual(breach_res["rate_limit_status"], "RATE_LIMIT_EXCEEDED_HTTP_429")
+        self.assertTrue(breach_res["is_throttled"])
+
+    def test_day20_token_bucket_exhaustion_and_refill_lifecycle(self):
+        """Boundary U: Exercise the dynamic capacity allocation token bounds mapping consumption verification models."""
+        for idx in range(3):
+            res = self.dynamic_token_bucket.process_incoming_request(self.test_session_token)
+            self.assertEqual(res["rate_limiter_status"], "REQUEST_ALLOWED_CLEAN")
+            
+        exhausted_res = self.dynamic_token_bucket.process_incoming_request(self.test_session_token)
+        self.assertEqual(exhausted_res["rate_limiter_status"], "RATE_LIMIT_EXCEEDED_HTTP_429")
+        
+        time.sleep(1.0)
+        
+        recovered_res = self.dynamic_token_bucket.process_incoming_request(self.test_session_token)
+        self.assertEqual(recovered_res["rate_limiter_status"], "REQUEST_ALLOWED_CLEAN")
+
+if __name__ == "__main__":
+    print("Executing Day 23 Detection & Rate Limiting Integrated Engine Master Code Freeze Suite Validation...\n")
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestDetectionAndRateLimitingCodeFreeze)
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+    
+    freeze_telemetry_log = {
+        "integrated_tests_executed": result.testsRun,
+        "failures_count": len(result.failures),
+        "errors_count": len(result.errors),
+        "detection_rate_limiting_code_freeze_status": "SUCCESSFULLY_LOCKED_AND_FROZEN" if result.wasSuccessful() else "FAILED"
+    }
+    print("\nFinal Day 23 Master Code Freeze Telemetry Report:\n", json.dumps(freeze_telemetry_log, indent=4))

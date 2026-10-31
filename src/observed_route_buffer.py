@@ -1,7 +1,7 @@
 ﻿from datetime import datetime, timezone
 from threading import Lock
 
-from src.route_normalizer import normalize_route
+from src.route_cache import normalize_route_cached
 
 
 class ObservedRouteBuffer:
@@ -19,7 +19,7 @@ class ObservedRouteBuffer:
             raise ValueError("HTTP method must be a non-empty string.")
 
         method = method.strip().upper()
-        route = normalize_route(url)
+        route = normalize_route_cached(url)
         key = (method, route)
 
         with self._lock:

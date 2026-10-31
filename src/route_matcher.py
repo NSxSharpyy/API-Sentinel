@@ -1,4 +1,4 @@
-from .route_normalizer import normalize_route
+from .route_cache import normalize_route_cached
 
 
 class RouteMatcher:
@@ -27,7 +27,7 @@ class RouteMatcher:
                 continue
 
             try:
-                normalized_path = normalize_route(path)
+                normalized_path = normalize_route_cached(path)
                 self.declared_routes.add(
                     (method, normalized_path)
                 )
@@ -51,7 +51,7 @@ class RouteMatcher:
         if not observed_route.strip():
             raise ValueError("Observed route cannot be empty.")
 
-        normalized_route = normalize_route(observed_route)
+        normalized_route = normalize_route_cached(observed_route)
 
         key = (normalized_method, normalized_route)
 

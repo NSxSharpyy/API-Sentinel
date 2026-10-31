@@ -1,0 +1,1317 @@
+{
+  "audit_scope": [
+    "API response bodies",
+    "SQLite customer and invoice fields",
+    "Docker Compose service logs"
+  ],
+  "checks": {
+    "api": [
+      {
+        "check": "audit_profile",
+        "expected_status": 200,
+        "http_status": 200,
+        "passed": true,
+        "payload_matches": 1
+      },
+      {
+        "check": "audit_invoice_authenticated",
+        "expected_status": 200,
+        "http_status": 200,
+        "passed": true,
+        "payload_matches": 50
+      },
+      {
+        "check": "foreign_invoice_authenticated",
+        "expected_status": 200,
+        "http_status": 200,
+        "passed": true,
+        "payload_matches": 50
+      },
+      {
+        "check": "legacy_invoice_unauthenticated",
+        "expected_status": 200,
+        "http_status": 200,
+        "passed": true,
+        "payload_matches": 50
+      }
+    ],
+    "database": {
+      "customer_found": true,
+      "invoice_found": true,
+      "journal_mode": "delete",
+      "wal_file_present": false
+    },
+    "insertion": {
+      "passed": true
+    },
+    "logs": {
+      "command_succeeded": true,
+      "line_limit_per_service": 1000,
+      "lines_inspected": 4000,
+      "payload_matches": 0,
+      "services_inspected": [
+        "auth",
+        "user",
+        "order",
+        "billing"
+      ]
+    },
+    "preflight": {
+      "customer_id": 0,
+      "invoice_id": 0,
+      "order_id": 0,
+      "username": 0
+    }
+  },
+  "cleanup": {
+    "attempted": true,
+    "complete": true,
+    "deleted": {
+      "customer": 1,
+      "invoice": 1,
+      "order": 1
+    },
+    "remaining": {
+      "customer": 0,
+      "invoice": 0,
+      "order": 0
+    }
+  },
+  "completed_at": "2026-10-31T19:50:43.747625+00:00",
+  "day": 25,
+  "finding_count": 202,
+  "findings": [
+    {
+      "category": "emails",
+      "location": "api_response:audit_profile",
+      "marker": "PII-TEST-EMAIL-000",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-000",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-001",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-002",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-003",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-004",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-005",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-006",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-007",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-008",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-CARD-009",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-000",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-001",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-002",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-003",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-004",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-005",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-006",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-007",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-008",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-SSN-009",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-000",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-001",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-002",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-003",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-004",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-005",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-006",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-007",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-008",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-009",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-000",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-001",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-002",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-003",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-004",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-005",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-006",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-007",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-008",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-009",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-000",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-001",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-002",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-003",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-004",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-005",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-006",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-007",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-008",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:audit_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-009",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-000",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-001",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-002",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-003",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-004",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-005",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-006",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-007",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-008",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-CARD-009",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-000",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-001",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-002",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-003",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-004",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-005",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-006",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-007",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-008",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-SSN-009",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-000",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-001",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-002",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-003",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-004",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-005",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-006",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-007",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-008",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-TOKEN-009",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-000",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-001",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-002",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-003",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-004",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-005",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-006",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-007",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-008",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-EMAIL-009",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-000",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-001",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-002",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-003",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-004",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-005",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-006",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-007",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-008",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:foreign_invoice_authenticated",
+      "marker": "PII-TEST-PHONE-009",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-000",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-001",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-002",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-003",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-004",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-005",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-006",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-007",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-008",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-CARD-009",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-000",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-001",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-002",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-003",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-004",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-005",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-006",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-007",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-008",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-SSN-009",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-000",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-001",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-002",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-003",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-004",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-005",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-006",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-007",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-008",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-TOKEN-009",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-000",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-001",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-002",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-003",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-004",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-005",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-006",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-007",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-008",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-EMAIL-009",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-000",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-001",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-002",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-003",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-004",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-005",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-006",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-007",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-008",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "api_response:legacy_invoice_unauthenticated",
+      "marker": "PII-TEST-PHONE-009",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:customers.email",
+      "marker": "PII-TEST-EMAIL-000",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-000",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-001",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-002",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-003",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-004",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-005",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-006",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-007",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-008",
+      "match_count": 1
+    },
+    {
+      "category": "credit_cards",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-CARD-009",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-000",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-001",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-002",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-003",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-004",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-005",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-006",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-007",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-008",
+      "match_count": 1
+    },
+    {
+      "category": "ssns",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-SSN-009",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-000",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-001",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-002",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-003",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-004",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-005",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-006",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-007",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-008",
+      "match_count": 1
+    },
+    {
+      "category": "bearer_tokens",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-TOKEN-009",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-000",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-001",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-002",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-003",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-004",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-005",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-006",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-007",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-008",
+      "match_count": 1
+    },
+    {
+      "category": "emails",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-EMAIL-009",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-000",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-001",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-002",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-003",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-004",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-005",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-006",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-007",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-008",
+      "match_count": 1
+    },
+    {
+      "category": "phone_numbers",
+      "location": "database:invoices.billing_address",
+      "marker": "PII-TEST-PHONE-009",
+      "match_count": 1
+    }
+  ],
+  "fixture_categories": {
+    "bearer_tokens": 10,
+    "credit_cards": 10,
+    "emails": 10,
+    "phone_numbers": 10,
+    "ssns": 10
+  },
+  "fixture_payload_count": 50,
+  "interpretation": "Payload matches indicate plaintext exposure at the recorded locations.",
+  "limitations": [
+    "API response bodies were inspected; this was not a packet capture.",
+    "SQLite database fields were queried; raw disk blocks were not scanned.",
+    "Only the latest 1000 lines per selected service were inspected.",
+    "WAL presence and journal mode were recorded; WAL bytes were not separately scanned."
+  ],
+  "recovered_error_type": "TimeoutExpired",
+  "recovery_note": "Initial Compose log aggregation timed out; log inspection was completed separately against each container.",
+  "started_at": "2026-10-31T19:28:24.653886+00:00",
+  "status": "COMPLETE",
+  "title": "Plaintext PII Leakage Inspection"
+}

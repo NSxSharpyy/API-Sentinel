@@ -35,6 +35,11 @@ from src.zombie_alerts import (
     save_zombie_alerts,
 )
 
+from src.inventory_exporter import (
+    build_inventory_catalog,
+    export_inventory_catalog,
+)
+
 
 def parse_openapi_spec(file_path: str) -> dict:
     """Load and validate an OpenAPI JSON or YAML specification."""
@@ -242,6 +247,17 @@ def main() -> None:
         help="Output path for Zombie API traffic alerts",
     )
 
+    parser.add_argument(
+    "--inventory-json-report",
+    default="reports/api_inventory.json",
+    help="Output path for the complete API inventory JSON export",
+    )
+
+    parser.add_argument(
+    "--inventory-csv-report",
+    default="reports/api_inventory.csv",
+    help="Output path for the complete API inventory CSV export",
+    )
     args = parser.parse_args()
 
     # ==========================================
@@ -338,6 +354,7 @@ def main() -> None:
         # ==========================================
 
         runtime_log_path = Path(args.runtime_log)
+        runtime_events = []
 
         if runtime_log_path.is_file():
 
@@ -490,6 +507,53 @@ def main() -> None:
                 "Zombie API alert detection skipped because "
                 "runtime events are unavailable."
             )
+
+                    # ==========================================
+        # PHASE 4: API INVENTORY EXPORT
+        # ==========================================
+
+        inventory_catalog = build_inventory_catalog(
+            endpoints=endpoints,
+            approved_apis=approved,
+            runtime_events=runtime_events,
+            api_name=spec.get("info", {}).get(
+                "title",
+                "Unknown API",
+            ),
+            openapi_version=spec.get("openapi"),
+        )
+
+        json_inventory_path, csv_inventory_path = (
+            export_inventory_catalog(
+                catalog=inventory_catalog,
+                json_path=args.inventory_json_report,
+                csv_path=args.inventory_csv_report,
+            )
+        )
+
+        print("\n=== API-Sentinel: Inventory Export ===")
+        print(
+            f"Total inventory endpoints: "
+            f"{inventory_catalog['total_endpoints']}"
+        )
+        print(
+            f"Approved endpoints: "
+            f"{inventory_catalog['approved_endpoints']}"
+        )
+        print(
+            f"Unapproved endpoints: "
+            f"{inventory_catalog['unapproved_endpoints']}"
+        )
+        print(
+            f"Shadow endpoints: "
+            f"{inventory_catalog['shadow_endpoints']}"
+        )
+        print(
+            f"JSON inventory saved to: {json_inventory_path}"
+        )
+        print(
+            f"CSV inventory saved to: {csv_inventory_path}"
+        )
 
     except (
         FileNotFoundError,

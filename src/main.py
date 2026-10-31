@@ -40,6 +40,14 @@ from src.inventory_exporter import (
     export_inventory_catalog,
 )
 
+from src.route_matcher import RouteMatcher
+from src.shadow_detector import ShadowAPIDetector
+
+from src.owasp_mapper import (
+    map_owasp_api9_findings,
+    save_owasp_api9_report,
+)
+
 
 def parse_openapi_spec(file_path: str) -> dict:
     """Load and validate an OpenAPI JSON or YAML specification."""
@@ -143,7 +151,6 @@ def build_approved_runtime_endpoints(
     approved_endpoints = []
 
     for method, path in approved:
-
         escaped_path = re.escape(path)
 
         pattern = re.sub(
@@ -248,16 +255,23 @@ def main() -> None:
     )
 
     parser.add_argument(
-    "--inventory-json-report",
-    default="reports/api_inventory.json",
-    help="Output path for the complete API inventory JSON export",
+        "--owasp-api9-report",
+        default="reports/owasp_api9_findings.json",
+        help="Output path for OWASP API9 mapping report",
     )
 
     parser.add_argument(
-    "--inventory-csv-report",
-    default="reports/api_inventory.csv",
-    help="Output path for the complete API inventory CSV export",
+        "--inventory-json-report",
+        default="reports/api_inventory.json",
+        help="Output path for the complete API inventory JSON export",
     )
+
+    parser.add_argument(
+        "--inventory-csv-report",
+        default="reports/api_inventory.csv",
+        help="Output path for the complete API inventory CSV export",
+    )
+
     args = parser.parse_args()
 
     # ==========================================
@@ -356,6 +370,11 @@ def main() -> None:
         runtime_log_path = Path(args.runtime_log)
         runtime_events = []
 
+        # Initialize findings so API9 report can also
+        # be generated when runtime logs are unavailable.
+        shadow_findings = []
+        zombie_findings = []
+
         if runtime_log_path.is_file():
 
             runtime_events = load_runtime_events(
@@ -441,7 +460,7 @@ def main() -> None:
             # PHASE 4: ZOMBIE API TRAFFIC ALERTS
             # ==========================================
 
-            observed_zombie_routes = [
+            observed_routes = [
                 {
                     "method": event["method"],
                     "route": event["path"],
@@ -452,7 +471,7 @@ def main() -> None:
             zombie_detector = ZombieAPIDetector(spec)
 
             zombie_findings = zombie_detector.analyze(
-                observed_zombie_routes
+                observed_routes
             )
 
             zombie_alert_report = generate_zombie_alerts(
@@ -491,6 +510,29 @@ def main() -> None:
                     f"| Occurrences: {alert['occurrence_count']}"
                 )
 
+            # ==========================================
+            # PHASE 5: SHADOW API DETECTION
+            # ==========================================
+
+            official_contracts = [
+                {
+                    "method": endpoint["method"],
+                    "path": endpoint["path"],
+                }
+                for endpoint in endpoints
+            ]
+
+            route_matcher = RouteMatcher(official_contracts)
+
+            shadow_detector = ShadowAPIDetector(route_matcher)
+
+            shadow_findings = shadow_detector.detect(
+                observed_routes
+            )
+
+            print("\n=== API-Sentinel: Shadow API Detection ===")
+            print(f"Shadow API findings: {len(shadow_findings)}")
+
         else:
 
             print(
@@ -508,8 +550,56 @@ def main() -> None:
                 "runtime events are unavailable."
             )
 
-                    # ==========================================
-        # PHASE 4: API INVENTORY EXPORT
+            print(
+                "Shadow API detection skipped because "
+                "runtime events are unavailable."
+            )
+
+        # ==========================================
+        # PHASE 6: OWASP API9 MAPPING
+        # ==========================================
+
+        all_api9_findings = (
+            shadow_findings + zombie_findings
+        )
+
+        owasp_api9_report = map_owasp_api9_findings(
+            all_api9_findings
+        )
+
+        owasp_report_path = save_owasp_api9_report(
+            owasp_api9_report,
+            args.owasp_api9_report,
+        )
+
+        print("\n=== API-Sentinel: OWASP API9 Mapping ===")
+
+        print(
+    f"Shadow API observations: "
+    f"{owasp_api9_report['shadow_findings']}"
+    )
+
+        print(
+            f"Zombie API observations: "
+            f"{owasp_api9_report['zombie_findings']}"
+        )
+
+        print(
+            f"Total OWASP API9 observations: "
+            f"{owasp_api9_report['total_findings']}"
+        )
+
+        print(
+            f"Unique affected endpoints: "
+            f"{owasp_api9_report['unique_endpoints']}"
+        )
+
+        print(
+            f"OWASP API9 report saved to: {owasp_report_path}"
+        )
+
+        # ==========================================
+        # PHASE 7: API INVENTORY EXPORT
         # ==========================================
 
         inventory_catalog = build_inventory_catalog(
@@ -532,25 +622,31 @@ def main() -> None:
         )
 
         print("\n=== API-Sentinel: Inventory Export ===")
+
         print(
             f"Total inventory endpoints: "
             f"{inventory_catalog['total_endpoints']}"
         )
+
         print(
             f"Approved endpoints: "
             f"{inventory_catalog['approved_endpoints']}"
         )
+
         print(
             f"Unapproved endpoints: "
             f"{inventory_catalog['unapproved_endpoints']}"
         )
+
         print(
             f"Shadow endpoints: "
             f"{inventory_catalog['shadow_endpoints']}"
         )
+
         print(
             f"JSON inventory saved to: {json_inventory_path}"
         )
+
         print(
             f"CSV inventory saved to: {csv_inventory_path}"
         )

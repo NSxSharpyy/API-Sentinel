@@ -6,8 +6,10 @@ Combines:
 - OpenAPI-declared endpoints
 - Approved API inventory entries
 - Runtime-observed endpoints
+- Confirmed Shadow API findings
+- Confirmed Zombie API findings
 
-The same catalog records are written to JSON and CSV.
+Adds discovery-state and OWASP-aligned inventory risk tags.
 """
 
 from __future__ import annotations
@@ -32,7 +34,51 @@ CSV_FIELDS = [
     "is_declared",
     "runtime_observation_count",
     "discovery_state",
+    "risk_rating",
 ]
+
+
+RISK_RATINGS = {
+    "APPROVED": "LOW",
+    "UNAPPROVED": "MEDIUM",
+    "SHADOW_API": "HIGH",
+    "ZOMBIE_API": "HIGH",
+}
+
+
+def _normalize_findings(
+    findings: list[dict[str, Any]] | None,
+    expected_status: str,
+) -> set[tuple[str, str]]:
+    """Extract normalized method/path pairs from confirmed findings."""
+
+    if findings is None:
+        return set()
+
+    if not isinstance(findings, list):
+        raise ValueError(
+            f"{expected_status} findings must be a list."
+        )
+
+    normalized = set()
+
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+
+        method = finding.get("method")
+        path = finding.get("route", finding.get("path"))
+
+        if not isinstance(method, str) or not isinstance(path, str):
+            continue
+
+        method = method.strip().upper()
+        path = normalize_api_path(path)
+
+        if method and path:
+            normalized.add((method, path))
+
+    return normalized
 
 
 def build_inventory_catalog(
@@ -41,8 +87,10 @@ def build_inventory_catalog(
     runtime_events: list[dict[str, Any]] | None = None,
     api_name: str = "Unknown API",
     openapi_version: str | None = None,
+    shadow_findings: list[dict[str, Any]] | None = None,
+    zombie_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Build a unified API inventory catalog."""
+    """Build a unified, risk-tagged API inventory catalog."""
 
     if not isinstance(endpoints, list):
         raise ValueError("Endpoints must be a list.")
@@ -55,6 +103,16 @@ def build_inventory_catalog(
 
     if not isinstance(runtime_events, list):
         raise ValueError("Runtime events must be a list.")
+
+    shadow_keys = _normalize_findings(
+        shadow_findings,
+        "Shadow",
+    )
+
+    zombie_keys = _normalize_findings(
+        zombie_findings,
+        "Zombie",
+    )
 
     catalog: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -89,7 +147,7 @@ def build_inventory_catalog(
         method = method.strip().upper()
         path = normalize_api_path(path)
 
-        if not method:
+        if not method or not path:
             continue
 
         key = (method, path)
@@ -124,11 +182,11 @@ def build_inventory_catalog(
             continue
 
         method = method.strip().upper()
+        path = normalize_api_path(path)
 
-        if not method:
+        if not method or not path:
             continue
 
-        path = normalize_api_path(path)
         key = (method, path)
 
         record = catalog.setdefault(
@@ -151,20 +209,40 @@ def build_inventory_catalog(
     for key in sorted(catalog):
         record = catalog[key]
 
-        if not record["is_declared"] and not record["is_approved"]:
+        # Confirmed Zombie finding has highest priority.
+        if key in zombie_keys:
+            state = "ZOMBIE_API"
+
+        # Confirmed Shadow finding comes next.
+        elif key in shadow_keys:
             state = "SHADOW_API"
-        elif not record["is_approved"]:
+
+        elif not record["is_approved"] and record["is_declared"]:
             state = "UNAPPROVED"
-        else:
+
+        elif record["is_approved"]:
             state = "APPROVED"
+
+        else:
+            # Runtime-only endpoints remain Shadow candidates.
+            # A confirmed finding is required for SHADOW_API.
+            state = "UNCLASSIFIED"
 
         records.append({
             **record,
             "discovery_state": state,
+            "risk_rating": RISK_RATINGS.get(
+                state,
+                "UNASSESSED",
+            ),
         })
 
     state_counts = Counter(
         record["discovery_state"] for record in records
+    )
+
+    risk_counts = Counter(
+        record["risk_rating"] for record in records
     )
 
     return {
@@ -175,6 +253,9 @@ def build_inventory_catalog(
         "approved_endpoints": state_counts.get("APPROVED", 0),
         "unapproved_endpoints": state_counts.get("UNAPPROVED", 0),
         "shadow_endpoints": state_counts.get("SHADOW_API", 0),
+        "zombie_endpoints": state_counts.get("ZOMBIE_API", 0),
+        "unclassified_endpoints": state_counts.get("UNCLASSIFIED", 0),
+        "risk_summary": dict(risk_counts),
         "total_runtime_observations": sum(
             record["runtime_observation_count"]
             for record in records

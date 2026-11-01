@@ -1,5 +1,6 @@
 
 from pathlib import Path
+
 import argparse
 import json
 import re
@@ -370,8 +371,6 @@ def main() -> None:
         runtime_log_path = Path(args.runtime_log)
         runtime_events = []
 
-        # Initialize findings so API9 report can also
-        # be generated when runtime logs are unavailable.
         shadow_findings = []
         zombie_findings = []
 
@@ -559,9 +558,7 @@ def main() -> None:
         # PHASE 6: OWASP API9 MAPPING
         # ==========================================
 
-        all_api9_findings = (
-            shadow_findings + zombie_findings
-        )
+        all_api9_findings = shadow_findings + zombie_findings
 
         owasp_api9_report = map_owasp_api9_findings(
             all_api9_findings
@@ -575,9 +572,9 @@ def main() -> None:
         print("\n=== API-Sentinel: OWASP API9 Mapping ===")
 
         print(
-    f"Shadow API observations: "
-    f"{owasp_api9_report['shadow_findings']}"
-    )
+            f"Shadow API observations: "
+            f"{owasp_api9_report['shadow_findings']}"
+        )
 
         print(
             f"Zombie API observations: "
@@ -599,7 +596,7 @@ def main() -> None:
         )
 
         # ==========================================
-        # PHASE 7: API INVENTORY EXPORT
+        # PHASE 7: RISK-TAGGED INVENTORY EXPORT
         # ==========================================
 
         inventory_catalog = build_inventory_catalog(
@@ -611,6 +608,8 @@ def main() -> None:
                 "Unknown API",
             ),
             openapi_version=spec.get("openapi"),
+            shadow_findings=shadow_findings,
+            zombie_findings=zombie_findings,
         )
 
         json_inventory_path, csv_inventory_path = (
@@ -621,7 +620,7 @@ def main() -> None:
             )
         )
 
-        print("\n=== API-Sentinel: Inventory Export ===")
+        print("\n=== API-Sentinel: Risk-Tagged Inventory Export ===")
 
         print(
             f"Total inventory endpoints: "
@@ -644,7 +643,24 @@ def main() -> None:
         )
 
         print(
-            f"JSON inventory saved to: {json_inventory_path}"
+            f"Zombie endpoints: "
+            f"{inventory_catalog['zombie_endpoints']}"
+        )
+
+        print(
+            f"Unclassified endpoints: "
+            f"{inventory_catalog['unclassified_endpoints']}"
+        )
+
+        print("\nRisk Summary:")
+
+        for risk, count in sorted(
+            inventory_catalog["risk_summary"].items()
+        ):
+            print(f"{risk}: {count}")
+
+        print(
+            f"\nJSON inventory saved to: {json_inventory_path}"
         )
 
         print(

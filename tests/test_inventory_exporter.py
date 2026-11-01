@@ -99,7 +99,7 @@ def test_unapproved_declared_endpoint_is_classified(
     assert endpoint["is_declared"] is True
 
 
-def test_runtime_only_endpoint_is_shadow(
+def test_runtime_only_endpoint_is_unclassified(
     approved_apis,
     runtime_events,
 ):
@@ -114,7 +114,8 @@ def test_runtime_only_endpoint_is_shadow(
         if item["path"] == "/api/legacy"
     )
 
-    assert endpoint["discovery_state"] == "SHADOW_API"
+    assert endpoint["discovery_state"] == "UNCLASSIFIED"
+    assert endpoint["risk_rating"] == "UNASSESSED"
     assert endpoint["is_declared"] is False
 
 
@@ -220,6 +221,56 @@ def test_export_creates_missing_directories(
         json_path,
         csv_path,
     )
-
     assert json_path.is_file()
     assert csv_path.is_file()
+
+def test_confirmed_shadow_endpoint_gets_high_risk(
+    approved_apis,
+    runtime_events,
+):
+    catalog = build_inventory_catalog(
+        endpoints=[],
+        approved_apis=approved_apis,
+        runtime_events=runtime_events,
+        shadow_findings=[
+            {
+                "method": "DELETE",
+                "route": "/api/legacy",
+                "status": "SHADOW_API",
+            }
+        ],
+    )
+
+    endpoint = next(
+        item for item in catalog["endpoints"]
+        if item["path"] == "/api/legacy"
+    )
+
+    assert endpoint["discovery_state"] == "SHADOW_API"
+    assert endpoint["risk_rating"] == "HIGH"
+
+
+def test_confirmed_zombie_endpoint_gets_high_risk(
+    approved_apis,
+    runtime_events,
+):
+    catalog = build_inventory_catalog(
+        endpoints=[],
+        approved_apis=approved_apis,
+        runtime_events=runtime_events,
+        zombie_findings=[
+            {
+                "method": "DELETE",
+                "route": "/api/legacy",
+                "status": "ZOMBIE_API",
+            }
+        ],
+    )
+
+    endpoint = next(
+        item for item in catalog["endpoints"]
+        if item["path"] == "/api/legacy"
+    )
+
+    assert endpoint["discovery_state"] == "ZOMBIE_API"
+    assert endpoint["risk_rating"] == "HIGH"

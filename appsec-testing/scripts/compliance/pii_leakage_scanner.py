@@ -396,17 +396,19 @@ def inspect_logs(payloads):
 
 
 
-def write_report(report):
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = REPORT_PATH.with_suffix(".json.tmp")
+def write_report(report, destination=None):
+    destination = destination if destination is not None else REPORT_PATH
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
     temporary.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    temporary.replace(REPORT_PATH)
+    temporary.replace(destination)
 
 
-def run_audit():
+def run_audit(report_path=None):
+    destination = report_path if report_path is not None else REPORT_PATH
     fixture, payloads = load_fixture()
     report = {
         "day": 25,
@@ -488,7 +490,12 @@ def run_audit():
         if report["findings"]
         else "No fixture matches were recorded in the inspected sources."
     )
-    write_report(report)
+    write_report(report, destination)
+
+    try:
+        display_report_path = str(destination.relative_to(APPSEC_ROOT))
+    except ValueError:
+        display_report_path = str(destination)
 
     print(json.dumps({
         "status": report["status"],
@@ -498,7 +505,7 @@ def run_audit():
         "database": report["checks"].get("database", {}),
         "logs": report["checks"].get("logs", {}),
         "cleanup": report["cleanup"],
-        "report_path": str(REPORT_PATH.relative_to(APPSEC_ROOT)),
+        "report_path": display_report_path,
     }, indent=2))
 
     return 0 if report["status"] == "COMPLETE" else 1
@@ -511,7 +518,17 @@ def main():
         action="store_true",
         help="Insert dedicated synthetic audit records and run live inspection.",
     )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="Optional output report path; defaults to the standard Day 25 report.",
+    )
     args = parser.parse_args()
+
+    report_path = args.report
+    if report_path is not None and not report_path.is_absolute():
+        report_path = APPSEC_ROOT / report_path
 
     try:
         fixture, payloads = load_fixture()
@@ -520,7 +537,7 @@ def main():
             print(f"Loaded {len(payloads)} synthetic payloads.")
             print("No live API requests or database modifications were made.")
             return 0
-        return run_audit()
+        return run_audit(report_path=report_path)
     except Exception as exc:
         print(f"ERROR: {type(exc).__name__}", file=sys.stderr)
         return 1

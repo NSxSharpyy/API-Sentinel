@@ -279,13 +279,23 @@ def main():
         "--skip-method-enum", action="store_true",
         help="Skip the HTTP method enumeration phase",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Optional directory for this run's discovery log and report.",
+    )
     args = parser.parse_args()
 
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    output_dir = args.output_dir
+    log_path = output_dir / "discovery_scan.jsonl" if output_dir else LOG_PATH
+    report_path = output_dir / "discovery_report.json" if output_dir else REPORT_PATH
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Open in write mode to keep each run's evidence self-contained.
-    with LOG_PATH.open("w", encoding="utf-8") as handle:
+    with log_path.open("w", encoding="utf-8") as handle:
         with requests.Session() as session:
 
             wordlist_found = phase1_wordlist_probe(
@@ -332,16 +342,18 @@ def main():
         "methods_by_endpoint": method_results,
     }
 
-    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n",
-                           encoding="utf-8")
+    report_path.write_text(
+        json.dumps(report, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     print(f"\n{'=' * 50}")
     print(f"DISCOVERY COMPLETE: {total} candidate endpoints found")
     for service, paths in all_discovered.items():
         if paths:
             print(f"  {service}: {sorted(paths)}")
-    print(f"Report: {REPORT_PATH}")
-    print(f"Probe log: {LOG_PATH}")
+    print(f"Report: {report_path}")
+    print(f"Probe log: {log_path}")
     return 0
 
 

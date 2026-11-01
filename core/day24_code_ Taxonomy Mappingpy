@@ -1,57 +1,66 @@
-# core/day23_code_freeze_tests.py
+# core/day24_owasp_taxonomy.py
 """
-Day 23 Master Milestone: Detection & Rate Limiting Integrated Code Freeze Verification Suite.
+Day 24: OWASP Top 10 / API Top 10 Security Taxonomy Mapping & Threat Correlation Engine.
 """
-import unittest
 import json
-import time
-from day19_rate_limiter import InMemoryRateLimiter
-from day20_token_bucket import BehavioralTokenBucket
 
-class TestDetectionAndRateLimitingCodeFreeze(unittest.TestCase):
-    def setUp(self):
-        # Action A: Initialize the real Day 19 In-Memory Counters database matrix instance
-        self.atomic_counter_limiter = InMemoryRateLimiter()
-        
-        # Action B: Initialize the real Day 20 Dynamic Token Bucket allocation model instance
-        self.dynamic_token_bucket = BehavioralTokenBucket(bucket_capacity=3, refill_rate_per_sec=1.0)
-        
-        self.test_session_token = "sess_harish_freeze_934371"
+class OWASPTaxonomyMappingEngine:
+    def __init__(self):
+        # Establish the formal structural taxonomy lookup tables configuration matrices
+        self.taxonomy_dictionary = {
+            "BOLA_INTRUSION_ATTEMPT_SUSPECTED": "OWASP_API1:2023_Broken_Object_Level_Authorization",
+            "CRITICAL_CROSS_TENANT_BREACH_SUSPECTED": "OWASP_API1:2023_Broken_Object_Level_Authorization",
+            "DENIED_UNAUTHENTICATED_ANONYMOUS_SESSION": "OWASP_API2:2023_Broken_Authentication",
+            "CRYPTOGRAPHIC_SIGNATURE_MISMATCH_UNTRUSTED": "OWASP_API2:2023_Broken_Authentication",
+            "VOLUMETRIC_BURST_ALERT": "OWASP_API4:2023_Unrestricted_Resource_Consumption",
+            "RATE_LIMIT_EXCEEDED_HTTP_429": "OWASP_API4:2023_Unrestricted_Resource_Consumption",
+            "UNAUTHORIZED_ADMINISTRATIVE_ACCESS_DENIED_BFLA": "OWASP_API5:2023_Broken_Function_Level_Authorization"
+        }
 
-    def test_day19_in_memory_counter_threshold_enforcement(self):
-        """Boundary T: Exercise the atomic transaction loop increments to enforce structural bursts blocking limits."""
-        for idx in range(5):
-            res = self.atomic_counter_limiter.process_request_rate(self.test_session_token)
-            self.assertEqual(res["rate_limit_status"], "REQUEST_ALLOWED_CLEAN")
-            
-        breach_res = self.atomic_counter_limiter.process_request_rate(self.test_session_token)
-        self.assertEqual(breach_res["rate_limit_status"], "RATE_LIMIT_EXCEEDED_HTTP_429")
-        self.assertTrue(breach_res["is_throttled"])
+    def correlate_anomaly_to_taxonomy(self, incident_telemetry_payload: dict) -> dict:
+        """
+        Day 24 Target: Core validation mapping module that maps raw security engine string signature 
+        anomalies onto standard OWASP risk matrices tags to output compliant SOC analytics dashboards logs.
+        """
+        raw_signature = incident_telemetry_payload.get("security_alert_status", "UNKNOWN_SIGNATURE_VIOLATION")
+        impacted_session = incident_telemetry_payload.get("active_session_token", "anon_session_token")
 
-    def test_day20_token_bucket_exhaustion_and_refill_lifecycle(self):
-        """Boundary U: Exercise the dynamic capacity allocation token bounds mapping consumption verification models."""
-        for idx in range(3):
-            res = self.dynamic_token_bucket.process_incoming_request(self.test_session_token)
-            self.assertEqual(res["rate_limiter_status"], "REQUEST_ALLOWED_CLEAN")
-            
-        exhausted_res = self.dynamic_token_bucket.process_incoming_request(self.test_session_token)
-        self.assertEqual(exhausted_res["rate_limiter_status"], "RATE_LIMIT_EXCEEDED_HTTP_429")
-        
-        time.sleep(1.0)
-        
-        recovered_res = self.dynamic_token_bucket.process_incoming_request(self.test_session_token)
-        self.assertEqual(recovered_res["rate_limiter_status"], "REQUEST_ALLOWED_CLEAN")
+        # Execute mapping matching criteria parameters bounds checks loops data tracking
+        mapped_owasp_category = self.taxonomy_dictionary.get(
+            raw_signature, 
+            "OWASP_UNKNOWN:General_Security_Anomaly_Behavioral_Variance"
+        )
+
+        # Determine enterprise operational alert weight indexes values
+        if "API1" in mapped_owasp_category or "API5" in mapped_owasp_category:
+            threat_severity_level = "CRITICAL_SEVERITY_TIER_1"
+            dispatch_action = "DISPATCH_SOC_TIER_3_INCIDENT_RESPONDER"
+        elif "API4" in mapped_owasp_category:
+            threat_severity_level = "HIGH_SEVERITY_TIER_2"
+            dispatch_action = "ENGAGE_PERIMETER_AUTOMATED_THROTTLING_RATE_LIMITER"
+        else:
+            threat_severity_level = "LOW_SEVERITY_TIER_3"
+            dispatch_action = "RECORD_TO_FORENSIC_COLD_DATABASE"
+
+        return {
+            "taxonomy_evaluation_status": "MAPPING_CORRELATION_SUCCESSFUL",
+            "evaluated_session_token": impacted_session,
+            "raw_engine_signature_ingested": raw_signature,
+            "formal_owasp_canonical_mapping_tag": mapped_owasp_category,
+            "threat_matrix_severity_classification": threat_severity_level,
+            "recommended_operational_dispatch_routing": dispatch_action
+        }
 
 if __name__ == "__main__":
-    print("Executing Day 23 Detection & Rate Limiting Integrated Engine Master Code Freeze Suite Validation...\n")
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestDetectionAndRateLimitingCodeFreeze)
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
+    engine = OWASPTaxonomyMappingEngine()
     
-    freeze_telemetry_log = {
-        "integrated_tests_executed": result.testsRun,
-        "failures_count": len(result.failures),
-        "errors_count": len(result.errors),
-        "detection_rate_limiting_code_freeze_status": "SUCCESSFULLY_LOCKED_AND_FROZEN" if result.wasSuccessful() else "FAILED"
+    # Simulate an active critical cross-tenant data breach alert log packet data context parameters mapping check
+    mock_active_incident_log = {
+        "active_session_token": "token_harish_owaspday24_9343",
+        "security_alert_status": "CRITICAL_CROSS_TENANT_BREACH_SUSPECTED",
+        "mitigation_routing": "BLOCK_REQUEST"
     }
-    print("\nFinal Day 23 Master Code Freeze Telemetry Report:\n", json.dumps(freeze_telemetry_log, indent=4))
+    
+    print("Executing Day 24 OWASP Top 10 Taxonomy Mapping Engine Integrity Suite...\n")
+    master_taxonomy_report = engine.correlate_anomaly_to_taxonomy(mock_active_incident_log)
+    print("Final Canonical Taxonomy Telemetry Report:\n", json.dumps(master_taxonomy_report, indent=4))

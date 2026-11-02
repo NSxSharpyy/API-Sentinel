@@ -162,6 +162,8 @@ def summarize_phase(records, phase):
 
 def main():
     LOGS.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    report_path = LOGS / f"fail_open_report_{run_id}.json"
 
     report = {
         "schema_version": 1,
@@ -227,17 +229,17 @@ def main():
 
         # Open separate logs for each process.
         enforcer_log = open(
-            LOGS / "day20_test_enforcer.log",
+            LOGS / f"day20_test_enforcer_{run_id}.log",
             "w",
             encoding="utf-8",
         )
         wrapper_log = open(
-            LOGS / "day20_fail_open_wrapper.log",
+            LOGS / f"day20_fail_open_wrapper_{run_id}.log",
             "w",
             encoding="utf-8",
         )
         fail_closed_log = open(
-            LOGS / "day20_fail_closed_proxy.log",
+            LOGS / f"day20_fail_closed_proxy_{run_id}.log",
             "w",
             encoding="utf-8",
         )
@@ -671,13 +673,13 @@ def main():
             timezone.utc
         ).isoformat()
 
-        REPORT.write_text(
+        report_path.write_text(
             json.dumps(report, indent=2) + "\n",
             encoding="utf-8",
         )
 
         print(json.dumps(report, indent=2))
-        print(f"\nReport written to: {REPORT}")
+        print(f"\nReport written to: {report_path}")
 
     return 0 if report["overall"] == "PASS" else 1
 

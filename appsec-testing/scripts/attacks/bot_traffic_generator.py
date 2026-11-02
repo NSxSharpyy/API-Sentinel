@@ -117,9 +117,11 @@ def flood_worker(worker_id, target_url, method, duration, logger,
                  stop_event, run_id, token=None, payload=None):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     count = 0
-    deadline = time.monotonic() + duration
 
     with requests.Session() as session:
+        # Start the duration after session initialization.
+        deadline = time.monotonic() + duration
+
         while time.monotonic() < deadline and not stop_event.is_set():
             request_and_log(
                 session, logger,

@@ -69,3 +69,35 @@ are tracked separately.
 - The mock discovery-verification check confirms grader behavior against the deliberately imperfect fixture; it does not establish 100% recall for the real engine.
 - Validate the real engine against `appsec-testing/docs/shadow_zombie_manifest.md` before claiming the discovery milestone is complete.
 - Project-owner/team sign-off and change-set review remain outstanding.
+
+## Day 23 — Phase 3 enforcement milestone review
+
+**Date:** 2026-10-31
+
+- Added a controlled concurrent TC/eBPF SYN-drop workload using 50
+  concurrent workers and 100 connection attempts on loopback.
+- Added per-source-port evidence, kernel counter verification, filter
+  ownership checks, and conservative cleanup handling.
+- Added a fail-closed kernel certification evaluator covering Day 19
+  and Day 23 evidence.
+- Added the Phase 3 validation harness and enforcement certification
+  documentation.
+- Hardened Day 20–22 evidence generation with run-specific reports
+  and logs to prevent stale evidence from being reused.
+- Added regression coverage for invalid Boolean command return codes.
+- Added proper command-line help handling to the Phase 3 validator.
+
+### Day 23 validation evidence
+
+- Kernel certification: PASS (controlled TC/eBPF loopback workload).
+- Day23 evaluator tests: 35 passed.
+- Full AppSec test suite: 320 passed.
+- Phase 3 freeze status: CONDITIONAL.
+- Day 15 strict latency-overhead target: FAIL.
+- Phase 2 machine-readable report: unavailable in the recovery working
+  tree; historical documentation records 9/9 checks passed.
+- Days 20–22 remain application-layer simulation evidence and are not
+  kernel-drop certification.
+
+The Day 23 result does not establish production-network reliability
+or unconditional Phase 3 sign-off.

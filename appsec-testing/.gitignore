@@ -10,3 +10,12 @@ data/
 *.db
 *.db-journal
 logs/
+
+# Keep the committed synthetic PII fixture; ignore other local data files.
+!data/
+data/*
+!data/pii_test_payloads.json
+# Keep the Day25 machine-readable audit report.
+!logs/
+logs/*
+!logs/pii_leakage_report.json

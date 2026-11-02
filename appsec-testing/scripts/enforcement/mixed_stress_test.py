@@ -8,6 +8,7 @@ import json
 import os
 import re
 import statistics
+import socket
 import subprocess
 import sys
 import threading
@@ -34,6 +35,16 @@ MIN_LEGITIMATE_RATIO = 0.85
 MAX_LEGITIMATE_RATIO = 0.95
 MIN_LEGITIMATE_SUCCESS_RATE = 0.98
 MIN_ATTACK_BLOCK_RATE = 0.30
+
+
+def port_is_free(port):
+    """Return True only when the local TCP port can be bound."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
 
 
 def utc_now():
@@ -437,6 +448,7 @@ def run():
         parser.error("--legit-ratio must be between 0 and 1")
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     default_total = 6000 if args.exploratory else LEGITIMATE_COUNT + ATTACK_COUNT
     total_target = (
         args.total_requests if args.total_requests is not None else default_total
@@ -445,8 +457,9 @@ def run():
     attack_target = total_target - legitimate_target
 
     default_report_path = (
-        LOG_DIR / "mixed_stress_exploratory_report.json"
-        if args.exploratory else REPORT_PATH
+        LOG_DIR / f"mixed_stress_exploratory_report_{run_id}.json"
+        if args.exploratory
+        else LOG_DIR / f"mixed_stress_report_{run_id}.json"
     )
     report_path = args.report or default_report_path
 
@@ -481,6 +494,12 @@ def run():
     results = []
 
     try:
+        for port in (8004, 8005):
+            if not port_is_free(port):
+                raise RuntimeError(
+                    f"Port {port} is already in use; refusing to start Day22."
+                )
+
         customers, attacker, foreign_ids = prepare_customers()
         report["customer_count"] = len(customers)
         report["foreign_invoice_target_count"] = len(foreign_ids)
@@ -498,8 +517,8 @@ def run():
         env["DAY20_WRAPPER_PORT"] = "8005"
 
         for name, script in (
-            ("day22-enforcer.log", "day21_test_enforcer.py"),
-            ("day22-wrapper.log", "fail_open_wrapper.py"),
+            (f"day22-enforcer-{run_id}.log", "day21_test_enforcer.py"),
+            (f"day22-wrapper-{run_id}.log", "fail_open_wrapper.py"),
         ):
             stream = (LOG_DIR / name).open("w", encoding="utf-8")
             streams.append(stream)

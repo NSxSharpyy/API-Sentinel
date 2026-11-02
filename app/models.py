@@ -115,6 +115,16 @@ class SecurityIncident(Base):
     __table_args__ = (
         Index("ix_incident_detected_at", "detected_at"),
         Index("ix_incident_severity_status", "severity", "status"),
+        Index(
+            "ix_incident_severity_detected_at",
+            "severity",
+            "detected_at",
+        ),
+        Index(
+            "ix_incident_status_detected_at",
+            "status",
+            "detected_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

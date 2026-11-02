@@ -9,8 +9,9 @@ from datetime import timezone
 
 from sqlalchemy import insert
 
-from app.database import AsyncSessionLocal, Base, async_engine
+from app.database import AsyncSessionLocal, async_engine
 from app.models import TransactionLog, utc_now
+from app.database_schema import initialize_database_schema
 from app.security_detection import redact_body, redact_headers
 from app.transaction_store import (
     TransactionStore,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 async def initialize_async_database() -> None:
     """Create missing model tables through the asynchronous engine."""
     async with async_engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(initialize_database_schema)
 
 
 class AsyncTransactionStore(TransactionStore):

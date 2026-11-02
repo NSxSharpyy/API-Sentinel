@@ -8,8 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.alert_bus import AlertBus, AlertEvent
-from app.database import Base, engine, SessionLocal
+from app.database import engine, SessionLocal
 from app.models import DiscoveredEndpoint, TransactionLog, utc_now
+from app.database_schema import initialize_database_schema
 from app.transaction_correlator import HTTPTransaction
 from app.security_detection import BOLADetector, redact_body, redact_headers
 
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 def initialize_database() -> None:
     """Create missing tables for the registered SQLAlchemy models."""
-    Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        initialize_database_schema(connection)
 
 
 def _request_endpoint_ips(

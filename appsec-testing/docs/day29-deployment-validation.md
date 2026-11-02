@@ -31,7 +31,7 @@ Result: **15 passed.**
 The runner was executed with `--execute`.
 
 Overall result: **PASS**  
-Elapsed time: **26.397 seconds**
+Elapsed time: **37.945 seconds**
 
 | Step | Result |
 |---|---|
@@ -44,7 +44,7 @@ Elapsed time: **26.397 seconds**
 | Profile, orders, and invoices E2E checks | PASS |
 | Ownership checks | PASS |
 
-The cold deployment step completed in 23.862 seconds. The runner
+The cold deployment step completed in 24.664 seconds. The runner
 completed the authenticated end-to-end checks, including ownership
 verification for the application resources.
 
@@ -56,7 +56,7 @@ Command:
 
 `python -m pytest -q appsec-testing/tests`
 
-Result: **437 passed in 20.91 seconds.**
+Result: **437 passed in 19.99 seconds.**
 
 ## Day16 detection regression validation
 

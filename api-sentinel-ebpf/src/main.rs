@@ -1,4 +1,5 @@
 use std::{mem::size_of, process::Command};
+use zeroize::Zeroize;
 
 use anyhow::Context;
 use api_sentinel_ebpf_common::{
@@ -69,14 +70,13 @@ fn read_total_drops(drops_map: &PerCpuArray<&mut aya::maps::MapData, u64>) -> an
 fn print_event(event: &NetworkEvent) {
     if event.event_type == EVENT_TYPE_HTTP_REQUEST {
         let len = usize::from(event.uri_len).min(event.uri_prefix.len());
-        let uri = String::from_utf8_lossy(&event.uri_prefix[..len]);
 
         println!(
-            "HTTP_REQUEST method={} client_id={} uri_prefix={} direction={} \
+            "HTTP_REQUEST method={} client_id={} uri_len={} direction={} \
              src={}.{}.{}.{}:{} dst={}.{}.{}.{}:{}",
             method_name(event.http_method),
             event.client_id,
-            uri,
+            len,
             direction_name(event.traffic_direction),
             event.source_ipv4[0],
             event.source_ipv4[1],
@@ -316,13 +316,14 @@ async fn main() -> anyhow::Result<()> {
                         continue;
                     }
 
-                    let event = unsafe {
+                    let mut event = unsafe {
                         std::ptr::read_unaligned(
                             item.as_ptr().cast::<NetworkEvent>()
                         )
                     };
 
                     print_event(&event);
+                    event.uri_prefix.zeroize();
                 }
 
                 guard.clear_ready();

@@ -1,6 +1,7 @@
 
 import RateLimitConfiguration from "../components/ui/RateLimitConfiguration";
 import OwaspApiSecurityMatrix from "../components/ui/OwaspApiSecurityMatrix";
+import SanitizedPayloadInspector from "../components/ui/SanitizedPayloadInspector";
 
 export default function Settings() {
   return (
@@ -11,7 +12,8 @@ export default function Settings() {
         </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          Review demo rate limits and assess API security risks.
+          Review demo rate limits, assess API security risks, and inspect
+          sanitized example payloads.
         </p>
       </header>
 
@@ -21,6 +23,10 @@ export default function Settings() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <OwaspApiSecurityMatrix />
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <SanitizedPayloadInspector />
       </section>
     </main>
   );

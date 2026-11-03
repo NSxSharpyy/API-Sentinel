@@ -9,6 +9,13 @@ from datetime import timezone
 
 import zmq
 
+from app.data_masking import (
+    content_type_from_headers,
+    sanitize_body,
+    sanitize_headers,
+    sanitize_text,
+    sanitize_uri,
+)
 from app.http_reassembly import HTTPMessage
 from app.transaction_correlator import HTTPTransaction
 from app.serialization_metrics import (
@@ -54,19 +61,25 @@ def _captured_at_utc_iso(message: HTTPMessage) -> str | None:
 
 
 def _message_payload(message: HTTPMessage) -> dict:
+    """Create a sanitized publication without mutating the captured message."""
+    safe_body = sanitize_body(
+        message.body,
+        content_type_from_headers(message.headers),
+    )
+    safe_body_bytes = (safe_body or "").encode("utf-8")
+
     return {
         "message_type": message.message_type,
         "connection_id": message.connection_id,
         "captured_at": _captured_at_utc_iso(message),
         "method": message.method,
-        "uri": message.uri,
+        "uri": sanitize_uri(message.uri),
         "status_code": message.status_code,
-        "reason_phrase": message.reason_phrase,
+        "reason_phrase": sanitize_text(message.reason_phrase),
         "version": message.version,
-        "headers": message.headers,
-        "body_base64": base64.b64encode(message.body).decode("ascii"),
+        "headers": sanitize_headers(message.headers),
+        "body_base64": base64.b64encode(safe_body_bytes).decode("ascii"),
     }
-
 
 def serialize_http_message(message: HTTPMessage) -> bytes:
     """Serialize one parsed HTTP request or response as JSON."""

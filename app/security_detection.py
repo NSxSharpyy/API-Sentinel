@@ -9,6 +9,14 @@ import threading
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+from app.data_masking import (
+    REDACTED,
+    SENSITIVE_KEYS as SENSITIVE,
+    sanitize_body,
+    sanitize_headers,
+    sanitize_text,
+    sanitize_uri,
+)
 from app.models import SecurityIncident
 from app.schemas import SecurityIncidentSchema
 
@@ -40,39 +48,13 @@ def _json_object(value):
 
 
 def redact_headers(value):
-    if not isinstance(value, dict):
-        return {}
-    return {
-        key: REDACTED if _key(key) in SENSITIVE else child
-        for key, child in value.items()
-    }
+    """Backward-compatible wrapper for shared HTTP header sanitization."""
+    return sanitize_headers(value)
 
 
-def _redact_tree(value):
-    if isinstance(value, dict):
-        return {
-            key: REDACTED if _key(key) in SENSITIVE else _redact_tree(child)
-            for key, child in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact_tree(item) for item in value]
-    return value
-
-
-def redact_body(value):
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    if not isinstance(value, str):
-        value = str(value)
-    try:
-        parsed = json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return value
-    return json.dumps(
-        _redact_tree(parsed), separators=(",", ":"), ensure_ascii=False
-    )
+def redact_body(value, content_type=None):
+    """Backward-compatible wrapper for content-type-aware body sanitization."""
+    return sanitize_body(value, content_type)
 
 
 class BOLADetector:
@@ -195,19 +177,24 @@ class BOLADetector:
             if elapsed >= 0:
                 latency_ms = elapsed
 
+        # Keep the original path for detection above, but never persist it
+        # unfiltered in an incident description.
+        safe_path = sanitize_uri(path) or "***MASKED***"
+        incident_description = sanitize_text(
+            f"Observed login associated with user_id={requester_id}; "
+            f"GET {safe_path} returned invoice_id={invoice_id}, owner_id={owner_id}. "
+            "The sensor associates identity using an observed login response "
+            "and matching token fingerprint; it does not independently "
+            "verify the token signature."
+        )
+
         incident = SecurityIncident(
             endpoint_id=endpoint_id,
             transaction_id=transaction_id,
             detected_at=detected_at,
             severity="high",
             title="Potential BOLA: cross-user invoice access (lab heuristic)",
-            description=(
-                f"Observed login associated with user_id={requester_id}; "
-                f"GET {path} returned invoice_id={invoice_id}, owner_id={owner_id}. "
-                "The sensor associates identity using an observed login response "
-                "and matching token fingerprint; it does not independently "
-                "verify the token signature."
-            ),
+            description=incident_description,
             source_ip=source_ip,
             status="open",
         )

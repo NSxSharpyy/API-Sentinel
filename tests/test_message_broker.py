@@ -140,8 +140,8 @@ def test_serializes_missing_captured_at_as_null():
     assert event["method"] == "GET"
 
 
-def test_preserves_binary_request_body():
-    original_body = b"\x00\xff\x10hello\x80"
+def test_masks_binary_request_body_fail_closed():
+    original_body = b"\\x00\\xff\\x10hello\\x80"
 
     message = HTTPMessage(
         method="POST",
@@ -154,7 +154,54 @@ def test_preserves_binary_request_body():
     event = json.loads(serialize_http_message(message))
     decoded_body = base64.b64decode(event["body_base64"])
 
-    assert decoded_body == original_body
+    assert decoded_body == b"***MASKED***"
+    assert message.body == original_body
+
+
+def test_serialization_masks_pii_and_credentials_without_mutating_message():
+    original_body = (
+        b'{"email":"alice@example.com",'
+        b'"password":"broker-password","phone":"9876543210"}'
+    )
+    original_uri = (
+        "/users/alice%40example.com"
+        "?email=alice%40example.com&token=broker-secret-token"
+    )
+    original_headers = {
+        "Host": "example.test",
+        "Authorization": "Bearer broker-secret-token",
+        "X-Contact": "alice@example.com",
+        "Content-Type": "application/json",
+    }
+
+    message = HTTPMessage(
+        method="POST",
+        uri=original_uri,
+        version="HTTP/1.1",
+        headers=original_headers.copy(),
+        body=original_body,
+        message_type="request",
+    )
+
+    event = json.loads(serialize_http_message(message))
+    safe_body = base64.b64decode(event["body_base64"]).decode("utf-8")
+    safe_json = json.loads(safe_body)
+
+    assert "alice@example.com" not in safe_body
+    assert "broker-secret-token" not in json.dumps(event)
+    assert "broker-password" not in safe_body
+    assert "9876543210" not in safe_body
+
+    assert event["headers"]["Authorization"] == "[REDACTED]"
+    assert event["headers"]["X-Contact"] == "***MASKED***"
+    assert safe_json["email"] == "***MASKED***"
+    assert safe_json["password"] == "[REDACTED]"
+    assert safe_json["phone"] == "***MASKED***"
+
+    # Sanitization must not mutate the original in-memory message.
+    assert message.uri == original_uri
+    assert message.headers == original_headers
+    assert message.body == original_body
 
 
 def test_topic_is_bytes():
@@ -434,7 +481,7 @@ def test_publisher_routes_to_each_downstream_consumer_topic(topic):
             connection_id=request_direction,
         )
         pipeline.feed(
-            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK",
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nOK",
             connection_id=response_direction,
         )
         event = subscriber.receive(timeout_ms=3000)

@@ -12,6 +12,7 @@ from sqlalchemy import insert
 from app.database import AsyncSessionLocal, async_engine
 from app.models import TransactionLog, utc_now
 from app.database_schema import initialize_database_schema
+from app.data_masking import content_type_from_headers, sanitize_uri
 from app.security_detection import redact_body, redact_headers
 from app.transaction_store import (
     TransactionStore,
@@ -215,12 +216,16 @@ class AsyncTransactionStore(TransactionStore):
                             "source_ip": source_ip,
                             "destination_ip": destination_ip,
                             "request_method": request.method,
-                            "request_uri": request.uri,
+                            "request_uri": sanitize_uri(request.uri),
                             "response_status": response.status_code,
                             "request_headers": redact_headers(request.headers),
                             "response_headers": redact_headers(response.headers),
-                            "request_body": redact_body(request.body),
-                            "response_body": redact_body(response.body),
+                            "request_body": redact_body(
+                                request.body, content_type_from_headers(request.headers)
+                            ),
+                            "response_body": redact_body(
+                                response.body, content_type_from_headers(response.headers)
+                            ),
                         }
                     )
                     durations.append(time.perf_counter_ns() - started_ns)
@@ -285,12 +290,16 @@ class AsyncTransactionStore(TransactionStore):
                     source_ip=source_ip,
                     destination_ip=destination_ip,
                     request_method=request.method,
-                    request_uri=request.uri,
+                    request_uri=sanitize_uri(request.uri),
                     response_status=response.status_code,
                     request_headers=redact_headers(request.headers),
                     response_headers=redact_headers(response.headers),
-                    request_body=redact_body(request.body),
-                    response_body=redact_body(response.body),
+                    request_body=redact_body(
+                        request.body, content_type_from_headers(request.headers)
+                    ),
+                    response_body=redact_body(
+                        response.body, content_type_from_headers(response.headers)
+                    ),
                 )
                 session.add(record)
                 await session.flush()

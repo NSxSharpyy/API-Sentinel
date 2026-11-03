@@ -8,6 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.alert_bus import AlertBus, AlertEvent
+from app.data_masking import (
+    content_type_from_headers,
+    sanitize_text,
+    sanitize_uri,
+)
 from app.database import engine, SessionLocal
 from app.models import DiscoveredEndpoint, TransactionLog, utc_now
 from app.database_schema import initialize_database_schema
@@ -58,22 +63,24 @@ def _endpoint_identity(transaction: HTTPTransaction, destination_ip: str | None)
     uri = request.uri or ""
     try:
         parsed_uri = urlsplit(uri)
+        safe_uri = sanitize_uri(uri)
+        safe_parsed_uri = urlsplit(safe_uri or "")
     except ValueError:
         return None
 
-    path = parsed_uri.path or ("*" if uri == "*" else "/")
+    path = safe_parsed_uri.path or ("*" if uri == "*" else "/")
     raw_host = next(
         (str(value).strip() for key, value in (request.headers or {}).items()
          if str(key).strip().lower() == "host" and str(value).strip()),
         None,
     )
     if not raw_host:
-        raw_host = parsed_uri.netloc or destination_ip
+        raw_host = safe_parsed_uri.netloc.rsplit('@', 1)[-1] or destination_ip
 
     if not method or not raw_host or not path:
         return None
 
-    host = raw_host.strip().lower()
+    host = (sanitize_text(raw_host.strip()) or '').lower()
     if host.endswith("."):
         host = host[:-1]
     if (
@@ -230,12 +237,16 @@ class TransactionStore:
                         source_ip=source_ip,
                         destination_ip=destination_ip,
                         request_method=request.method,
-                        request_uri=request.uri,
+                        request_uri=sanitize_uri(request.uri),
                         response_status=response.status_code,
                         request_headers=redact_headers(request.headers),
                         response_headers=redact_headers(response.headers),
-                        request_body=redact_body(request.body),
-                        response_body=redact_body(response.body),
+                        request_body=redact_body(
+                            request.body, content_type_from_headers(request.headers)
+                        ),
+                        response_body=redact_body(
+                            response.body, content_type_from_headers(response.headers)
+                        ),
                     )
                     session.add(record)
                     durations.append(time.perf_counter_ns() - started_ns)
@@ -275,12 +286,16 @@ class TransactionStore:
                     source_ip=source_ip,
                     destination_ip=destination_ip,
                     request_method=request.method,
-                    request_uri=request.uri,
+                    request_uri=sanitize_uri(request.uri),
                     response_status=response.status_code,
                     request_headers=redact_headers(request.headers),
                     response_headers=redact_headers(response.headers),
-                    request_body=redact_body(request.body),
-                    response_body=redact_body(response.body),
+                    request_body=redact_body(
+                        request.body, content_type_from_headers(request.headers)
+                    ),
+                    response_body=redact_body(
+                        response.body, content_type_from_headers(response.headers)
+                    ),
                 )
                 session.add(record)
                 session.flush()

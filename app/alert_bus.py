@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 from app.alert_dedup import SlidingWindowAlertDeduplicator
+from app.data_masking import sanitize_text
 from app.schemas import SecurityIncidentSchema
 
 
@@ -29,13 +30,28 @@ class AlertEvent:
         payload = SecurityIncidentSchema.model_validate(
             asdict(self)
         ).model_dump(mode="json")
+
+        payload["title"] = sanitize_text(payload["title"])
+        payload["description"] = sanitize_text(payload["description"])
+
+        # Revalidate after sanitization so the immutable event retains the
+        # same schema guarantees as before the masking change.
+        payload = SecurityIncidentSchema.model_validate(
+            payload
+        ).model_dump(mode="json")
+
         for name, value in payload.items():
             object.__setattr__(self, name, value)
 
     def to_dict(self) -> dict:
         """Return the canonical JSON-compatible incident representation."""
-        return SecurityIncidentSchema.model_validate(
+        payload = SecurityIncidentSchema.model_validate(
             asdict(self)
+        ).model_dump(mode="json")
+        payload["title"] = sanitize_text(payload["title"])
+        payload["description"] = sanitize_text(payload["description"])
+        return SecurityIncidentSchema.model_validate(
+            payload
         ).model_dump(mode="json")
 
 

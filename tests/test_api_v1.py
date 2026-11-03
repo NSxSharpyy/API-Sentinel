@@ -240,3 +240,51 @@ def test_persisted_http_transaction_populates_discovered_endpoint_api(api_client
     metrics = client.get("/api/v1/metrics").json()
     assert metrics["database"]["discovered_endpoints"] == 1
     assert metrics["database"]["transaction_logs"] == 1
+
+
+
+def test_rest_sanitizes_legacy_endpoint_and_incident_values(api_client):
+    client, sessions = api_client
+    observed_at = datetime(2026, 10, 27, tzinfo=timezone.utc)
+
+    with sessions() as session:
+        seed_endpoint(
+            session,
+            "alice@example.com",
+            "GET",
+            "/users/alice@example.com"
+            "?email=alice%40example.com&token=legacy-secret-token",
+            observed_at,
+        )
+        session.add(
+            SecurityIncident(
+                detected_at=observed_at,
+                severity="high",
+                title="Incident for alice@example.com",
+                description=(
+                    "Phone 9876543210; "
+                    "Bearer legacy-bearer-token"
+                ),
+                status="open",
+            )
+        )
+        session.commit()
+
+    endpoints = client.get("/api/v1/endpoints").json()
+    endpoint = endpoints["items"][0]
+
+    assert "alice@example.com" not in str(endpoint)
+    assert "legacy-secret-token" not in str(endpoint)
+    assert "***MASKED***" in endpoint["host"]
+    assert "***MASKED***" in endpoint["path"]
+    assert "%5BREDACTED%5D" in endpoint["path"]
+
+    alerts = client.get("/api/v1/alerts").json()
+    alert = alerts["items"][0]
+
+    assert "alice@example.com" not in str(alert)
+    assert "9876543210" not in str(alert)
+    assert "legacy-bearer-token" not in str(alert)
+    assert "***MASKED***" in alert["title"]
+    assert "***MASKED***" in alert["description"]
+    assert "[REDACTED]" in alert["description"]

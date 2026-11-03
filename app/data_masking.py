@@ -7,6 +7,7 @@ format-aware parsing or fail-closed handling of unsupported payloads.
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 
 
@@ -166,3 +167,232 @@ def mask_pii(value: str) -> str:
     value = mask_emails(value)
     value = mask_phone_numbers(value)
     return value
+
+
+# Credential fields are redacted independently of regex-detected PII.
+REDACTED = "[REDACTED]"
+
+SENSITIVE_KEYS = {
+    "authorization",
+    "proxy_authorization",
+    "cookie",
+    "set_cookie",
+    "password",
+    "passwd",
+    "token",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "secret",
+    "api_key",
+    "apikey",
+}
+
+_SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"""(?ix)
+    (?P<prefix>
+        \b
+        ["']?
+        (?:authorization|proxy[-_]authorization|cookie|set[-_]cookie|
+           password|passwd|token|access[-_]token|refresh[-_]token|
+           client[-_]secret|secret|api[-_]key|apikey)
+        ["']?
+        \s*[:=]\s*
+    )
+    (?P<value>"[^"]*"|'[^']*'|[^&,\s;}\]]+)
+    """
+)
+
+_BEARER_VALUE_RE = re.compile(
+    r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*"
+)
+
+
+def _normalized_sensitive_key(value: object) -> str:
+    return str(value).strip().lower().replace("-", "_")
+
+
+def is_sensitive_key(value: object) -> bool:
+    return _normalized_sensitive_key(value) in SENSITIVE_KEYS
+
+
+def sanitize_text(value: str | None) -> str | None:
+    """Mask PII patterns and credential assignments in free text."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("value must be a string")
+
+    result = mask_pii(value)
+    result = _BEARER_VALUE_RE.sub("Bearer " + REDACTED, result)
+    result = _SENSITIVE_ASSIGNMENT_RE.sub(
+        lambda match: match.group("prefix") + REDACTED,
+        result,
+    )
+    return result
+
+
+def sanitize_headers(value: object) -> dict:
+    """Return sanitized HTTP headers without mutating the original mapping."""
+    if not isinstance(value, dict):
+        return {}
+
+    result = {}
+    for key, child in value.items():
+        if is_sensitive_key(key):
+            result[key] = REDACTED
+        elif isinstance(child, str):
+            result[key] = sanitize_text(child)
+        elif child is None or isinstance(child, (bool, int, float)):
+            result[key] = child
+        else:
+            result[key] = sanitize_text(str(child))
+    return result
+
+
+def content_type_from_headers(headers: object) -> str | None:
+    """Get Content-Type from an HTTP header mapping, case-insensitively."""
+    if not isinstance(headers, dict):
+        return None
+
+    for key, value in headers.items():
+        if str(key).strip().lower() == "content-type":
+            return str(value)
+    return None
+
+
+def _sanitize_json_tree(value):
+    if isinstance(value, dict):
+        return {
+            key: (
+                REDACTED
+                if is_sensitive_key(key)
+                else _sanitize_json_tree(child)
+            )
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_json_tree(child) for child in value]
+    if isinstance(value, str):
+        return sanitize_text(value)
+    return value
+
+
+def sanitize_body(
+    value: str | bytes | None,
+    content_type: str | None = None,
+) -> str | None:
+    """Sanitize a body according to its declared media type.
+
+    JSON and URL-encoded forms receive structured key-based redaction.
+    Text formats receive pattern-based masking. Binary, multipart, unknown,
+    or undecodable bodies are masked in full rather than published raw.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, bytes):
+        if not value:
+            return ""
+        try:
+            text_value = value.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return MASKED
+    elif isinstance(value, str):
+        text_value = value
+        if not text_value:
+            return ""
+    else:
+        raise TypeError("body must be str, bytes, or None")
+
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+
+    if media_type == "application/x-www-form-urlencoded":
+        from urllib.parse import parse_qsl, urlencode
+
+        pairs = parse_qsl(text_value, keep_blank_values=True)
+        sanitized_pairs = [
+            (
+                key,
+                REDACTED if is_sensitive_key(key) else sanitize_text(child),
+            )
+            for key, child in pairs
+        ]
+        return urlencode(sanitized_pairs, doseq=True)
+
+    if media_type == "application/json" or media_type.endswith("+json"):
+        try:
+            parsed = json.loads(text_value)
+        except (json.JSONDecodeError, TypeError):
+            # Malformed JSON is still treated as text, with credential
+            # assignment and PII patterns inspected before publication.
+            return sanitize_text(text_value)
+        return json.dumps(
+            _sanitize_json_tree(parsed),
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+
+    if (
+        media_type.startswith("text/")
+        or media_type in {
+            "application/xml",
+            "application/javascript",
+            "application/x-javascript",
+        }
+    ):
+        return sanitize_text(text_value)
+
+    # Unknown formats, multipart, and binary media types fail closed.
+    return MASKED
+
+
+def sanitize_uri(value: str | None) -> str | None:
+    """Sanitize a request target or URL, including query parameter values."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("URI must be a string")
+
+    from urllib.parse import (
+        parse_qsl,
+        quote,
+        unquote,
+        urlencode,
+        urlsplit,
+        urlunsplit,
+    )
+
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return sanitize_text(value)
+
+    path = quote(
+        sanitize_text(unquote(parsed.path)) or "",
+        safe="/:@-._~!$&'()*+,;=",
+    )
+
+    if "@" in parsed.netloc:
+        _, host_part = parsed.netloc.rsplit("@", 1)
+        netloc = REDACTED + "@" + (sanitize_text(host_part) or "")
+    else:
+        netloc = sanitize_text(parsed.netloc) or ""
+
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    safe_query = [
+        (
+            key,
+            REDACTED if is_sensitive_key(key) else sanitize_text(child),
+        )
+        for key, child in query_pairs
+    ]
+
+    fragment = sanitize_text(unquote(parsed.fragment)) or ""
+    return urlunsplit((
+        parsed.scheme,
+        netloc,
+        path,
+        urlencode(safe_query, doseq=True),
+        quote(fragment, safe="/:@-._~!$&'()*+,;="),
+    ))

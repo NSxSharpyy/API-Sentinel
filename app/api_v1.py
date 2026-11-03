@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import queues
+from app.data_masking import sanitize_text, sanitize_uri
 from app.database import SessionLocal
 from app.models import DiscoveredEndpoint, SecurityIncident, TransactionLog
 from app.schemas import SecurityIncidentSchema
@@ -58,17 +59,20 @@ async def _session_scalars(session: Any, statement: Any) -> Any:
 def _endpoint_dict(endpoint: DiscoveredEndpoint) -> dict[str, Any]:
     return {
         "id": endpoint.id,
-        "host": endpoint.host,
+        "host": sanitize_text(endpoint.host),
         "method": endpoint.method,
-        "path": endpoint.path,
+        "path": sanitize_uri(endpoint.path),
         "first_seen": endpoint.first_seen,
         "last_seen": endpoint.last_seen,
     }
 
 
 def _incident_dict(incident: SecurityIncident) -> dict[str, Any]:
-    """Serialize incidents using the shared cross-module schema."""
-    return SecurityIncidentSchema.from_model(incident).model_dump(mode="json")
+    """Serialize incidents safely, including records created before masking."""
+    payload = SecurityIncidentSchema.from_model(incident).model_dump(mode="json")
+    payload["title"] = sanitize_text(payload["title"])
+    payload["description"] = sanitize_text(payload["description"])
+    return payload
 
 
 @router.get("/endpoints")

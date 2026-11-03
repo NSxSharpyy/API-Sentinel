@@ -133,8 +133,11 @@ def test_websocket_alert_endpoint_streams_events_and_unsubscribes(monkeypatch):
         incident_id=9901,
         detected_at="2026-10-25T12:00:00Z",
         severity="high",
-        title="WebSocket delivery test",
-        description="Controlled test event",
+        title="Alert for alice@example.com",
+        description=(
+            "Contact alice@example.com or 9876543210; "
+            "Bearer websocket-secret-token"
+        ),
         source_ip="192.0.2.44",
         status="open",
     )
@@ -146,6 +149,11 @@ def test_websocket_alert_endpoint_streams_events_and_unsubscribes(monkeypatch):
         assert (delivered, dropped) == (1, 0)
         payload = websocket.receive_json()
         assert payload == event.to_dict()
+        assert payload["title"] == "Alert for ***MASKED***"
+        assert "alice@example.com" not in str(payload)
+        assert "9876543210" not in str(payload)
+        assert "websocket-secret-token" not in str(payload)
+        assert "Bearer [REDACTED]" in payload["description"]
 
         # Let the application consume the disconnect and unsubscribe before
         # Starlette's test-client context performs its final cancellation.
@@ -160,3 +168,23 @@ def test_websocket_alert_endpoint_streams_events_and_unsubscribes(monkeypatch):
         assert bus.snapshot()["subscriber_count"] == 0
 
     assert bus.snapshot()["subscriber_count"] == 0
+
+
+
+def test_alert_event_sanitizes_sensitive_title_and_description():
+    event = AlertEvent(
+        incident_id=9910,
+        detected_at="2026-10-25T12:00:00Z",
+        severity="high",
+        title="Account alice@example.com exposed",
+        description="Phone 9876543210; password=alert-password",
+        source_ip="192.0.2.45",
+    )
+
+    payload = event.to_dict()
+
+    assert "alice@example.com" not in payload["title"]
+    assert "9876543210" not in payload["description"]
+    assert "alert-password" not in payload["description"]
+    assert "***MASKED***" in payload["title"]
+    assert "[REDACTED]" in payload["description"]

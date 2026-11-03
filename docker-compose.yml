@@ -24,7 +24,7 @@ services:
       seed:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:${AUTH_HOST_PORT:-5001}:5001"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)"]
@@ -47,7 +47,7 @@ services:
       seed:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:5002:5002"
+      - "127.0.0.1:${USER_HOST_PORT:-5002}:5002"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/health', timeout=3)"]
@@ -70,7 +70,7 @@ services:
       seed:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:5003:5003"
+      - "127.0.0.1:${ORDER_HOST_PORT:-5003}:5003"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5003/health', timeout=3)"]
@@ -93,7 +93,7 @@ services:
       seed:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:5004:5004"
+      - "127.0.0.1:${BILLING_HOST_PORT:-5004}:5004"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5004/health', timeout=3)"]

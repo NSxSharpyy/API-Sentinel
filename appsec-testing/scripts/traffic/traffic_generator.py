@@ -31,6 +31,26 @@ BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1")
 DEFAULT_JITTER = 0.4
 REQUEST_TIMEOUT = 5
 
+def configured_service_port(name, default):
+    raw = os.environ.get(name)
+
+    if raw is None:
+        return default
+
+    try:
+        port = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{name} must be a valid TCP port"
+        ) from exc
+
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"{name} must be between 1 and 65535"
+        )
+
+    return port
+
 def validate_billing_override_url(url):
     """Allow only the local Day 21 wrapper as a billing override."""
     if not url:
@@ -124,6 +144,12 @@ class TrafficGenerator:
             raise ValueError("Concurrency must be a positive integer")
 
         self.base_url = base_url.rstrip("/")
+        self.service_ports = {
+            5001: configured_service_port("AUTH_SERVICE_PORT", 5001),
+            5002: configured_service_port("USER_SERVICE_PORT", 5002),
+            5003: configured_service_port("ORDER_SERVICE_PORT", 5003),
+            5004: configured_service_port("BILLING_SERVICE_PORT", 5004),
+        }
         self.billing_override_url = validate_billing_override_url(
             os.environ.get("BILLING_OVERRIDE_URL")
         )
@@ -149,17 +175,19 @@ class TrafficGenerator:
         return f"{self.base_url}:{self._service_port(path)}{path}"
 
     def _service_port(self, path):
-        """Return the service port, optionally using local proxy ports."""
+        """Return the configured service port, optionally using local proxy ports."""
+
         if path.startswith("/api/v2/auth/"):
-            port = 5001
+            port = self.service_ports[5001]
         elif path.startswith("/api/v2/users/"):
-            port = 5002
+            port = self.service_ports[5002]
         elif path.startswith("/api/v2/orders"):
-            port = 5003
+            port = self.service_ports[5003]
         elif path.startswith("/api/v2/billing/"):
-            port = 5004
+            port = self.service_ports[5004]
         else:
             raise ValueError(f"Unknown API service path: {path}")
+
         return port + 2000 if self.use_proxy else port
 
     def request(self, method, path, action, **kwargs):

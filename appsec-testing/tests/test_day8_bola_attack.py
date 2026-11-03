@@ -233,3 +233,50 @@ def test_sweep_summary_reports_cross_user_invoices(capsys):
     assert "Invoices compromised (belonging to OTHER users): 1" in output
     assert "Invoice 3 (owner ID 2)" in output
 
+@pytest.mark.parametrize(
+    ("name", "default", "override"),
+    [
+        ("AUTH_SERVICE_PORT", 5001, 5101),
+        ("USER_SERVICE_PORT", 5002, 5102),
+        ("ORDER_SERVICE_PORT", 5003, 5103),
+        ("BILLING_SERVICE_PORT", 5004, 5104),
+    ],
+)
+def test_service_port_configuration(
+    tmp_path, monkeypatch, name, default, override
+):
+    # Ensure inherited shell configuration cannot affect defaults.
+    for variable in (
+        "AUTH_SERVICE_PORT",
+        "USER_SERVICE_PORT",
+        "ORDER_SERVICE_PORT",
+        "BILLING_SERVICE_PORT",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+
+    attack = BOLAAttack(output_dir=tmp_path)
+    try:
+        assert attack.service_ports[default] == default
+    finally:
+        attack.close()
+
+    monkeypatch.setenv(name, str(override))
+
+    attack = BOLAAttack(output_dir=tmp_path)
+    try:
+        assert attack.service_ports[default] == override
+    finally:
+        attack.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["invalid", "0", "65536", "-1"],
+)
+def test_invalid_service_port_is_rejected(
+    tmp_path, monkeypatch, value
+):
+    monkeypatch.setenv("AUTH_SERVICE_PORT", value)
+
+    with pytest.raises(ValueError, match="AUTH_SERVICE_PORT"):
+        BOLAAttack(output_dir=tmp_path)

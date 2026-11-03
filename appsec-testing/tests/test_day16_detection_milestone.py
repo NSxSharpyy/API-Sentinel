@@ -195,6 +195,12 @@ def test_live_legitimate_traffic_emits_no_alert(tmp_path):
     env["DETECTION_WINDOW_SECONDS"] = "10"
     env["DETECTION_THRESHOLD"] = "3"
     env["DETECTION_LOG_LOOKBACK"] = datetime.now(timezone.utc).isoformat()
+    env["DETECTION_COMPOSE_CLI"] = "podman"
+    # Send legitimate traffic to the recovery Compose services.
+    env["AUTH_SERVICE_PORT"] = "5101"
+    env["USER_SERVICE_PORT"] = "5102"
+    env["ORDER_SERVICE_PORT"] = "5103"
+    env["BILLING_SERVICE_PORT"] = "5104"
 
     with engine_log_path.open("w", encoding="utf-8") as engine_log:
         engine_proc = subprocess.Popen(
@@ -293,7 +299,10 @@ def test_engine_reports_docker_log_follower_failure(
 
     monkeypatch.setattr(engine.subprocess, "Popen", fake_popen)
 
-    with pytest.raises(RuntimeError, match="status 2") as exc_info:
+    with pytest.raises(
+        RuntimeError,
+        match="Compose log follower exited unexpectedly with status 2",
+    ) as exc_info:
         engine.main()
 
     output = capsys.readouterr()
@@ -316,7 +325,10 @@ def test_engine_reports_missing_docker_executable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(engine.subprocess, "Popen", missing_docker)
 
-    with pytest.raises(RuntimeError, match="Could not start Docker Compose"):
+    with pytest.raises(
+        RuntimeError,
+        match="Could not start docker Compose log follower",
+    ):
         engine.main()
 
 

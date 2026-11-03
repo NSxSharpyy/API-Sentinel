@@ -16,7 +16,7 @@ certification.
 - Day 23 controlled loopback kernel-drop certification: PASS.
 - Phase 3 overall freeze: CONDITIONAL.
 - Day 26 OWASP regression coverage: PARTIAL at 57.14%.
-- Day 27 six-hour endurance target: not completed.
+- Day 27 endurance status: see detailed evidence below.
 
 ## Methodology
 
@@ -81,10 +81,10 @@ certification.
 
 ### Day 16 — Real-time detection
 
-- Selected latest report: `logs/realtime_flagging_m868wq2v/realtime_flagging_report.json`.
+- Selected latest report: `logs/realtime_flagging_pxqt_i6v/realtime_flagging_report.json`.
 - Status: **PASS**.
 - Attack records: 30; cross-user records: 28.
-- Distinct cross-user owners: 9; detection latency: 1.15 s.
+- Distinct cross-user owners: 9; detection latency: 1.51 s.
 - Failure list: `[]`.
 - This is a selected local run, not proof of production-wide detection.
 
@@ -190,13 +190,13 @@ certification.
 
 ### Day 27 — Endurance testing
 
-- Status: **INTERRUPTED**.
+- Status: **COMPLETED**.
 - Evidence type: `legitimate_traffic_endurance`.
-- Target duration: 21600.00 s; observed duration: 2119.10 s.
-- Checkpoints: 40; samples: 37; sampling errors: 0.
-- Interrupted: `True`.
-- The run was interrupted before reaching its six-hour target. It is not a completed six-hour endurance certification.
-- Source: `logs/day27/run_6h/endurance_report.json`.
+- Target duration: 21600.00 s; observed duration: 21602.50 s.
+- Checkpoints: 363; samples: 361; sampling errors: 0.
+- Interrupted: `False`.
+- The six-hour endurance target was completed.
+- Source: `logs/day27/run_6h_final_attempt3/endurance_report.json`.
 
 ## 3. Evidence availability by day
 
@@ -234,8 +234,8 @@ certification.
 
 This inventory discovers every `logs/**/*.json` and `docs/**/*.md` file present when the report is compiled. Discovery does not mean that an artifact was independently validated or that its test passed.
 
-- Discovered artifacts: **68**
-- Readable/valid artifacts: **68**
+- Discovered artifacts: **82**
+- Readable/valid artifacts: **82**
 - Unreadable artifacts: **0**
 - Invalid JSON artifacts: **0**
 
@@ -249,6 +249,10 @@ This inventory discovers every `logs/**/*.json` and `docs/**/*.md` file present 
 | `logs/day26_live_20261101T124411Z/day11_inventory/discovery_report.json` | available |
 | `logs/day26_live_20261101T124411Z/day25_pii/pii_leakage_report.json` | available |
 | `logs/day27/run_6h/endurance_report.json` | available |
+| `logs/day27/run_6h_final_attempt2/endurance_report.json` | available |
+| `logs/day27/run_6h_final_attempt3/endurance_report.json` | available |
+| `logs/day27/runner_smoke_after_docker_fix/endurance_report.json` | available |
+| `logs/deployment_orchestration_report.json` | available |
 | `logs/discovery_verification_report.json` | available |
 | `logs/fail_open_report_20261031T171550721490Z.json` | available |
 | `logs/mixed_stress_exploratory_report.json` | available |
@@ -259,13 +263,18 @@ This inventory discovers every `logs/**/*.json` and `docs/**/*.md` file present 
 | `logs/owasp_regression_report.json` | available |
 | `logs/phase3_freeze_report.json` | available |
 | `logs/pii_leakage_report.json` | available |
+| `logs/realtime_flagging_1cux45fb/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_2pfajiz9/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_4_wq8q97/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_4fdumvla/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_577swini/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_7yc3v2z2/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_8257e88b/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_9k6s6n92/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_9n_tb_kr/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_arnc6hke/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_dfa5tbfv/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_dsifq7r_/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_e0yj506i/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_edw6dqj4/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_fu10fhc6/realtime_flagging_report.json` | available |
@@ -275,14 +284,18 @@ This inventory discovers every `logs/**/*.json` and `docs/**/*.md` file present 
 | `logs/realtime_flagging_l_17xf7l/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_laudswft/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_m868wq2v/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_pxqt_i6v/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_q21mgzvc/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_q6hcdyqf/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_qdv16k0f/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_qlkihpz7/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_qsg8h7sv/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_qshw0w3v/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_r9anwif1/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_t25cbjwb/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_v6g2dh6q/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_vhuocczv/realtime_flagging_report.json` | available |
+| `logs/realtime_flagging_xcn62kt8/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_xoo3gssw/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_xy5ffbwe/realtime_flagging_report.json` | available |
 | `logs/realtime_flagging_ykzbakgl/realtime_flagging_report.json` | available |
@@ -303,6 +316,7 @@ This inventory discovers every `logs/**/*.json` and `docs/**/*.md` file present 
 | `docs/day21-zero-drop-verification.md` | available |
 | `docs/day22-mixed-stress-test.md` | available |
 | `docs/day27-endurance-test.md` | available |
+| `docs/day29-deployment-validation.md` | available |
 | `docs/detection-engine-contract.md` | available |
 | `docs/discovery-baseline.md` | available |
 | `docs/multi-threat-simulation.md` | available |
@@ -345,7 +359,7 @@ Source: `docs/day15-milestone-latency.md` and `docs/day15-milestone-report-2026-
 
 The available evidence demonstrates several independently exercised capabilities in a controlled local lab. It includes application-layer rate-limit and traffic simulations, a reconstructed API ground-truth manifest, PII scanning, OWASP regression coverage, and controlled loopback kernel packet-drop experiments.
 
-These evidence classes are not interchangeable. In particular, the Day 20–22 simulations do not prove kernel packet drops. Day 23 provides the strongest kernel-drop evidence in the available reports, but its controlled loopback setup does not establish production network reliability. Day 27 did not complete its six-hour target.
+These evidence classes are not interchangeable. In particular, the Day 20–22 simulations do not prove kernel packet drops. Day 23 provides the strongest kernel-drop evidence in the available reports, but its controlled loopback setup does not establish production network reliability. Day 27 results should be interpreted using the recorded status, duration, and sampling evidence.
 
 ## 5. Missing evidence and limitations
 
@@ -361,7 +375,7 @@ This report is a compilation of supplied local evidence. It is not a production 
 2. Re-run the Day 15 monitoring-overhead comparison with real eBPF enforcement on representative hardware; retain the strict less-than-5-ms acceptance target.
 3. Recover or regenerate the missing Phase 1 and Phase 2 freeze archives through their approved validation workflows before claiming independently verified phase sign-off.
 4. Extend Day 23 kernel-drop validation beyond controlled loopback testing before making production-network reliability claims.
-5. Complete a six-hour Day 27 endurance run and retain the full sampling and cleanup evidence.
+5. Preserve Day 27 endurance reports, checkpoints, and sampling evidence; distinguish completed runs from interrupted or partial runs.
 6. Address the partial Day 26 OWASP coverage, including categories marked partial or not run, and preserve explicit out-of-scope justifications.
 7. Investigate and remediate the intentionally vulnerable BOLA, shadow, and zombie lab endpoints before any production deployment.
 8. Preserve raw benchmark JSON and console logs together, and reconcile inconsistent threshold metadata before automated acceptance decisions.

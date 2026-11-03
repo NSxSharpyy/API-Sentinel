@@ -37,6 +37,7 @@ ALERTS_PATH = (
 WINDOW_SECONDS = float(os.getenv("DETECTION_WINDOW_SECONDS", "10"))
 DISTINCT_OWNER_THRESHOLD = int(os.getenv("DETECTION_THRESHOLD", "3"))
 LOG_LOOKBACK = os.getenv("DETECTION_LOG_LOOKBACK", "1s")
+COMPOSE_CLI = os.getenv("DETECTION_COMPOSE_CLI", "docker")
 
 # requester_id -> deque of (monotonic timestamp, owner_id)
 access_history = defaultdict(deque)
@@ -137,7 +138,7 @@ def main():
     ALERTS_PATH.write_text("", encoding="utf-8")
 
     command = [
-        "docker",
+        COMPOSE_CLI,
         "compose",
         "logs",
         "--follow",
@@ -157,10 +158,8 @@ def main():
         )
     except OSError as exc:
         raise RuntimeError(
-            "Could not start Docker Compose log follower; verify that Docker "
-            f"is installed and available: {exc}"
-        ) from exc
-
+            f"Could not start {COMPOSE_CLI} Compose log follower: {exc}"
+          ) from exc
     if proc.stdout is None:
         proc.terminate()
         proc.wait(timeout=5)

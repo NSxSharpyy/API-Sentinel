@@ -19,6 +19,25 @@ from scripts.traffic.customer_pool import build_customer_pool
 DEFAULT_BASE_URL = "http://127.0.0.1"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
+def configured_service_port(name, default):
+    raw = os.environ.get(name)
+
+    if raw is None:
+        return default
+
+    try:
+        port = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{name} must be a valid TCP port"
+        ) from exc
+
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"{name} must be between 1 and 65535"
+        )
+
+    return port
 
 def validate_base_url(base_url):
     """Prevent the attack harness from targeting arbitrary remote hosts."""
@@ -96,6 +115,12 @@ class BOLAAttack:
         logger=None,
     ):
         self.base_url = validate_base_url(base_url)
+        self.service_ports = {
+            5001: configured_service_port("AUTH_SERVICE_PORT", 5001),
+            5002: configured_service_port("USER_SERVICE_PORT", 5002),
+            5003: configured_service_port("ORDER_SERVICE_PORT", 5003),
+            5004: configured_service_port("BILLING_SERVICE_PORT", 5004),
+        }
         self.billing_override_url = validate_billing_override_url(
             os.environ.get("BILLING_OVERRIDE_URL")
         )
@@ -107,13 +132,21 @@ class BOLAAttack:
         )
 
     def _url(self, port, path):
+        # Preserve the existing Day21 billing wrapper behavior.
         if (
-            port == 5004
-            and path.startswith("/api/v2/billing/")
-            and self.billing_override_url
+           port == 5004
+           and path.startswith("/api/v2/billing/")
+           and self.billing_override_url
         ):
-            return f"{self.billing_override_url}{path}"
-        return f"{self.base_url}:{port}{path}"
+           return f"{self.billing_override_url}{path}"
+
+        target_port = self.service_ports.get(port)
+
+        if target_port is None:
+            raise ValueError(f"Unsupported service port: {port}")
+
+        return f"{self.base_url}:{target_port}{path}"
+
 
     def login(self, customer):
         """Return the authenticated user ID and Bearer headers."""

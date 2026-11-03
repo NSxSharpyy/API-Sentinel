@@ -213,3 +213,85 @@ def test_async_request_adds_request_id_and_customer_logs(tmp_path):
     finally:
         generator.session.close()
         generator.logger.close()
+
+@pytest.mark.parametrize(
+    ("name", "default", "override"),
+    [
+        ("AUTH_SERVICE_PORT", 5001, 5101),
+        ("USER_SERVICE_PORT", 5002, 5102),
+        ("ORDER_SERVICE_PORT", 5003, 5103),
+        ("BILLING_SERVICE_PORT", 5004, 5104),
+    ],
+)
+def test_traffic_generator_service_ports(
+    tmp_path, monkeypatch, name, default, override
+):
+    # Clear inherited settings before checking defaults.
+    for variable in (
+        "AUTH_SERVICE_PORT",
+        "USER_SERVICE_PORT",
+        "ORDER_SERVICE_PORT",
+        "BILLING_SERVICE_PORT",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+
+    generator = TrafficGenerator(output_dir=tmp_path)
+    try:
+        assert generator.service_ports[default] == default
+    finally:
+        generator.session.close()
+        generator.logger.close()
+
+    monkeypatch.setenv(name, str(override))
+
+    generator = TrafficGenerator(output_dir=tmp_path)
+    try:
+        assert generator.service_ports[default] == override
+    finally:
+        generator.session.close()
+        generator.logger.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["invalid", "0", "65536", "-1"],
+)
+def test_traffic_generator_rejects_invalid_service_ports(
+    tmp_path, monkeypatch, value
+):
+    monkeypatch.setenv("AUTH_SERVICE_PORT", value)
+
+    with pytest.raises(ValueError, match="AUTH_SERVICE_PORT"):
+        TrafficGenerator(output_dir=tmp_path)
+
+
+def test_traffic_generator_proxy_ports_remain_compatible(
+    tmp_path, monkeypatch
+):
+    for variable in (
+        "AUTH_SERVICE_PORT",
+        "USER_SERVICE_PORT",
+        "ORDER_SERVICE_PORT",
+        "BILLING_SERVICE_PORT",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+
+    generator = TrafficGenerator(
+        output_dir=tmp_path,
+        use_proxy=True,
+    )
+
+    try:
+        paths = [
+            "/api/v2/auth/login",
+            "/api/v2/users/me",
+            "/api/v2/orders",
+            "/api/v2/billing/invoices",
+        ]
+
+        assert [
+            generator._service_port(path) for path in paths
+        ] == [7001, 7002, 7003, 7004]
+    finally:
+        generator.session.close()
+        generator.logger.close()

@@ -76,6 +76,12 @@ def main():
     env["DETECTION_ALERTS_PATH"] = str(alert_path)
     env["DETECTION_WINDOW_SECONDS"] = "10"
     env["DETECTION_THRESHOLD"] = "3"
+    env["DETECTION_COMPOSE_CLI"] = "podman"
+    # Route Day16 traffic to the recovery Compose services.
+    env["AUTH_SERVICE_PORT"] = "5101"
+    env["USER_SERVICE_PORT"] = "5102"
+    env["ORDER_SERVICE_PORT"] = "5103"
+    env["BILLING_SERVICE_PORT"] = "5104"
 
     engine_proc = None
     attack_proc = None

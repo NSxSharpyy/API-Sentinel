@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from pathlib import Path
 
 import requests
@@ -30,7 +31,10 @@ FAIL_CLOSED_SCRIPT = HERE / "day20_fail_closed_proxy.py"
 ENFORCER_URL = "http://127.0.0.1:8004"
 WRAPPER_URL = "http://127.0.0.1:8005"
 FAIL_CLOSED_URL = "http://127.0.0.1:8006"
-BILLING_URL = "http://127.0.0.1:5004"
+BILLING_URL = os.environ.get(
+    "DAY20_BILLING_URL",
+    "http://127.0.0.1:5004",
+).rstrip("/")
 
 STARTUP_TIMEOUT = 8.0
 REQUEST_TIMEOUT = 4.0
@@ -174,7 +178,7 @@ def main():
             "TC/eBPF daemon failure behavior."
         ),
         "ports": {
-            "billing": 5004,
+            "billing": urlparse(BILLING_URL).port or 80,
             "test_enforcer": 8004,
             "fail_open_wrapper": 8005,
             "fail_closed_proxy": 8006,

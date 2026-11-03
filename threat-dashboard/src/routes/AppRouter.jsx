@@ -14,13 +14,10 @@ import DashboardLayout from "../layouts/DashboardLayout";
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const Incidents = lazy(() => import("../pages/Incidents"));
 const ApiSurface = lazy(() => import("../pages/ApiSurface"));
+const Settings = lazy(() => import("../pages/Settings"));
 
 const OpenApiContractViewer = lazy(
   () => import("../components/ui/OpenApiContractViewer")
-);
-
-const RateLimitConfiguration = lazy(
-  () => import("../components/ui/RateLimitConfiguration")
 );
 
 // Display a loading message while a page's JavaScript is downloaded.
@@ -75,10 +72,10 @@ export default function AppRouter() {
               element={<OpenApiContractViewer />}
             />
 
-            {/* Rate Limiting Configuration */}
+            {/* Security Settings: rate limits and OWASP matrix */}
             <Route
               path="/settings"
-              element={<RateLimitConfiguration />}
+              element={<Settings />}
             />
 
             {/* Redirect unknown URLs to the dashboard */}

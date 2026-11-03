@@ -11,11 +11,8 @@ import SystemStatusBanner from "../components/layout/SystemStatusBanner.jsx";
 import NetworkErrorToast from "../components/ui/NetworkErrorToast.jsx";
 
 export default function DashboardLayout() {
-  const [sidebarCollapsed, setSidebarCollapsed] =
-    useState(false);
-
-  const [mobileMenuOpen, setMobileMenuOpen] =
-    useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const {
     connectionStatus,
@@ -40,7 +37,7 @@ export default function DashboardLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 text-gray-900 transition-colors duration-200 dark:bg-gray-950 dark:text-gray-100">
       <NetworkErrorToast
         message={lastError}
         onDismiss={dismissError}
@@ -69,9 +66,9 @@ export default function DashboardLayout() {
               onClick={closeMobileMenu}
             />
 
-            <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white shadow-xl">
-              <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
-                <span className="font-semibold text-gray-900">
+            <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white shadow-xl dark:bg-gray-900">
+              <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 dark:border-gray-700">
+                <span className="font-semibold text-gray-900 dark:text-gray-100">
                   Navigation
                 </span>
 
@@ -79,7 +76,7 @@ export default function DashboardLayout() {
                   type="button"
                   onClick={closeMobileMenu}
                   aria-label="Close navigation menu"
-                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   <X size={20} aria-hidden="true" />
                 </button>
@@ -96,7 +93,7 @@ export default function DashboardLayout() {
         )}
 
         {/* Main viewport */}
-        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 flex-1 bg-gray-50 p-4 transition-colors duration-200 sm:p-6 lg:p-8 dark:bg-gray-950">
           <div className="mx-auto max-w-[1600px] space-y-6">
             <SystemStatusBanner
               connectionStatus={connectionStatus}
@@ -124,7 +121,7 @@ export default function DashboardLayout() {
           type="button"
           onClick={toggleMobileMenu}
           aria-expanded={mobileMenuOpen}
-          className="rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg"
+          className="rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
         >
           {mobileMenuOpen ? "Close menu" : "Open menu"}
         </button>

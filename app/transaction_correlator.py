@@ -64,6 +64,20 @@ class HTTPTransactionCorrelator:
         if not pending:
             self._pending.pop(key, None)
 
+
+    def expire_stale_requests(self, now: float | None = None) -> int:
+        """Expire stale requests across all connections.
+
+        Returns the number of requests discarded.
+        """
+        current_time = monotonic() if now is None else now
+        dropped_before = self.dropped_requests
+
+        for key in list(self._pending):
+            self._expire(key, current_time)
+
+        return self.dropped_requests - dropped_before
+
     def process(self, message: HTTPMessage) -> HTTPTransaction | None:
         """Match a response to the oldest pending request."""
         key = self._connection_key(message.connection_id)

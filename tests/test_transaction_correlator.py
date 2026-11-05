@@ -133,4 +133,3 @@ def test_pending_count_for_connection_works_in_both_directions():
 
     assert correlator.pending_for_connection(CLIENT_TO_SERVER) == 1
     assert correlator.pending_for_connection(SERVER_TO_CLIENT) == 1
-

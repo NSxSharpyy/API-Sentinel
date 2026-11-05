@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -9,9 +10,13 @@ class TCPStreamReassembler:
 
     The caller must provide the first expected payload sequence number.
     Segments arriving ahead of that position are buffered until gaps fill.
+
+    Both buffered payload bytes and pending segment count are bounded to
+    prevent excessive memory use from large or highly fragmented gaps.
     """
 
     max_buffered_bytes: int = 1_048_576
+    max_pending_segments: int = 1024
     next_sequence: int | None = None
     pending: dict[int, bytes] = field(default_factory=dict)
     pending_timestamps: dict[int, datetime | None] = field(
@@ -22,6 +27,9 @@ class TCPStreamReassembler:
     def __post_init__(self) -> None:
         if self.max_buffered_bytes <= 0:
             raise ValueError("max_buffered_bytes must be positive")
+
+        if self.max_pending_segments <= 0:
+            raise ValueError("max_pending_segments must be positive")
 
     def reset(self, initial_sequence: int | None = None) -> None:
         """Reset the stream, optionally setting its initial sequence."""
@@ -80,6 +88,9 @@ class TCPStreamReassembler:
         if self.buffered_bytes + len(payload) > self.max_buffered_bytes:
             raise BufferError("TCP out-of-order buffer limit exceeded")
 
+        if len(self.pending) >= self.max_pending_segments:
+            raise BufferError("TCP pending segment count limit exceeded")
+
         self.pending[sequence_number] = payload
         self.pending_timestamps[sequence_number] = captured_at
         self.buffered_bytes += len(payload)
@@ -104,7 +115,9 @@ class TCPStreamReassembler:
                 return
 
             payload = self.pending.pop(candidate_sequence)
-            captured_at = self.pending_timestamps.pop(candidate_sequence, None)
+            captured_at = self.pending_timestamps.pop(
+                candidate_sequence, None
+            )
             self.buffered_bytes -= len(payload)
 
             trim = self.next_sequence - candidate_sequence

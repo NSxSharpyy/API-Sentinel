@@ -171,20 +171,35 @@ def _decode_chunked_body(
 class HTTPStreamParser:
     """Parse HTTP/1.x messages from ordered byte chunks."""
 
+
     def __init__(
         self,
         max_header_bytes: int = 65536,
         max_body_bytes: int = 10 * 1024 * 1024,
+        max_feed_chunk_bytes: int = 65536,
+        max_buffered_bytes: int | None = None,
     ):
         if max_header_bytes <= 0:
             raise ValueError("max_header_bytes must be positive")
         if max_body_bytes < 0:
             raise ValueError("max_body_bytes cannot be negative")
+        if max_feed_chunk_bytes <= 0:
+            raise ValueError("max_feed_chunk_bytes must be positive")
+
+        if max_buffered_bytes is None:
+            max_buffered_bytes = (
+                max_header_bytes + max_body_bytes + 65536
+            )
+
+        if max_buffered_bytes <= 0:
+            raise ValueError("max_buffered_bytes must be positive")
 
         self.buffer = bytearray()
         self._timestamp_spans: list[tuple[int, datetime | None]] = []
         self.max_header_bytes = max_header_bytes
         self.max_body_bytes = max_body_bytes
+        self.max_feed_chunk_bytes = max_feed_chunk_bytes
+        self.max_buffered_bytes = max_buffered_bytes
         self.pending_head_responses = 0
 
     def expect_head_response(self) -> None:
@@ -247,7 +262,54 @@ class HTTPStreamParser:
                     captured_at,
                 )
 
+
     def feed(
+        self,
+        data: bytes,
+        captured_at: datetime | None = None,
+    ) -> list[HTTPMessage]:
+        """
+        Process incoming data in bounded slices.
+
+        Each slice is parsed before the next one is appended, allowing
+        multiple pipelined messages without retaining the entire input
+        chunk in the parser buffer.
+        """
+        if not isinstance(data, bytes):
+            raise TypeError("data must be bytes")
+
+        messages: list[HTTPMessage] = []
+
+        if not data:
+            return self._feed_buffer(b"", captured_at)
+
+        for offset in range(0, len(data), self.max_feed_chunk_bytes):
+            chunk = data[
+                offset:offset + self.max_feed_chunk_bytes
+            ]
+
+            try:
+                parsed = self._feed_buffer(
+                    chunk,
+                    captured_at=captured_at,
+                )
+                messages.extend(parsed)
+
+            except HTTPParseError as exc:
+                raise HTTPParseError(
+                    str(exc),
+                    messages + exc.messages,
+                ) from exc
+
+            if len(self.buffer) > self.max_buffered_bytes:
+                self._fail(
+                    "HTTP message exceeds buffered size limit",
+                    messages,
+                )
+
+        return messages
+
+    def _feed_buffer(
         self,
         data: bytes,
         captured_at: datetime | None = None,

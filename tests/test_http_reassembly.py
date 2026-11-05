@@ -388,3 +388,74 @@ def test_fragmented_http_message_preserves_first_byte_timestamp():
     assert len(messages) == 1
     assert messages[0].body == b"hello"
     assert messages[0].captured_at == earlier
+
+
+def test_large_feed_with_many_pipelined_messages():
+    parser = HTTPStreamParser(max_feed_chunk_bytes=32)
+
+    request = b"GET /one HTTP/1.1\r\n\r\n"
+    raw = request * 1000
+
+    messages = parser.feed(raw)
+
+    assert len(messages) == 1000
+    assert all(message.uri == "/one" for message in messages)
+    assert parser.buffer == bytearray()
+    assert parser._timestamp_spans == []
+
+
+def test_fragmented_message_survives_incremental_feed():
+    parser = HTTPStreamParser(
+        max_feed_chunk_bytes=8,
+        max_buffered_bytes=128,
+    )
+
+    raw = (
+        b"POST /test HTTP/1.1\r\n"
+        b"Content-Length: 5\r\n\r\n"
+        b"hello"
+    )
+
+    messages = parser.feed(raw)
+
+    assert len(messages) == 1
+    assert messages[0].body == b"hello"
+    assert parser.buffer == bytearray()
+
+
+def test_incomplete_message_buffer_limit_is_enforced():
+    parser = HTTPStreamParser(
+        max_header_bytes=64,
+        max_body_bytes=1024,
+        max_feed_chunk_bytes=8,
+        max_buffered_bytes=32,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="buffered size limit",
+    ):
+        parser.feed(
+            b"POST /test HTTP/1.1\r\n"
+            b"Content-Length: 100\r\n\r\n"
+            + b"A" * 64
+        )
+
+    assert parser.buffer == bytearray()
+    assert parser._timestamp_spans == []
+
+
+def test_large_feed_preserves_completed_messages_before_parse_error():
+    parser = HTTPStreamParser(max_feed_chunk_bytes=16)
+
+    raw = (
+        b"GET /valid HTTP/1.1\r\n\r\n"
+        b"INVALID MESSAGE\r\n\r\n"
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        parser.feed(raw)
+
+    assert len(exc_info.value.messages) == 1
+    assert exc_info.value.messages[0].uri == "/valid"
+    assert parser.buffer == bytearray()

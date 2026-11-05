@@ -1,3 +1,4 @@
+
 import logging
 import time
 from collections import deque
@@ -27,12 +28,17 @@ def _reverse_connection_id(connection_id: str) -> str | None:
     """Return the reverse directional key for a TCP connection ID."""
     if not isinstance(connection_id, str) or "|" not in connection_id:
         return None
+
     protocol, endpoints = connection_id.split("|", 1)
+
     if "->" not in endpoints:
         return None
+
     source, destination = endpoints.split("->", 1)
+
     if not protocol or not source or not destination:
         return None
+
     return f"{protocol}|{destination}->{source}"
 
 
@@ -60,11 +66,13 @@ class HTTPMessagePipeline:
         self.publisher = publisher
         self.parser_factory = parser_factory
         self.max_connections = max_connections
+
         self.correlator = (
             correlator
             if correlator is not None
             else HTTPTransactionCorrelator()
         )
+
         self.transaction_store = transaction_store
         self.persistence_worker = persistence_worker
 
@@ -78,7 +86,7 @@ class HTTPMessagePipeline:
         self.max_transaction_processing_latency_ms = 0.0
         self.total_transaction_processing_latency_ms = 0.0
 
-        # Capture-to-publish latency for timestamped HTTP messages.
+        # Capture-to-publish latency metrics.
         self.capture_to_publish_count = 0
         self.last_capture_to_publish_latency_ms = 0.0
         self.max_capture_to_publish_latency_ms = 0.0
@@ -88,8 +96,7 @@ class HTTPMessagePipeline:
             maxlen=MAX_COMPLETED_TRANSACTIONS
         )
 
-        # HEAD request context must cross the two directional TCP parsers.
-        # The key is the exact response-direction connection ID.
+        # HEAD request context across directional TCP parsers.
         self._pending_head_responses: dict[str, int] = {}
 
         self._parsers: dict[str, HTTPStreamParser] = {
@@ -105,12 +112,12 @@ class HTTPMessagePipeline:
 
     @property
     def open_connections(self) -> int:
-        """Return the number of parser instances currently retained."""
+        """Return the number of retained parser instances."""
         return len(self._parsers)
 
     @property
     def average_transaction_processing_latency_ms(self) -> float:
-        """Return average measured transaction processing latency."""
+        """Return average transaction processing latency."""
         if self.transaction_processing_count == 0:
             return 0.0
 
@@ -121,9 +128,10 @@ class HTTPMessagePipeline:
 
     @property
     def average_capture_to_publish_latency_ms(self) -> float:
-        """Return average capture-to-publish latency for valid timestamps."""
+        """Return average capture-to-publish latency."""
         if self.capture_to_publish_count == 0:
             return 0.0
+
         return (
             self.total_capture_to_publish_latency_ms
             / self.capture_to_publish_count
@@ -140,18 +148,18 @@ class HTTPMessagePipeline:
 
         self.transaction_processing_count += 1
         self.last_transaction_processing_latency_ms = elapsed_ms
-        self.total_transaction_processing_latency_ms += elapsed_ms
         self.max_transaction_processing_latency_ms = max(
             self.max_transaction_processing_latency_ms,
             elapsed_ms,
         )
+        self.total_transaction_processing_latency_ms += elapsed_ms
 
     def _record_capture_to_publish_latency(
         self,
         captured_at: datetime | None,
         published_at: datetime,
     ) -> None:
-        """Record approximate capture-to-publish latency for one message."""
+        """Record capture-to-publish latency."""
         if captured_at is None or captured_at.utcoffset() is None:
             return
 
@@ -161,7 +169,8 @@ class HTTPMessagePipeline:
 
         if elapsed_ms < 0:
             logger.warning(
-                "Skipping capture-to-publish latency: capture time is in the future"
+                "Skipping capture-to-publish latency: "
+                "capture time is in the future"
             )
             return
 
@@ -179,6 +188,7 @@ class HTTPMessagePipeline:
             raise ValueError("connection_id must be a non-empty string")
 
         parser = self._parsers.get(connection_id)
+
         if parser is not None:
             return parser
 
@@ -187,6 +197,7 @@ class HTTPMessagePipeline:
 
         parser = self.parser_factory()
         self._parsers[connection_id] = parser
+
         return parser
 
     def close_connection(
@@ -194,11 +205,18 @@ class HTTPMessagePipeline:
         connection_id: str = DEFAULT_CONNECTION_ID,
     ) -> None:
         """Remove parser state and pending correlation requests."""
-        self._parsers.pop(connection_id, None)
         reverse_id = _reverse_connection_id(connection_id)
+
+        self._parsers.pop(connection_id, None)
+
+        if reverse_id is not None:
+            self._parsers.pop(reverse_id, None)
+
         self._pending_head_responses.pop(connection_id, None)
+
         if reverse_id is not None:
             self._pending_head_responses.pop(reverse_id, None)
+
         self.correlator.close_connection(connection_id)
 
     def _sync_head_response_context(
@@ -209,25 +227,33 @@ class HTTPMessagePipeline:
         messages: list[HTTPMessage],
     ) -> None:
         """Move HEAD context between directional parsers and consume finals."""
-        # A response parser decrements this count only when a final response
-        # for a HEAD request is completed. Interim 1xx messages leave it intact.
-        consumed = max(0, pending_before_feed - parser.pending_head_responses)
+        consumed = max(
+            0,
+            pending_before_feed - parser.pending_head_responses,
+        )
+
         if consumed:
             remaining = max(
-                0, self._pending_head_responses.get(connection_id, 0) - consumed
+                0,
+                self._pending_head_responses.get(connection_id, 0)
+                - consumed,
             )
+
             if remaining:
                 self._pending_head_responses[connection_id] = remaining
             else:
                 self._pending_head_responses.pop(connection_id, None)
 
         reverse_id = _reverse_connection_id(connection_id)
+
         for message in messages:
-            if message.message_type != "request" or message.method != "HEAD":
+            if (
+                message.message_type != "request"
+                or message.method != "HEAD"
+            ):
                 continue
+
             if reverse_id is None:
-                # Compatibility for single-stream callers that feed both
-                # directions to one parser rather than providing a 4-tuple.
                 parser.expect_head_response()
             else:
                 self._pending_head_responses[reverse_id] = (
@@ -239,7 +265,7 @@ class HTTPMessagePipeline:
         messages: list[HTTPMessage],
         connection_id: str,
     ) -> None:
-        """Correlate, measure, persist, and publish complete HTTP messages."""
+        """Correlate, measure, persist, and publish HTTP messages."""
         for message in messages:
             message.connection_id = connection_id
 
@@ -248,7 +274,6 @@ class HTTPMessagePipeline:
             elif message.message_type == "response":
                 self.parsed_response_count += 1
 
-            # Measure transaction completion processing, not network latency.
             processing_started_ns = (
                 time.perf_counter_ns()
                 if message.message_type == "response"
@@ -262,11 +287,9 @@ class HTTPMessagePipeline:
 
                 try:
                     if self.persistence_worker is not None:
-                        # Database I/O happens in the background worker.
                         self.persistence_worker.enqueue(transaction)
 
                     elif self.transaction_store is not None:
-                        # Compatibility path for synchronous callers.
                         self.transaction_store.save(transaction)
 
                 except Exception:
@@ -275,28 +298,30 @@ class HTTPMessagePipeline:
                         "continuing message publishing"
                     )
 
-                # Publish one correlated request/response event to downstream
-                # discovery and heuristic topics. Keep legacy message events
-                # below for existing subscribers.
                 try:
                     publish_transaction = getattr(
-                        self.publisher, "publish_transaction", None
+                        self.publisher,
+                        "publish_transaction",
+                        None,
                     )
+
                     if callable(publish_transaction):
                         publish_transaction(transaction)
+
                 except Exception:
                     logger.exception(
                         "Failed to publish completed HTTP transaction; "
                         "continuing message processing"
                     )
+
                 finally:
                     if processing_started_ns is not None:
                         self._record_transaction_processing_latency(
                             processing_started_ns
                         )
 
-            # Preserve the existing per-message event contract.
             self.publisher.publish(message)
+
             self._record_capture_to_publish_latency(
                 message.captured_at,
                 datetime.now(timezone.utc),
@@ -311,25 +336,36 @@ class HTTPMessagePipeline:
         """Parse and publish messages with their capture timestamps."""
         parser = self._get_parser(connection_id)
 
-        # Response bytes are parsed on the reverse-direction stream. Seed that
-        # parser with outstanding HEAD context before it sees a response header.
-        pending_for_direction = self._pending_head_responses.get(connection_id, 0)
+        pending_for_direction = self._pending_head_responses.get(
+            connection_id,
+            0,
+        )
+
         if pending_for_direction > parser.pending_head_responses:
             parser.expect_head_responses(
                 pending_for_direction - parser.pending_head_responses
             )
+
         pending_before_feed = parser.pending_head_responses
 
         try:
-            messages = parser.feed(data, captured_at=captured_at)
+            messages = parser.feed(
+                data,
+                captured_at=captured_at,
+            )
+
         except HTTPParseError as exc:
             for message in exc.messages:
                 if message.captured_at is None:
                     message.captured_at = captured_at
 
             self._sync_head_response_context(
-                connection_id, parser, pending_before_feed, exc.messages
+                connection_id,
+                parser,
+                pending_before_feed,
+                exc.messages,
             )
+
             self._publish_all(exc.messages, connection_id)
             self.close_connection(connection_id)
             raise
@@ -339,7 +375,12 @@ class HTTPMessagePipeline:
                 message.captured_at = captured_at
 
         self._sync_head_response_context(
-            connection_id, parser, pending_before_feed, messages
+            connection_id,
+            parser,
+            pending_before_feed,
+            messages,
         )
+
         self._publish_all(messages, connection_id)
+
         return messages

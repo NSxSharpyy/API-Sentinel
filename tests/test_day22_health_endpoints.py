@@ -52,7 +52,10 @@ def test_readyz_returns_200_when_core_workers_are_running(monkeypatch):
 
     response = TestClient(app).get("/readyz")
     body = response.json()
-
+    assert "tracemalloc_enabled" in body["memory"]
+    assert "traced_current_bytes" in body["memory"]
+    assert "traced_peak_bytes" in body["memory"]
+    assert "tracemalloc_overhead_bytes" in body["memory"]
     assert response.status_code == 200
     assert body["status"] == "ready"
     assert all(body["checks"].values())

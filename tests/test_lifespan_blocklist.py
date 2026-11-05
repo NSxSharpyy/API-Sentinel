@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -193,3 +194,190 @@ def test_lifespan_starts_and_stops_opted_in_blocklist_services(monkeypatch):
     assert FakeWriter.instances[-1].closed is True
     assert FakeReceiver.instances[-1].closed is True
     assert FakeSenderOwner.instances[-1].closed is True
+
+
+def test_lifespan_enables_tracemalloc_when_opted_in(monkeypatch):
+    _patch_common(monkeypatch)
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("API_SENTINEL_TRACEMALLOC_ENABLED", "1")
+    monkeypatch.setenv("API_SENTINEL_TRACEMALLOC_FRAMES", "5")
+
+    if main.tracemalloc.is_tracing():
+        main.tracemalloc.stop()
+
+    test_app = SimpleNamespace(state=SimpleNamespace())
+
+    async def scenario():
+        async with main.lifespan(test_app):
+            assert main.tracemalloc.is_tracing()
+            assert test_app.state.tracemalloc_enabled is True
+            assert main.tracemalloc.get_traceback_limit() == 5
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        if main.tracemalloc.is_tracing():
+            main.tracemalloc.stop()
+
+
+def test_lifespan_does_not_enable_tracemalloc_by_default(monkeypatch):
+    _patch_common(monkeypatch)
+    _clear_flags(monkeypatch)
+    monkeypatch.delenv("API_SENTINEL_TRACEMALLOC_ENABLED", raising=False)
+
+    if main.tracemalloc.is_tracing():
+        main.tracemalloc.stop()
+
+    test_app = SimpleNamespace(state=SimpleNamespace())
+
+    async def scenario():
+        async with main.lifespan(test_app):
+            assert test_app.state.tracemalloc_enabled is False
+            assert not main.tracemalloc.is_tracing()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        if main.tracemalloc.is_tracing():
+            main.tracemalloc.stop()
+
+
+def test_lifespan_rejects_invalid_tracemalloc_frame_count(monkeypatch):
+    _patch_common(monkeypatch)
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("API_SENTINEL_TRACEMALLOC_ENABLED", "1")
+    monkeypatch.setenv("API_SENTINEL_TRACEMALLOC_FRAMES", "0")
+
+    test_app = SimpleNamespace(state=SimpleNamespace())
+
+    async def scenario():
+        with pytest.raises(ValueError, match="between 1 and 25"):
+            async with main.lifespan(test_app):
+                pass
+
+    asyncio.run(scenario())
+
+
+def test_lifespan_rejects_non_integer_tracemalloc_frame_count(monkeypatch):
+    _patch_common(monkeypatch)
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("API_SENTINEL_TRACEMALLOC_ENABLED", "1")
+    monkeypatch.setenv("API_SENTINEL_TRACEMALLOC_FRAMES", "invalid")
+
+    test_app = SimpleNamespace(state=SimpleNamespace())
+
+    async def scenario():
+        with pytest.raises(ValueError, match="must be an integer"):
+            async with main.lifespan(test_app):
+                pass
+
+    asyncio.run(scenario())
+
+def test_lifespan_stops_capture_before_packet_worker(monkeypatch):
+    _patch_common(monkeypatch)
+    _clear_flags(monkeypatch)
+    monkeypatch.delenv("API_SENTINEL_BLOCKLIST_DROP_AUDIT_ENABLED", raising=False)
+
+    events = []
+    capture_started = asyncio.Event()
+
+    async def fake_capture(_command, _capture_stop_event, on_status=None):
+        try:
+            if on_status is not None:
+                on_status("running")
+            capture_started.set()
+            await asyncio.Event().wait()
+        finally:
+            events.append("capture_stopped")
+
+    async def fake_packet_worker(_pipeline, worker_stop_event):
+        await worker_stop_event.wait()
+        events.append("packet_worker_stopped")
+
+    monkeypatch.setattr(main, "supervise_capture", fake_capture)
+    monkeypatch.setattr(main, "packet_worker", fake_packet_worker)
+
+    test_app = SimpleNamespace(state=SimpleNamespace())
+
+    async def scenario():
+        async with main.lifespan(test_app):
+            assert test_app.state.stop_event is not test_app.state.capture_stop_event
+            await asyncio.wait_for(capture_started.wait(), timeout=1)
+
+    asyncio.run(scenario())
+
+    assert test_app.state.capture_stop_event.is_set()
+    assert test_app.state.stop_event.is_set()
+    assert events == ["capture_stopped", "packet_worker_stopped"]
+
+
+def test_lifespan_integrates_memory_profiler_in_shutdown_order(
+    monkeypatch, tmp_path
+):
+    _patch_common(monkeypatch)
+    _clear_flags(monkeypatch)
+    monkeypatch.delenv(
+        "API_SENTINEL_BLOCKLIST_DROP_AUDIT_ENABLED", raising=False
+    )
+    monkeypatch.setenv("API_SENTINEL_MEMORY_PROFILE_ENABLED", "1")
+    monkeypatch.setenv(
+        "API_SENTINEL_MEMORY_PROFILE_OUTPUT_DIR", str(tmp_path)
+    )
+
+    events = []
+    profiler_options = {}
+    tracing_was_enabled = main.tracemalloc.is_tracing()
+
+    class FakeMemoryProfiler:
+        def __init__(self, **kwargs):
+            profiler_options.update(kwargs)
+
+        async def start(self):
+            events.append("profiler_started")
+            await asyncio.sleep(0)
+            snapshot = profiler_options["snapshot_provider"]()
+            activity = profiler_options["activity_provider"]()
+            assert "traced_current_bytes" in snapshot
+            assert snapshot["capture_status"] == "running"
+            assert snapshot["capture_running"] is True
+            assert snapshot["capture_supervisor_running"] is True
+            assert snapshot["packet_worker_running"] is True
+            assert snapshot["persistence_worker_running"] is True
+            assert isinstance(activity, tuple)
+
+        async def drain(self):
+            assert test_app.state.capture_task.done()
+            assert not profiler_options["packet_worker_task"].done()
+            assert not profiler_options["persistence_worker_task"].done()
+            events.append("queues_drained")
+            return {"success": True}
+
+        def snapshot(self, event):
+            events.append(event)
+
+        async def stop(self):
+            events.append("profiler_stopped")
+
+    monkeypatch.setattr(main, "MemoryProfiler", FakeMemoryProfiler)
+
+    test_app = SimpleNamespace(state=SimpleNamespace())
+
+    async def scenario():
+        async with main.lifespan(test_app):
+            assert test_app.state.memory_profiler is not None
+            assert test_app.state.memory_profile_enabled is True
+            assert test_app.state.tracemalloc_enabled is True
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        if not tracing_was_enabled and main.tracemalloc.is_tracing():
+            main.tracemalloc.stop()
+
+    assert events == [
+        "profiler_started",
+        "queues_drained",
+        "post_shutdown",
+        "profiler_stopped",
+    ]
+    assert Path(test_app.state.memory_profile_output_path).parent == tmp_path

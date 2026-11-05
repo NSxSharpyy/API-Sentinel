@@ -1,7 +1,8 @@
-
+import tracemalloc
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 import queue
 from contextlib import asynccontextmanager
@@ -32,6 +33,7 @@ from app.async_transaction_store import (
     initialize_async_database,
 )
 from app.database import async_engine
+from app.memory_profiler import MemoryProfiler
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,45 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize persistence and start packet capture services."""
+    # Optional Python allocation tracing for Day 28 memory profiling.
+    # It is disabled by default because tracing adds runtime overhead.
+    memory_profile_enabled = os.getenv(
+        "API_SENTINEL_MEMORY_PROFILE_ENABLED", "0"
+    ).strip().lower() in {"1", "true", "yes"}
+
+    tracemalloc_enabled = (
+        os.getenv("API_SENTINEL_TRACEMALLOC_ENABLED", "0")
+        .strip()
+        .lower() in {"1", "true", "yes"}
+    ) or memory_profile_enabled
+
+    app.state.memory_profile_enabled = memory_profile_enabled
+    app.state.tracemalloc_enabled = False
+
+    if tracemalloc_enabled:
+        try:
+            tracemalloc_frames = int(
+                os.getenv("API_SENTINEL_TRACEMALLOC_FRAMES", "10")
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "API_SENTINEL_TRACEMALLOC_FRAMES must be an integer"
+            ) from exc
+
+        if not 1 <= tracemalloc_frames <= 25:
+            raise ValueError(
+                "API_SENTINEL_TRACEMALLOC_FRAMES must be between 1 and 25"
+            )
+
+        if not tracemalloc.is_tracing():
+            tracemalloc.start(tracemalloc_frames)
+
+        app.state.tracemalloc_enabled = tracemalloc.is_tracing()
+        logger.info(
+            "Python memory tracing enabled: frames=%d",
+            tracemalloc_frames,
+        )
+
     drop_audit_enabled = os.getenv(
         "API_SENTINEL_BLOCKLIST_DROP_AUDIT_ENABLED", ""
     ).strip().lower() in {"1", "true", "yes"}
@@ -59,6 +100,7 @@ async def lifespan(app: FastAPI):
     drop_audit_store = AsyncBlockedTransactionAuditStore()
 
     stop_event = asyncio.Event()
+    capture_stop_event = asyncio.Event()
     persistence_stop_event = asyncio.Event()
 
     await initialize_async_database()
@@ -205,12 +247,14 @@ async def lifespan(app: FastAPI):
     app.state.blocklist_verdict_receiver_task = None
 
     app.state.stop_event = stop_event
+    app.state.capture_stop_event = capture_stop_event
     app.state.http_pipeline = pipeline
     app.state.http_publisher = publisher
     app.state.transaction_stream = transaction_stream
     app.state.transaction_store = transaction_store
     app.state.alert_bus = alert_bus
     app.state.persistence_worker = persistence_worker
+    app.state.memory_profiler = None
     app.state.capture_status = "starting"
     app.state.blocked_transaction_audit_enabled = drop_audit_enabled
     app.state.blocked_transaction_audit_task = None
@@ -241,7 +285,7 @@ async def lifespan(app: FastAPI):
     capture_task = asyncio.create_task(
         supervise_capture(
             reader_command,
-            stop_event,
+            capture_stop_event,
             on_status=update_capture_status,
         ),
         name="api-sentinel-capture-supervisor",
@@ -285,8 +329,122 @@ async def lifespan(app: FastAPI):
         app.state.blocked_transaction_audit_task = drop_audit_task
 
     transaction_stream.start(asyncio.get_running_loop())
+    memory_profiler = None
 
     try:
+        if memory_profile_enabled:
+            sample_interval = float(os.getenv(
+                "API_SENTINEL_MEMORY_PROFILE_INTERVAL_SECONDS", "60"
+            ))
+            drain_timeout = float(os.getenv(
+                "API_SENTINEL_MEMORY_PROFILE_DRAIN_TIMEOUT_SECONDS", "120"
+            ))
+            quiet_period = float(os.getenv(
+                "API_SENTINEL_MEMORY_PROFILE_QUIET_PERIOD_SECONDS", "2"
+            ))
+            output_dir = Path(os.getenv(
+                "API_SENTINEL_MEMORY_PROFILE_OUTPUT_DIR", "artifacts/day28"
+            )).expanduser()
+            output_path = output_dir / (
+                f"memory-profile-{time.time_ns()}-{os.getpid()}.jsonl"
+            )
+
+            def memory_snapshot_provider():
+                snapshot = _runtime_memory_snapshot()
+                tcp_diagnostics = getattr(
+                    queues, "tcp_stream_diagnostics", {}
+                )
+                capture_task = getattr(app.state, "capture_task", None)
+                packet_task = getattr(app.state, "packet_worker_task", None)
+                persistence_task = getattr(
+                    app.state, "persistence_worker_task", None
+                )
+                capture_status = getattr(
+                    app.state, "capture_status", "unknown"
+                )
+
+                return {
+                    **snapshot,
+                    "capture_status": capture_status,
+                    "capture_running": (
+                        capture_status == "running"
+                        and capture_task is not None
+                        and not capture_task.done()
+                    ),
+                    "capture_supervisor_running": (
+                        capture_task is not None and not capture_task.done()
+                    ),
+                    "packet_worker_running": (
+                        packet_task is not None and not packet_task.done()
+                    ),
+                    "persistence_worker_running": (
+                        persistence_task is not None
+                        and not persistence_task.done()
+                    ),
+                    "raw_packet_queue_depth": raw_packet_queue.qsize(),
+                    "persistence_queue_depth": persistence_worker.queue.qsize(),
+                    "accepted_packet_count": queues.accepted_packet_count,
+                    "rejected_packet_count": queues.rejected_packet_count,
+                    "dropped_packet_count": queues.dropped_packet_count,
+                    "accepted_tcp_event_count": queues.accepted_tcp_event_count,
+                    "accepted_udp_event_count": queues.accepted_udp_event_count,
+                    "tcp_packets_processed_count":
+                        queues.tcp_packets_processed_count,
+                    "tcp_payload_delivered_to_http_count":
+                        queues.tcp_payload_delivered_to_http_count,
+                    "tcp_stream_limit_rejection_count":
+                        queues.tcp_stream_limit_rejection_count,
+                    "tcp_reassembly_buffer_overflow_count":
+                        queues.tcp_reassembly_buffer_overflow_count,
+                    "transaction_processing_count":
+                        pipeline.transaction_processing_count,
+                    "persisted_transaction_count":
+                        persistence_worker.persisted_count,
+                    "persistence_failed_count":
+                        persistence_worker.failed_count,
+                    "persistence_rejected_count":
+                        persistence_worker.rejected_count,
+                    "http_open_connection_count": pipeline.open_connections,
+                    "http_pending_request_count":
+                        pipeline.correlator.pending_request_count,
+                    "active_tcp_stream_count":
+                        tcp_diagnostics.get("active_streams", 0),
+                }
+
+            def memory_activity_provider():
+                return (
+                    queues.accepted_packet_count,
+                    queues.rejected_packet_count,
+                    queues.dropped_packet_count,
+                    queues.tcp_packets_processed_count,
+                    pipeline.transaction_processing_count,
+                    persistence_worker.persisted_count,
+                    persistence_worker.failed_count,
+                    persistence_worker.rejected_count,
+                )
+
+            memory_profiler = MemoryProfiler(
+                output_path=output_path,
+                snapshot_provider=memory_snapshot_provider,
+                activity_provider=memory_activity_provider,
+                raw_packet_queue=raw_packet_queue,
+                persistence_queue=persistence_worker.queue,
+                packet_worker_task=worker_task,
+                persistence_worker_task=persistence_task,
+                sample_interval_seconds=sample_interval,
+                drain_timeout_seconds=drain_timeout,
+                quiet_period_seconds=quiet_period,
+            )
+            app.state.memory_profiler = memory_profiler
+            app.state.memory_profile_output_path = str(output_path)
+
+            await memory_profiler.start()
+            logger.info(
+                "Day 28 memory profiler started: output=%s interval=%ss",
+                output_path,
+                sample_interval,
+            )
+
         yield
 
     finally:
@@ -312,8 +470,9 @@ async def lifespan(app: FastAPI):
                     "Day 19 drop-audit worker failed during shutdown"
                 )
 
-        # Stop capture and packet processing first.
-        stop_event.set()
+        # Stop capture first. Keep the packet worker alive until the
+        # capture reader has terminated and cannot enqueue more packets.
+        capture_stop_event.set()
         capture_task.cancel()
 
         try:
@@ -322,6 +481,20 @@ async def lifespan(app: FastAPI):
             pass
         except Exception:
             logger.exception("Capture supervisor failed during shutdown")
+
+        # Capture is fully stopped. Drain both processing queues while
+        # their workers are still alive.
+        if memory_profiler is not None:
+            try:
+                await memory_profiler.drain()
+                logger.info("Day 28 packet and persistence queues drained")
+            except Exception:
+                logger.exception(
+                    "Day 28 memory profiler could not confirm a clean queue drain"
+                )
+
+        # Now tell the packet worker to finish and exit.
+        stop_event.set()
 
         try:
             await asyncio.wait_for(worker_task, timeout=5.0)
@@ -360,6 +533,19 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Persistence worker failed during shutdown")
         finally:
+            if memory_profiler is not None:
+                try:
+                    memory_profiler.snapshot("post_shutdown")
+                except Exception:
+                    logger.exception(
+                        "Could not write Day 28 post-shutdown snapshot"
+                    )
+
+                try:
+                    await memory_profiler.stop()
+                except Exception:
+                    logger.exception("Could not close Day 28 memory profiler")
+
             alert_bus.close()
             publisher.close()
 
@@ -690,11 +876,26 @@ def _runtime_memory_snapshot():
             2,
         )
 
+    tracing_enabled = tracemalloc.is_tracing()
+    traced_current_bytes = None
+    traced_peak_bytes = None
+    tracemalloc_overhead_bytes = None
+
+    if tracing_enabled:
+        traced_current_bytes, traced_peak_bytes = (
+            tracemalloc.get_traced_memory()
+        )
+        tracemalloc_overhead_bytes = tracemalloc.get_tracemalloc_memory()
+
     return {
         "process_rss_bytes": process_rss_bytes,
         "system_total_bytes": system_total_bytes,
         "system_available_bytes": system_available_bytes,
         "system_used_percent": used_percent,
+        "tracemalloc_enabled": tracing_enabled,
+        "traced_current_bytes": traced_current_bytes,
+        "traced_peak_bytes": traced_peak_bytes,
+        "tracemalloc_overhead_bytes": tracemalloc_overhead_bytes,
     }
 
 

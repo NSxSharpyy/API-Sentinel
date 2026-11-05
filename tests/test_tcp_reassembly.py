@@ -120,3 +120,56 @@ def test_out_of_order_segments_preserve_capture_timestamps():
         (b"Hello ", earlier),
         (b"World", later),
     ]
+
+
+def test_pending_segment_count_limit_is_enforced():
+    stream = TCPStreamReassembler(max_pending_segments=2)
+    stream.reset(initial_sequence=100)
+
+    assert stream.feed(110, b"A") == b""
+    assert stream.feed(120, b"B") == b""
+    assert len(stream.pending) == 2
+
+    with pytest.raises(BufferError, match="pending segment count limit"):
+        stream.feed(130, b"C")
+
+    assert len(stream.pending) == 2
+    assert stream.buffered_bytes == 2
+
+
+def test_pending_segment_count_limit_allows_drain_and_reuse():
+    stream = TCPStreamReassembler(max_pending_segments=1)
+    stream.reset(initial_sequence=100)
+
+    assert stream.feed(105, b"world") == b""
+    assert len(stream.pending) == 1
+
+    # Filling the gap drains the pending segment and frees its slot.
+    assert stream.feed(100, b"hello") == b"helloworld"
+    assert len(stream.pending) == 0
+    assert stream.buffered_bytes == 0
+
+    # A new out-of-order segment can now be buffered.
+    assert stream.feed(115, b"!") == b""
+    assert len(stream.pending) == 1
+
+
+def test_pending_segment_limit_must_be_positive():
+    with pytest.raises(ValueError, match="max_pending_segments"):
+        TCPStreamReassembler(max_pending_segments=0)
+
+
+def test_reset_clears_pending_segment_count():
+    stream = TCPStreamReassembler(max_pending_segments=1)
+    stream.reset(initial_sequence=100)
+
+    stream.feed(110, b"A")
+    assert len(stream.pending) == 1
+
+    stream.reset(initial_sequence=200)
+
+    assert len(stream.pending) == 0
+    assert stream.pending_timestamps == {}
+    assert stream.buffered_bytes == 0
+
+    assert stream.feed(210, b"B") == b""

@@ -500,3 +500,33 @@ def test_publisher_routes_to_each_downstream_consumer_topic(topic):
         if publisher is not None:
             publisher.close()
         subscriber.close()
+
+
+def test_close_connection_clears_both_directional_parsers():
+    from unittest.mock import Mock
+    from app.http_pipeline import HTTPMessagePipeline
+
+    pipeline = HTTPMessagePipeline(Mock())
+
+    client_to_server = "TCP|10.0.0.10:49152->10.0.0.20:80"
+    server_to_client = "TCP|10.0.0.20:80->10.0.0.10:49152"
+
+    # Complete request creates pending correlation state.
+    pipeline.feed(
+        b"GET /partial HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        connection_id=client_to_server,
+    )
+
+    # Incomplete response leaves buffered parser state.
+    pipeline.feed(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n",
+        connection_id=server_to_client,
+    )
+
+    assert pipeline.open_connections == 3
+    assert pipeline.correlator.pending_request_count == 1
+
+    pipeline.close_connection(client_to_server)
+
+    assert pipeline.open_connections == 1
+    assert pipeline.correlator.pending_request_count == 0

@@ -104,6 +104,7 @@ async def _cleanup_stale_streams(
             pass
 
         now = time.monotonic()
+
         stale_ids = [
             connection_id
             for connection_id, last_activity in list(last_seen.items())
@@ -122,7 +123,24 @@ async def _cleanup_stale_streams(
                     connection_id,
                 )
 
-            logger.debug("Expired inactive TCP stream: %s", connection_id)
+            logger.debug(
+                "Expired inactive TCP stream: %s",
+                connection_id,
+            )
+
+        try:
+            expired_requests = (
+                pipeline.correlator.expire_stale_requests(now)
+            )
+            if expired_requests:
+                logger.debug(
+                    "Expired %s stale HTTP correlation requests",
+                    expired_requests,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to expire stale HTTP correlation requests"
+            )
 
         _publish_tcp_stream_diagnostics(streams, last_seen)
 
@@ -153,7 +171,7 @@ async def packet_worker(
     logger.info("Packet worker started")
 
     try:
-        while not stop_event.is_set():
+        while not stop_event.is_set() or not raw_packet_queue.empty():
             try:
                 packet = await asyncio.wait_for(
                     raw_packet_queue.get(),
@@ -163,6 +181,7 @@ async def packet_worker(
                 continue
 
             queued_at_ns = packet._queue_enqueued_at_ns
+
             if queued_at_ns is not None:
                 queues.raw_packet_queue_wait_metrics.record(
                     time.perf_counter_ns() - queued_at_ns
@@ -193,39 +212,55 @@ async def packet_worker(
                 flags = _flags(packet)
                 stream = streams.get(connection_id)
 
+                # Handle TCP SYN and SYN-ACK packets.
                 if "SYN" in flags:
                     queues.tcp_syn_packets_count += 1
 
-                    if (
-                        len(streams) >= MAX_TCP_STREAMS
-                        and connection_id not in streams
-                    ):
-                        logger.warning(
-                            "TCP stream limit reached; skipping %s",
-                            connection_id,
+                    # A new initial SYN reusing an active connection
+                    # tuple means the previous connection has ended.
+                    if "ACK" not in flags and connection_id in streams:
+                        streams.pop(connection_id, None)
+                        last_seen.pop(connection_id, None)
+
+                        pipeline.close_connection(connection_id)
+                        stream = None
+
+                    # Initialize a new stream when necessary.
+                    # Preserve an existing stream on a retransmitted SYN-ACK.
+                    if stream is None or "ACK" not in flags:
+                        if (
+                            len(streams) >= MAX_TCP_STREAMS
+                            and connection_id not in streams
+                        ):
+                            logger.warning(
+                                "TCP stream limit reached; skipping %s",
+                                connection_id,
+                            )
+                            queues.tcp_stream_limit_rejection_count += 1
+                            continue
+
+                        if packet.sequence_number is None:
+                            logger.warning(
+                                "SYN packet %s has no sequence number",
+                                packet.packet_id,
+                            )
+                            continue
+
+                        stream = TCPStreamReassembler(
+                            max_buffered_bytes=MAX_TCP_BUFFERED_BYTES
                         )
-                        queues.tcp_stream_limit_rejection_count += 1
-                        continue
 
-                    if packet.sequence_number is None:
-                        logger.warning(
-                            "SYN packet %s has no sequence number",
-                            packet.packet_id,
+                        stream.reset(
+                            initial_sequence=packet.sequence_number + 1
                         )
-                        continue
 
-                    stream = TCPStreamReassembler(
-                        max_buffered_bytes=MAX_TCP_BUFFERED_BYTES
-                    )
-                    stream.reset(
-                        initial_sequence=packet.sequence_number + 1
-                    )
+                        streams[connection_id] = stream
 
-                    streams[connection_id] = stream
                     last_seen[connection_id] = time.monotonic()
 
                 if stream is None:
                     queues.tcp_packets_without_stream_count += 1
+
                     logger.debug(
                         "Skipping packet %s: no stream initialized by SYN",
                         packet.packet_id,
@@ -248,23 +283,33 @@ async def packet_worker(
                             packet.payload,
                             packet.captured_at,
                         )
+
                     except BufferError:
                         logger.warning(
                             "TCP reassembly buffer exceeded for %s",
                             connection_id,
                         )
+
                         queues.tcp_reassembly_buffer_overflow_count += 1
+
                         streams.pop(connection_id, None)
                         last_seen.pop(connection_id, None)
+
                         pipeline.close_connection(connection_id)
-                        _publish_tcp_stream_diagnostics(streams, last_seen)
+
+                        _publish_tcp_stream_diagnostics(
+                            streams,
+                            last_seen,
+                        )
                         continue
 
                     if timestamped_chunks:
                         contiguous_payload = b"".join(
                             chunk for chunk, _ in timestamped_chunks
                         )
+
                         queues.tcp_payload_delivered_to_http_count += 1
+
                         queues.tcp_payload_bytes_delivered_to_http_count += (
                             len(contiguous_payload)
                         )
@@ -276,6 +321,7 @@ async def packet_worker(
                                     connection_id=connection_id,
                                     captured_at=captured_at,
                                 )
+
                         except HTTPParseError as exc:
                             logger.warning(
                                 "Malformed HTTP stream for connection %s: %s",
@@ -286,17 +332,23 @@ async def packet_worker(
                 if "FIN" in flags or "RST" in flags:
                     streams.pop(connection_id, None)
                     last_seen.pop(connection_id, None)
+
                     pipeline.close_connection(connection_id)
 
-                _publish_tcp_stream_diagnostics(streams, last_seen)
+                _publish_tcp_stream_diagnostics(
+                    streams,
+                    last_seen,
+                )
 
             except asyncio.CancelledError:
                 raise
+
             except Exception:
                 logger.exception(
                     "Failed to process packet %s",
                     getattr(packet, "packet_id", "unknown"),
                 )
+
             finally:
                 raw_packet_queue.task_done()
 
@@ -319,5 +371,10 @@ async def packet_worker(
 
         streams.clear()
         last_seen.clear()
-        _publish_tcp_stream_diagnostics(streams, last_seen)
+
+        _publish_tcp_stream_diagnostics(
+            streams,
+            last_seen,
+        )
+
         logger.info("Packet worker stopped")

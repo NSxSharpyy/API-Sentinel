@@ -104,14 +104,20 @@ int capture_packets(struct __sk_buff *skb)
         copy_length = API_SENTINEL_MAX_PAYLOAD;
 
     /*
-     * Reload to prevent compiler simplification of the zero check, then
-     * re-establish both bounds for the kernel verifier.
+     * Preserve bounded copy handling and capture SYN packets even when
+     * they carry no payload, so the TCP worker can initialize streams.
      */
     volatile __u32 copy_length_reload = copy_length;
     __u32 safe_copy_length = copy_length_reload;
 
     if (safe_copy_length > API_SENTINEL_MAX_PAYLOAD)
         safe_copy_length = API_SENTINEL_MAX_PAYLOAD;
+
+    __u8 tcp_flags = ((__u8 *)tcp)[13];
+
+    if (safe_copy_length == 0 && !(tcp_flags & 0x02))
+        return TC_ACT_OK;
+
 
     struct api_sentinel_event *event =
         bpf_ringbuf_reserve(&events, sizeof(*event), 0);
@@ -128,14 +134,27 @@ int capture_packets(struct __sk_buff *skb)
     event->destination_port = bpf_ntohs(tcp->dest);
     event->payload_length = (__u16)safe_copy_length;
     event->protocol = API_SENTINEL_IPPROTO_TCP;
-    event->tcp_flags = ((__u8 *)tcp)[13];
+    event->tcp_flags = tcp_flags;
 
-    if (safe_copy_length > 0) {
-        if (bpf_skb_load_bytes(skb, payload_offset, event->payload, safe_copy_length) < 0) {
+    /*
+     * Copy payload one bytes at a time.
+     * The helper size is constant (1), avoiding the earlier
+     * verifier error caused by a variable-length helper copy.
+     */
+    for (__u32 i = 0; i < API_SENTINEL_MAX_PAYLOAD; i++) {
+        if (i >= safe_copy_length)
+           break;
+
+        if (bpf_skb_load_bytes(
+                skb,
+                payload_offset + i,
+                &event->payload[i],
+                1) < 0) {
             bpf_ringbuf_discard(event, 0);
             return TC_ACT_OK;
-        }
+         }
     }
+    event->payload_length = (__u16)safe_copy_length;
 
     bpf_ringbuf_submit(event, 0);
     return TC_ACT_OK;

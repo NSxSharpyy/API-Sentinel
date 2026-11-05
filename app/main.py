@@ -7,6 +7,8 @@ import queue
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import queues
 from app.capture_supervisor import supervise_capture
@@ -16,6 +18,7 @@ from app.config import settings
 from app.blocklist_verdicts import BlocklistVerdictProducer
 from app.http_pipeline import HTTPMessagePipeline
 from app.message_broker import HTTPTransactionPublisher
+from app.transaction_websocket import TransactionWebSocketStream
 from app.packet_worker import packet_worker
 from app.persistence_worker import TransactionPersistenceWorker
 from app.queues import header_queue, metadata_queue, raw_packet_queue
@@ -39,11 +42,13 @@ async def lifespan(app: FastAPI):
     drop_audit_enabled = os.getenv(
         "API_SENTINEL_BLOCKLIST_DROP_AUDIT_ENABLED", ""
     ).strip().lower() in {"1", "true", "yes"}
+
     drop_audit_reader = (
         Path(__file__).resolve().parent.parent
         / "ebpf-day17"
         / "blocklist_drop_reader"
     )
+
     if drop_audit_enabled and not drop_audit_reader.is_file():
         raise RuntimeError(
             "Day 19 audit reader is missing; build ebpf-day17/blocklist_drop_reader"
@@ -67,20 +72,24 @@ async def lifespan(app: FastAPI):
         publisher=publisher,
         persistence_worker=persistence_worker,
     )
+    transaction_stream = TransactionWebSocketStream()
 
-    # Keep kernel synchronization opt-in. Opening the map also validates its ABI.
+    # Keep kernel synchronization opt-in.
     blocklist_enabled = os.getenv(
         "API_SENTINEL_BLOCKLIST_SYNC_ENABLED", ""
     ).strip().lower() in {"1", "true", "yes"}
+
     blocklist_policy_requested = os.getenv(
         "API_SENTINEL_BLOCKLIST_POLICY_ENABLED", ""
     ).strip().lower() in {"1", "true", "yes"}
+
     if blocklist_policy_requested and not blocklist_enabled:
         alert_bus.close()
         publisher.close()
         raise RuntimeError(
             "Blocklist policy requires API_SENTINEL_BLOCKLIST_SYNC_ENABLED=1"
         )
+
     blocklist_policy = None
     blocklist_sender = None
     blocklist_writer = None
@@ -88,10 +97,12 @@ async def lifespan(app: FastAPI):
     blocklist_receiver = None
     blocklist_task = None
     blocklist_receiver_task = None
+
     blocklist_producer = BlocklistVerdictProducer(
         queues.blocklist_verdict_queue,
         enabled=blocklist_enabled,
     )
+
     blocklist_stop_event = asyncio.Event()
     blocklist_receiver_stop_event = asyncio.Event()
 
@@ -102,72 +113,88 @@ async def lifespan(app: FastAPI):
             from app.blocklist_verdict_receiver import BlocklistVerdictReceiver
 
             blocklist_writer = LibbpfBlocklistMapWriter()
-            # Configurable batch size; default favors lower burst latency.
+
             blocklist_batch_size = int(
                 os.getenv("API_SENTINEL_BLOCKLIST_BATCH_SIZE", "5")
             )
+
             blocklist_synchronizer = BlocklistSynchronizer(
                 queues.blocklist_verdict_queue,
                 blocklist_writer,
                 batch_size=blocklist_batch_size,
             )
+
             verdict_endpoint = os.getenv(
                 "API_SENTINEL_BLOCKLIST_VERDICT_ENDPOINT",
                 "tcp://127.0.0.1:5558",
             ).strip()
-            # The receiver validates this as IPv4 loopback, so an accidental
-            # non-loopback bind fails closed during application startup.
+
             blocklist_receiver = BlocklistVerdictReceiver(
                 blocklist_producer,
                 endpoint=verdict_endpoint,
             )
+
             if blocklist_policy_requested:
                 raw_allowlist = os.getenv(
                     "API_SENTINEL_BLOCKLIST_ALLOWED_SOURCE_IPS", ""
                 )
+
                 allowed_source_ips = [
-                    item.strip() for item in raw_allowlist.split(",")
+                    item.strip()
+                    for item in raw_allowlist.split(",")
                     if item.strip()
                 ]
+
                 if not allowed_source_ips:
                     raise ValueError(
                         "Blocklist policy requires an exact allowlist in "
                         "API_SENTINEL_BLOCKLIST_ALLOWED_SOURCE_IPS"
                     )
+
                 from app.blocklist_policy import (
-                    BlocklistPolicy, ThreadOwnedVerdictSender
+                    BlocklistPolicy,
+                    ThreadOwnedVerdictSender,
                 )
                 from app.blocklist_verdict_client import BlocklistVerdictSender
-                # Connect to the receiver's actual bound endpoint. This also
-                # supports ephemeral loopback ports in controlled runtime tests.
+
                 blocklist_sender = ThreadOwnedVerdictSender(
                     lambda: BlocklistVerdictSender(
                         endpoint=blocklist_receiver.endpoint
                     )
                 )
+
                 blocklist_policy = BlocklistPolicy(
                     blocklist_sender,
                     allowed_source_ips,
                     enabled=True,
-                    ttl_seconds=int(os.getenv(
-                        "API_SENTINEL_BLOCKLIST_VERDICT_TTL_SECONDS", "60"
-                    )),
+                    ttl_seconds=int(
+                        os.getenv(
+                            "API_SENTINEL_BLOCKLIST_VERDICT_TTL_SECONDS",
+                            "60",
+                        )
+                    ),
                 )
+
         except Exception:
             if blocklist_sender is not None:
                 blocklist_sender.close()
+
             if blocklist_receiver is not None:
                 blocklist_receiver.close()
+
             if blocklist_writer is not None:
                 blocklist_writer.close()
+
             alert_bus.close()
             publisher.close()
+
             logger.exception(
                 "Blocklist synchronization requested but initialization failed"
             )
             raise
 
     transaction_store.blocklist_policy = blocklist_policy
+
     app.state.blocklist_policy = blocklist_policy
     app.state.blocklist_sender = blocklist_sender
     app.state.blocklist_sync_enabled = blocklist_enabled
@@ -180,6 +207,7 @@ async def lifespan(app: FastAPI):
     app.state.stop_event = stop_event
     app.state.http_pipeline = pipeline
     app.state.http_publisher = publisher
+    app.state.transaction_stream = transaction_stream
     app.state.transaction_store = transaction_store
     app.state.alert_bus = alert_bus
     app.state.persistence_worker = persistence_worker
@@ -202,6 +230,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.packet_worker_task = worker_task
 
+    # This reader requires the intended Linux/WSL eBPF environment.
     reader_command = [
         "sudo",
         "-n",
@@ -234,10 +263,13 @@ async def lifespan(app: FastAPI):
         app.state.blocklist_verdict_receiver_task = blocklist_receiver_task
 
     logger.info("API-Sentinel persistence worker started")
+
     if blocklist_task is not None:
         logger.info("API-Sentinel blocklist synchronization worker started")
+
     if blocklist_receiver_task is not None:
         logger.info("API-Sentinel blocklist verdict receiver started")
+
     logger.info("API-Sentinel packet worker started")
     logger.info("API-Sentinel capture supervisor started")
 
@@ -252,24 +284,33 @@ async def lifespan(app: FastAPI):
         )
         app.state.blocked_transaction_audit_task = drop_audit_task
 
+    transaction_stream.start(asyncio.get_running_loop())
+
     try:
         yield
+
     finally:
         # Stop the audit reader and reap its child process before shutdown.
         if drop_audit_task is not None:
             drop_audit_stop_event.set()
+
             try:
                 await asyncio.wait_for(drop_audit_task, timeout=4.0)
             except asyncio.TimeoutError:
                 drop_audit_task.cancel()
+
                 try:
                     await drop_audit_task
                 except asyncio.CancelledError:
                     pass
+
             except asyncio.CancelledError:
                 pass
+
             except Exception:
-                logger.exception("Day 19 drop-audit worker failed during shutdown")
+                logger.exception(
+                    "Day 19 drop-audit worker failed during shutdown"
+                )
 
         # Stop capture and packet processing first.
         stop_event.set()
@@ -280,12 +321,11 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.exception(
-                "Capture supervisor failed during shutdown"
-            )
+            logger.exception("Capture supervisor failed during shutdown")
 
         try:
             await asyncio.wait_for(worker_task, timeout=5.0)
+
         except asyncio.TimeoutError:
             logger.warning(
                 "Packet worker did not stop within 5 seconds; cancelling"
@@ -300,16 +340,19 @@ async def lifespan(app: FastAPI):
                 logger.exception(
                     "Packet worker failed while being cancelled"
                 )
+
         except asyncio.CancelledError:
             pass
-        except Exception:
-            logger.exception(
-                "Packet worker failed during shutdown"
-            )
 
-        # Drain persistence first. Post-commit policy sends need the
-        # verdict receiver and blocklist worker to remain alive.
+        except Exception:
+            logger.exception("Packet worker failed during shutdown")
+
+        # Stop transaction delivery after packet processing has stopped.
+        await asyncio.to_thread(transaction_stream.stop)
+
+        # Drain persistence before stopping alert delivery.
         persistence_stop_event.set()
+
         try:
             await persistence_task
         except asyncio.CancelledError:
@@ -320,66 +363,93 @@ async def lifespan(app: FastAPI):
             alert_bus.close()
             publisher.close()
 
-        # Allow locally submitted policy verdicts time to reach the receiver.
+        # Allow submitted verdicts time to reach the receiver.
         if blocklist_policy is not None and blocklist_receiver is not None:
             expected = blocklist_policy.snapshot()["submitted_count"]
             deadline = asyncio.get_running_loop().time() + 2.0
+
             while (
-                blocklist_receiver.snapshot()["receiver_messages_accepted"] < expected
+                blocklist_receiver.snapshot()["receiver_messages_accepted"]
+                < expected
                 and asyncio.get_running_loop().time() < deadline
             ):
                 await asyncio.sleep(0.02)
-            accepted = blocklist_receiver.snapshot()["receiver_messages_accepted"]
+
+            accepted = blocklist_receiver.snapshot()[
+                "receiver_messages_accepted"
+            ]
+
             if accepted < expected:
                 logger.warning(
-                    "Timed out waiting for accepted verdicts: expected at least %d, accepted %d",
+                    "Timed out waiting for accepted verdicts: "
+                    "expected at least %d, accepted %d",
                     expected,
                     accepted,
                 )
 
-        # Stop verdict intake after persistence and sender calls have completed.
+        # Stop verdict intake after persistence has completed.
         if blocklist_receiver_task is not None:
             blocklist_receiver_stop_event.set()
+
             try:
-                await asyncio.wait_for(blocklist_receiver_task, timeout=2.0)
+                await asyncio.wait_for(
+                    blocklist_receiver_task,
+                    timeout=2.0,
+                )
             except asyncio.TimeoutError:
                 blocklist_receiver_task.cancel()
+
                 try:
                     await blocklist_receiver_task
                 except asyncio.CancelledError:
                     pass
+
             except asyncio.CancelledError:
                 pass
+
             except Exception:
-                logger.exception("Blocklist verdict receiver failed during shutdown")
+                logger.exception(
+                    "Blocklist verdict receiver failed during shutdown"
+                )
+
             finally:
                 if blocklist_receiver is not None:
                     blocklist_receiver.close()
 
-        # Stop synchronization only after receiver intake has completed.
+        # Stop synchronization after receiver intake has completed.
         if blocklist_task is not None:
             blocklist_stop_event.set()
+
             try:
                 await asyncio.wait_for(blocklist_task, timeout=5.0)
+
             except asyncio.TimeoutError:
                 logger.warning(
                     "Blocklist worker did not stop within 5 seconds; cancelling"
                 )
                 blocklist_task.cancel()
+
                 try:
                     await blocklist_task
                 except asyncio.CancelledError:
                     pass
+
             except asyncio.CancelledError:
                 pass
+
             except Exception:
-                logger.exception("Blocklist worker failed during shutdown")
+                logger.exception(
+                    "Blocklist worker failed during shutdown"
+                )
+
             finally:
                 if blocklist_writer is not None:
                     try:
                         blocklist_writer.close()
                     except Exception:
-                        logger.exception("Failed to close blocklist map writer")
+                        logger.exception(
+                            "Failed to close blocklist map writer"
+                        )
 
         if blocklist_sender is not None:
             blocklist_sender.close()
@@ -398,67 +468,175 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS: allow the local React/Vite development server to call this API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(api_v1_router)
+
+
+@app.websocket("/ws/transactions")
+async def websocket_transactions(websocket: WebSocket):
+    """Stream completed HTTP transaction metadata to dashboard clients."""
+    transaction_stream = getattr(
+        websocket.app.state,
+        "transaction_stream",
+        None,
+    )
+
+    if transaction_stream is None:
+        await websocket.close(
+            code=1013,
+            reason="Transaction stream is not initialized",
+        )
+        return
+
+    client_queue = transaction_stream.subscribe()
+    await websocket.accept()
+
+    async def stream_transactions():
+        while True:
+            event = await client_queue.get()
+            await websocket.send_json(event)
+
+    async def watch_disconnect():
+        while True:
+            message = await websocket.receive()
+
+            if message["type"] == "websocket.disconnect":
+                return
+
+    sender_task = asyncio.create_task(
+        stream_transactions(),
+        name="api-sentinel-ws-transaction-sender",
+    )
+    receiver_task = asyncio.create_task(
+        watch_disconnect(),
+        name="api-sentinel-ws-transaction-disconnect-watch",
+    )
+
+    tasks = (sender_task, receiver_task)
+
+    try:
+        done, pending = await asyncio.wait(
+            tasks,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in pending:
+            task.cancel()
+
+        await asyncio.gather(*pending, return_exceptions=True)
+
+        for task in done:
+            try:
+                task.result()
+            except (WebSocketDisconnect, asyncio.CancelledError):
+                pass
+
+    except WebSocketDisconnect:
+        pass
+
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+        transaction_stream.unsubscribe(client_queue)
 
 
 @app.websocket("/ws/alerts")
 async def websocket_alerts(websocket: WebSocket):
     """Stream committed security alerts to connected frontend clients.
 
-    Alert delivery is best-effort and process-local. This endpoint should only
-    be exposed on a trusted development network until authentication and
+    Alert delivery is best-effort and process-local. Expose this endpoint
+    only on a trusted development network until authentication and
     authorization are implemented.
     """
     alert_bus = getattr(websocket.app.state, "alert_bus", None)
+
     if alert_bus is None:
-        await websocket.close(code=1013, reason="Alert bus is not initialized")
+        await websocket.close(
+            code=1013,
+            reason="Alert bus is not initialized",
+        )
         return
+
     try:
         subscriber = alert_bus.subscribe()
     except RuntimeError:
-        await websocket.close(code=1013, reason="Alert bus is shutting down")
+        await websocket.close(
+            code=1013,
+            reason="Alert bus is shutting down",
+        )
         return
 
     await websocket.accept()
 
-    async def stream_alerts() -> None:
-        # Poll the thread-safe queue without occupying a worker thread. This
-        # also makes disconnect cancellation deterministic in async servers.
+    async def stream_alerts():
         while True:
             try:
                 event = subscriber.get_nowait()
             except queue.Empty:
                 await asyncio.sleep(0.025)
                 continue
+
             await websocket.send_json(event.to_dict())
 
-    async def watch_disconnect() -> None:
+    async def watch_disconnect():
         while True:
             message = await websocket.receive()
+
             if message["type"] == "websocket.disconnect":
                 return
 
-    sender_task = asyncio.create_task(stream_alerts(), name="api-sentinel-ws-alert-sender")
-    receiver_task = asyncio.create_task(watch_disconnect(), name="api-sentinel-ws-disconnect-watch")
+    sender_task = asyncio.create_task(
+        stream_alerts(),
+        name="api-sentinel-ws-alert-sender",
+    )
+    receiver_task = asyncio.create_task(
+        watch_disconnect(),
+        name="api-sentinel-ws-disconnect-watch",
+    )
+
     tasks = (sender_task, receiver_task)
+
     try:
         done, pending = await asyncio.wait(
-            tasks, return_when=asyncio.FIRST_COMPLETED
+            tasks,
+            return_when=asyncio.FIRST_COMPLETED,
         )
+
         for task in pending:
             task.cancel()
+
         await asyncio.gather(*pending, return_exceptions=True)
+
         for task in done:
             try:
                 task.result()
             except (WebSocketDisconnect, asyncio.CancelledError):
                 pass
+
     except WebSocketDisconnect:
         pass
+
     finally:
         for task in tasks:
             if not task.done():
                 task.cancel()
+
         await asyncio.gather(*tasks, return_exceptions=True)
         alert_bus.unsubscribe(subscriber)
 
@@ -471,9 +649,6 @@ async def root():
         "environment": settings.environment,
         "status": "running",
     }
-
-
-from fastapi.responses import JSONResponse
 
 
 def _runtime_memory_snapshot():
@@ -502,13 +677,15 @@ def _runtime_memory_snapshot():
         pass
 
     used_percent = None
+
     if (
         system_total_bytes is not None
         and system_total_bytes > 0
         and system_available_bytes is not None
     ):
         used_percent = round(
-            100 * (system_total_bytes - system_available_bytes)
+            100
+            * (system_total_bytes - system_available_bytes)
             / system_total_bytes,
             2,
         )
@@ -523,10 +700,13 @@ def _runtime_memory_snapshot():
 
 def _queue_health_snapshot():
     persistence_worker = getattr(app.state, "persistence_worker", None)
+
     persistence_queue = (
         getattr(persistence_worker, "queue", None)
-        if persistence_worker is not None else None
+        if persistence_worker is not None
+        else None
     )
+
     queues_by_name = {
         "raw_packet": raw_packet_queue,
         "header": header_queue,
@@ -535,11 +715,21 @@ def _queue_health_snapshot():
     }
 
     result = {}
-    for name, queue in queues_by_name.items():
+
+    for name, current_queue in queues_by_name.items():
         result[name] = {
-            "depth": queue.qsize() if queue is not None else None,
-            "capacity": queue.maxsize if queue is not None else None,
+            "depth": (
+                current_queue.qsize()
+                if current_queue is not None
+                else None
+            ),
+            "capacity": (
+                current_queue.maxsize
+                if current_queue is not None
+                else None
+            ),
         }
+
     return result
 
 
@@ -551,8 +741,9 @@ async def healthz():
 
 @app.get("/readyz")
 async def readyz():
-    """Readiness probe: report critical worker status and runtime resources."""
+    """Readiness probe: report worker status and runtime resources."""
     capture_task = getattr(app.state, "capture_task", None)
+
     capture_running = (
         getattr(app.state, "capture_status", "stopped") == "running"
         and capture_task is not None
@@ -561,13 +752,17 @@ async def readyz():
 
     persistence_worker = getattr(app.state, "persistence_worker", None)
     persistence_task = getattr(
-        app.state, "persistence_worker_task", None
+        app.state,
+        "persistence_worker_task",
+        None,
     )
+
     persistence_running = (
         persistence_worker is not None
         and persistence_task is not None
         and not persistence_task.done()
     )
+
     pipeline_initialized = (
         getattr(app.state, "http_pipeline", None) is not None
     )
@@ -577,6 +772,7 @@ async def readyz():
         "persistence_worker_running": persistence_running,
         "http_pipeline_initialized": pipeline_initialized,
     }
+
     ready = all(checks.values())
 
     payload = {
@@ -585,6 +781,7 @@ async def readyz():
         "memory": _runtime_memory_snapshot(),
         "queue_depths": _queue_health_snapshot(),
     }
+
     return JSONResponse(
         status_code=200 if ready else 503,
         content=payload,
@@ -595,38 +792,47 @@ async def readyz():
 async def queue_status():
     capture_task = getattr(app.state, "capture_task", None)
     capture_status = getattr(app.state, "capture_status", "stopped")
+
     persistence_worker = getattr(
-        app.state, "persistence_worker", None
+        app.state,
+        "persistence_worker",
+        None,
     )
-    persistence_store = getattr(persistence_worker, "store", None)
+
+    persistence_store = getattr(
+        persistence_worker,
+        "store",
+        None,
+    )
+
     persistence_task = getattr(
-        app.state, "persistence_worker_task", None
+        app.state,
+        "persistence_worker_task",
+        None,
     )
+
     pipeline = getattr(app.state, "http_pipeline", None)
 
     return {
         "raw_packet_queue": raw_packet_queue.qsize(),
         "header_queue": header_queue.qsize(),
         "metadata_queue": metadata_queue.qsize(),
+
         "persistence_queue_size": (
             persistence_worker.queue.qsize()
-            if persistence_worker is not None
-            else 0
+            if persistence_worker is not None else 0
         ),
         "persistence_persisted_count": (
             persistence_worker.persisted_count
-            if persistence_worker is not None
-            else 0
+            if persistence_worker is not None else 0
         ),
         "persistence_failed_count": (
             persistence_worker.failed_count
-            if persistence_worker is not None
-            else 0
+            if persistence_worker is not None else 0
         ),
         "persistence_rejected_count": (
             persistence_worker.rejected_count
-            if persistence_worker is not None
-            else 0
+            if persistence_worker is not None else 0
         ),
         "persistence_worker_running": (
             persistence_task is not None
@@ -652,6 +858,7 @@ async def queue_status():
             persistence_worker.p95_queue_wait_ms
             if persistence_worker is not None else 0.0
         ),
+
         "persistence_batch_amortized_per_job_count": (
             persistence_worker.batch_amortized_per_job_duration_count
             if persistence_worker is not None else 0
@@ -668,6 +875,7 @@ async def queue_status():
             persistence_worker.max_batch_amortized_per_job_duration_ms
             if persistence_worker is not None else 0.0
         ),
+
         "persistence_batch_attempt_count": (
             persistence_worker.batch_attempt_count
             if persistence_worker is not None else 0
@@ -704,6 +912,7 @@ async def queue_status():
             persistence_worker.batch_size_sample_count
             if persistence_worker is not None else 0
         ),
+
         "persistence_store_call_count": (
             persistence_worker.store_call_duration_count
             if persistence_worker is not None else 0
@@ -720,67 +929,91 @@ async def queue_status():
             persistence_worker.max_store_call_duration_ms
             if persistence_worker is not None else 0.0
         ),
+
         "persistence_store_batch_preparation_count": getattr(
-            persistence_store, "batch_preparation_duration_count", 0
+            persistence_store,
+            "batch_preparation_duration_count",
+            0,
         ),
         "persistence_store_batch_preparation_avg_ms": getattr(
-            persistence_store, "average_batch_preparation_duration_ms", 0.0
+            persistence_store,
+            "average_batch_preparation_duration_ms",
+            0.0,
         ),
         "persistence_store_batch_preparation_p95_ms": getattr(
-            persistence_store, "p95_batch_preparation_duration_ms", 0.0
+            persistence_store,
+            "p95_batch_preparation_duration_ms",
+            0.0,
         ),
         "persistence_store_batch_preparation_max_ms": getattr(
-            persistence_store, "max_batch_preparation_duration_ms", 0.0
+            persistence_store,
+            "max_batch_preparation_duration_ms",
+            0.0,
         ),
+
         "persistence_store_batch_insert_count": getattr(
-            persistence_store, "batch_insert_duration_count", 0
+            persistence_store,
+            "batch_insert_duration_count",
+            0,
         ),
         "persistence_store_batch_insert_avg_ms": getattr(
-            persistence_store, "average_batch_insert_duration_ms", 0.0
+            persistence_store,
+            "average_batch_insert_duration_ms",
+            0.0,
         ),
         "persistence_store_batch_insert_p95_ms": getattr(
-            persistence_store, "p95_batch_insert_duration_ms", 0.0
+            persistence_store,
+            "p95_batch_insert_duration_ms",
+            0.0,
         ),
         "persistence_store_batch_insert_max_ms": getattr(
-            persistence_store, "max_batch_insert_duration_ms", 0.0
+            persistence_store,
+            "max_batch_insert_duration_ms",
+            0.0,
         ),
+
         "persistence_store_batch_commit_count": getattr(
-            persistence_store, "batch_commit_duration_count", 0
+            persistence_store,
+            "batch_commit_duration_count",
+            0,
         ),
         "persistence_store_batch_commit_avg_ms": getattr(
-            persistence_store, "average_batch_commit_duration_ms", 0.0
+            persistence_store,
+            "average_batch_commit_duration_ms",
+            0.0,
         ),
         "persistence_store_batch_commit_p95_ms": getattr(
-            persistence_store, "p95_batch_commit_duration_ms", 0.0
+            persistence_store,
+            "p95_batch_commit_duration_ms",
+            0.0,
         ),
         "persistence_store_batch_commit_max_ms": getattr(
-            persistence_store, "max_batch_commit_duration_ms", 0.0
+            persistence_store,
+            "max_batch_commit_duration_ms",
+            0.0,
         ),
+
         "http_completed_transaction_count": (
             len(pipeline.completed_transactions)
-            if pipeline is not None
-            else 0
+            if pipeline is not None else 0
         ),
-"transaction_processing_count": (
-    pipeline.transaction_processing_count
-    if pipeline is not None
-    else 0
-),
-"last_transaction_processing_latency_ms": (
-    pipeline.last_transaction_processing_latency_ms
-    if pipeline is not None
-    else 0.0
-),
-"average_transaction_processing_latency_ms": (
-    pipeline.average_transaction_processing_latency_ms
-    if pipeline is not None
-    else 0.0
-),
-"max_transaction_processing_latency_ms": (
-    pipeline.max_transaction_processing_latency_ms
-    if pipeline is not None
-    else 0.0
-),
+        "transaction_processing_count": (
+            pipeline.transaction_processing_count
+            if pipeline is not None else 0
+        ),
+        "last_transaction_processing_latency_ms": (
+            pipeline.last_transaction_processing_latency_ms
+            if pipeline is not None else 0.0
+        ),
+        "average_transaction_processing_latency_ms": (
+            pipeline.average_transaction_processing_latency_ms
+            if pipeline is not None else 0.0
+        ),
+        "max_transaction_processing_latency_ms": (
+            pipeline.max_transaction_processing_latency_ms
+            if pipeline is not None else 0.0
+        ),
+
         "capture_to_publish_count": (
             pipeline.capture_to_publish_count
             if pipeline is not None else 0
@@ -797,21 +1030,20 @@ async def queue_status():
             pipeline.max_capture_to_publish_latency_ms
             if pipeline is not None else 0.0
         ),
+
         "http_pending_request_count": (
             pipeline.correlator.pending_request_count
-            if pipeline is not None
-            else 0
+            if pipeline is not None else 0
         ),
         "http_unmatched_response_count": (
             pipeline.correlator.unmatched_responses
-            if pipeline is not None
-            else 0
+            if pipeline is not None else 0
         ),
         "http_open_connection_count": (
             pipeline.open_connections
-            if pipeline is not None
-            else 0
+            if pipeline is not None else 0
         ),
+
         "accepted_packet_count": queues.accepted_packet_count,
         "accepted_tcp_event_count": queues.accepted_tcp_event_count,
         "accepted_udp_event_count": queues.accepted_udp_event_count,
@@ -823,9 +1055,7 @@ async def queue_status():
         "tcp_reassembly_buffer_overflow_count": (
             queues.tcp_reassembly_buffer_overflow_count
         ),
-        "tcp_packets_processed_count": (
-            queues.tcp_packets_processed_count
-        ),
+        "tcp_packets_processed_count": queues.tcp_packets_processed_count,
         "tcp_syn_packets_count": queues.tcp_syn_packets_count,
         "tcp_payload_packets_count": queues.tcp_payload_packets_count,
         "tcp_payload_bytes_count": queues.tcp_payload_bytes_count,
@@ -838,6 +1068,7 @@ async def queue_status():
         "tcp_payload_bytes_delivered_to_http_count": (
             queues.tcp_payload_bytes_delivered_to_http_count
         ),
+
         "capture_running": (
             capture_status == "running"
             and capture_task is not None
@@ -864,9 +1095,7 @@ async def debug_http_parsers():
         ],
         "parsed_request_count": pipeline.parsed_request_count,
         "parsed_response_count": pipeline.parsed_response_count,
-        "completed_transactions": len(
-            pipeline.completed_transactions
-        ),
+        "completed_transactions": len(pipeline.completed_transactions),
         "pending_requests": pipeline.correlator.pending_request_count,
         "unmatched_responses": pipeline.correlator.unmatched_responses,
         "tcp_stream_diagnostics": getattr(
@@ -880,17 +1109,20 @@ async def debug_http_parsers():
         ),
     }
 
+
 @app.get("/detection-status")
 async def detection_status():
     """Expose lab-scoped BOLA detection and latency metrics."""
     store = getattr(app.state, "transaction_store", None)
     detector = getattr(store, "bola_detector", None)
+
     if detector is None:
         return {
             "status": "not_initialized",
             "bola_detection_count": 0,
             "capture_to_detection_count": 0,
         }
+
     return {"status": "running", **detector.snapshot()}
 
 
@@ -918,14 +1150,19 @@ async def blocklist_status():
         "kernel_map_pin": "/sys/fs/bpf/api_sentinel_day17_blocklist",
         "packet_drop_enforcement_configured": False,
     }
+
     if synchronizer is not None:
         response.update(synchronizer.snapshot())
 
     receiver = getattr(app.state, "blocklist_verdict_receiver", None)
     receiver_task = getattr(
-        app.state, "blocklist_verdict_receiver_task", None
+        app.state,
+        "blocklist_verdict_receiver_task",
+        None,
     )
+
     response["receiver_enabled"] = receiver is not None
+
     if receiver is None:
         response["receiver_status"] = "disabled"
     else:
@@ -937,8 +1174,10 @@ async def blocklist_status():
         response.update(receiver.snapshot())
 
     producer = getattr(app.state, "blocklist_verdict_producer", None)
+
     if producer is not None:
         producer_metrics = producer.snapshot()
+
         response.update({
             "producer_enabled": producer_metrics["producer_enabled"],
             "producer_submitted_count": producer_metrics["submitted_count"],
@@ -962,7 +1201,9 @@ async def blocklist_status():
             "producer_submission_queue_capacity":
                 queues.BLOCK_VERDICT_QUEUE_MAX_SIZE,
         })
+
     policy = getattr(app.state, "blocklist_policy", None)
+
     response["policy"] = (
         policy.snapshot()
         if policy is not None
@@ -976,5 +1217,5 @@ async def blocklist_status():
             "last_reason": "not_configured",
         }
     )
-    return response
 
+    return response

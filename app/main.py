@@ -40,7 +40,23 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize persistence and start packet capture services."""
+    """Initialize persistence and optional packet capture services."""
+    capture_enabled_raw = os.getenv(
+        "API_SENTINEL_CAPTURE_ENABLED", "1"
+    ).strip().lower()
+
+    if capture_enabled_raw not in {
+        "1", "true", "yes", "on",
+        "0", "false", "no", "off",
+    }:
+        raise ValueError(
+            "API_SENTINEL_CAPTURE_ENABLED must be a boolean value"
+        )
+
+    capture_enabled = capture_enabled_raw in {
+        "1", "true", "yes", "on"
+    }
+
     # Optional Python allocation tracing for Day 28 memory profiling.
     # It is disabled by default because tracing adds runtime overhead.
     memory_profile_enabled = os.getenv(
@@ -255,7 +271,10 @@ async def lifespan(app: FastAPI):
     app.state.alert_bus = alert_bus
     app.state.persistence_worker = persistence_worker
     app.state.memory_profiler = None
-    app.state.capture_status = "starting"
+    app.state.capture_enabled = capture_enabled
+    app.state.capture_status = (
+        "starting" if capture_enabled else "disabled"
+    )
     app.state.blocked_transaction_audit_enabled = drop_audit_enabled
     app.state.blocked_transaction_audit_task = None
 
@@ -274,22 +293,31 @@ async def lifespan(app: FastAPI):
     )
     app.state.packet_worker_task = worker_task
 
-    # This reader requires the intended Linux/WSL eBPF environment.
-    reader_command = [
-        "sudo",
-        "-n",
-        "/usr/local/sbin/api-sentinel-ring-reader-day16",
-        "/sys/fs/bpf/api_sentinel_day16_events",
-    ]
+    capture_task = None
 
-    capture_task = asyncio.create_task(
-        supervise_capture(
-            reader_command,
-            capture_stop_event,
-            on_status=update_capture_status,
-        ),
-        name="api-sentinel-capture-supervisor",
-    )
+    if capture_enabled:
+        # This reader requires the intended Linux/WSL eBPF environment.
+        reader_command = [
+            "sudo",
+            "-n",
+            "/usr/local/sbin/api-sentinel-ring-reader-day16",
+            "/sys/fs/bpf/api_sentinel_day16_events",
+        ]
+
+        capture_task = asyncio.create_task(
+            supervise_capture(
+                reader_command,
+                capture_stop_event,
+                on_status=update_capture_status,
+            ),
+            name="api-sentinel-capture-supervisor",
+        )
+        logger.info("API-Sentinel eBPF capture supervisor started")
+    else:
+        logger.info(
+            "API-Sentinel eBPF capture disabled by configuration"
+        )
+
     app.state.capture_task = capture_task
 
     if blocklist_synchronizer is not None:
@@ -365,6 +393,7 @@ async def lifespan(app: FastAPI):
 
                 return {
                     **snapshot,
+                    "capture_enabled": capture_enabled,
                     "capture_status": capture_status,
                     "capture_running": (
                         capture_status == "running"
@@ -470,17 +499,20 @@ async def lifespan(app: FastAPI):
                     "Day 19 drop-audit worker failed during shutdown"
                 )
 
-        # Stop capture first. Keep the packet worker alive until the
-        # capture reader has terminated and cannot enqueue more packets.
-        capture_stop_event.set()
-        capture_task.cancel()
+        # Stop capture first when it was enabled. Keep the packet worker
+        # alive until the reader has terminated and cannot enqueue packets.
+        if capture_task is not None:
+            capture_stop_event.set()
+            capture_task.cancel()
 
-        try:
-            await capture_task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.exception("Capture supervisor failed during shutdown")
+            try:
+                await capture_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception(
+                    "Capture supervisor failed during shutdown"
+                )
 
         # Capture is fully stopped. Drain both processing queues while
         # their workers are still alive.
@@ -942,14 +974,20 @@ async def healthz():
 
 @app.get("/readyz")
 async def readyz():
-    """Readiness probe: report worker status and runtime resources."""
+    """Readiness probe: report required workers and runtime resources."""
+    capture_enabled = getattr(app.state, "capture_enabled", True)
+    capture_status = getattr(app.state, "capture_status", "stopped")
     capture_task = getattr(app.state, "capture_task", None)
 
     capture_running = (
-        getattr(app.state, "capture_status", "stopped") == "running"
+        capture_status == "running"
         and capture_task is not None
         and not capture_task.done()
     )
+
+    # Capture is optional in API-only deployments. When enabled, it must
+    # actually be running; when disabled, it is not a readiness blocker.
+    capture_ready = not capture_enabled or capture_running
 
     persistence_worker = getattr(app.state, "persistence_worker", None)
     persistence_task = getattr(
@@ -969,7 +1007,7 @@ async def readyz():
     )
 
     checks = {
-        "capture_running": capture_running,
+        "capture_ready": capture_ready,
         "persistence_worker_running": persistence_running,
         "http_pipeline_initialized": pipeline_initialized,
     }
@@ -978,6 +1016,11 @@ async def readyz():
 
     payload = {
         "status": "ready" if ready else "not_ready",
+        "capture": {
+            "enabled": capture_enabled,
+            "running": capture_running,
+            "status": capture_status,
+        },
         "checks": checks,
         "memory": _runtime_memory_snapshot(),
         "queue_depths": _queue_health_snapshot(),

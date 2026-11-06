@@ -135,3 +135,200 @@ independently verify the token signature.
 A detected incident must not automatically become a block verdict. Actual
 packet enforcement requires a separately implemented and tested eBPF program
 that consumes the documented Day 17 map ABI.
+
+## Operational and diagnostic endpoints
+
+These endpoints expose application status and diagnostic information. They are
+intended for local development and trusted operational access.
+
+### GET /
+
+Returns basic service information:
+
+- `service`
+- `version`
+- `environment`
+- `status`
+
+Example:
+
+    curl http://127.0.0.1:8001/
+
+### GET /healthz
+
+Returns a basic process health response.
+
+Example:
+
+    curl http://127.0.0.1:8001/healthz
+
+Expected response:
+
+    {"status":"ok"}
+
+This endpoint is not a substitute for checking application readiness.
+
+### GET /readyz
+
+Checks whether the backend is ready to serve requests.
+
+Readiness requires:
+
+- The persistence worker is running.
+- The HTTP processing pipeline is initialized.
+- Packet capture is running when capture is enabled.
+
+When packet capture is disabled through `API_SENTINEL_CAPTURE_ENABLED=0`,
+capture readiness is considered satisfied. Persistence and pipeline checks
+still apply.
+
+The endpoint returns HTTP 200 when ready and HTTP 503 when not ready.
+
+The response includes capture state, memory information, and queue depths.
+
+Example:
+
+    curl -i http://127.0.0.1:8001/readyz
+
+### GET /queue-status
+
+Returns runtime queue and ingestion diagnostics, including queue depths and
+packet-processing counters.
+
+Example:
+
+    curl http://127.0.0.1:8001/queue-status
+
+The response is a current diagnostic snapshot. It is not a durable metrics
+history or a guarantee that every queued event has been persisted.
+
+### GET /debug/http-parsers
+
+Returns HTTP parser and TCP stream diagnostic information, including parser
+counts, parser buffers, request and response counts, completed transactions,
+pending and unmatched data, and stream diagnostics.
+
+Example:
+
+    curl http://127.0.0.1:8001/debug/http-parsers
+
+This is a diagnostic endpoint. Do not expose it to untrusted clients.
+
+### GET /detection-status
+
+Returns the current BOLA detection status and available detector metrics.
+
+Possible states include:
+
+- `not_initialized`: the detector has not been initialized.
+- `running`: the detector is initialized and running.
+
+Example:
+
+    curl http://127.0.0.1:8001/detection-status
+
+A not-initialized detector must not be interpreted as proof that no suspicious
+activity exists.
+
+### GET /blocklist-status
+
+Returns blocklist integration status, including whether integration is
+enabled, verdict queue information, receiver status, and the configured
+eBPF map path.
+
+The status may indicate disabled, running, stopped, or not initialized,
+depending on the integration lifecycle.
+
+The response also exposes `packet_drop_enforcement_configured`.
+
+The current backend reports packet-drop enforcement as not configured.
+Blocklist status or synchronization must not be interpreted as proof that
+packets are being dropped by the kernel.
+
+Example:
+
+    curl http://127.0.0.1:8001/blocklist-status
+
+## WebSocket /ws/transactions
+
+Streams normalized completed HTTP transactions to connected clients.
+
+Example JavaScript:
+
+    const socket = new WebSocket("ws://127.0.0.1:8001/ws/transactions");
+
+    socket.onmessage = (message) => {
+      const event = JSON.parse(message.data);
+      console.log(event.event_type, event.message_type);
+      console.log(event.connection_key);
+      console.log(event.request, event.response);
+    };
+
+The transaction event contains:
+
+- `event_type`: `http.transaction`
+- `message_type`: `completed_transaction`
+- `connection_key`: connection identifier
+- `request`: normalized request information
+- `response`: normalized response information
+
+The normalized request and response objects contain only the supported
+message fields, such as message type, capture timestamp, method, URI, and
+status code. The URI is reduced to its path. Raw HTTP headers and bodies are
+not included in this WebSocket event.
+
+Each WebSocket client has a bounded queue with a default size of 100 messages.
+When the queue is full, the oldest queued item is discarded so that a newer
+item can be inserted.
+
+This stream is best-effort. It does not provide durable delivery, historical
+replay, or guaranteed processing by connected clients. Clients must reconnect
+after a disconnect and should not treat this stream as a durable transaction
+store.
+
+The endpoint does not implement authentication or authorization.
+
+## Metrics groups
+
+The `/api/v1/metrics` response also includes a `serialization` group for
+serialization-related runtime measurements.
+
+All metric groups represent current runtime snapshots. They are not a
+replacement for a time-series monitoring system or durable audit records.
+
+## CORS and access restrictions
+
+The current application has a fixed development CORS allowlist:
+
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
+- `http://localhost:5175`
+- `http://127.0.0.1:5175`
+
+These origins are configured in the application; there is currently no
+environment variable for changing the CORS allowlist.
+
+CORS is not authentication. The API and both WebSocket endpoints do not
+implement authentication or authorization. Keep access restricted to
+loopback or a trusted development network.
+
+## Current API route inventory
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Basic service information |
+| GET | `/healthz` | Basic health check |
+| GET | `/readyz` | Application readiness |
+| GET | `/queue-status` | Queue and ingestion diagnostics |
+| GET | `/api/v1/endpoints` | Discovered endpoint records |
+| GET | `/api/v1/alerts` | Persisted security incidents |
+| GET | `/api/v1/metrics` | Runtime metrics snapshots |
+| GET | `/debug/http-parsers` | HTTP parser diagnostics |
+| GET | `/detection-status` | Detection subsystem status |
+| GET | `/blocklist-status` | Blocklist integration status |
+| WS | `/ws/transactions` | Completed transaction stream |
+| WS | `/ws/alerts` | Security incident stream |
+
+The route inventory describes the currently documented backend interface.
+Check the generated OpenAPI schema and runtime route registration when
+validating a particular build.

@@ -182,3 +182,47 @@ The tests cover the currently implemented components, including HTTP request and
 ## Development Status
 
 API-Sentinel is an active development project. The current backend provides an initial parsing and event-publishing foundation. Further integration and validation are required before it can be considered production-ready.
+
+## Day 30: Deployment and API documentation
+
+The backend deployment and configuration instructions are maintained in these guides:
+
+- [Deployment Guide](docs/DEPLOYMENT.md) — WSL/Python setup, Docker Compose deployment, persistence, health checks, and troubleshooting.
+- [Configuration Reference](docs/CONFIGURATION.md) — environment variables, defaults, queue settings, database configuration, blocklist integration, and memory profiling.
+- [API v1 and Alerts Reference](docs/API_V1_AND_ALERTS.md) — REST endpoints, response structures, WebSocket events, and API limitations.
+
+### Local API-only quick start
+
+From the project root in WSL:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+```
+
+Load the environment configuration:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+Start the backend:
+
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+Verify the service:
+
+```bash
+curl http://127.0.0.1:8001/healthz
+curl http://127.0.0.1:8001/readyz
+```
+
+The example configuration disables packet capture, blocklist integrations, and memory profiling. It is intended for local API-only development, not production deployment.
+
+For Docker deployment, follow the [Deployment Guide](docs/DEPLOYMENT.md).

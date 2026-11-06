@@ -254,26 +254,41 @@ async fn main() -> anyhow::Result<()> {
         let test_ip = u32::from_ne_bytes(blocklist_ip.octets());
         let block_value = 1u32;
 
-        let start = std::time::Instant::now();
-        blocklist.insert(test_ip, block_value, 0)?;
-        let update_elapsed = start.elapsed();
+        // Day 28: Repeated BLOCKLIST map update benchmark.
+        const ITERATIONS: usize = 100;
+        let mut latencies_ns = Vec::with_capacity(ITERATIONS);
 
+        for _ in 0..ITERATIONS {
+            let start = std::time::Instant::now();
+            blocklist.insert(test_ip, block_value, 0)?;
+            latencies_ns.push(start.elapsed().as_nanos());
+        }
+
+        // Verify map value outside the timed measurement.
         let stored_value = blocklist.get(&test_ip, 0)?;
+
         if stored_value != block_value {
             anyhow::bail!("BLOCKLIST map read-back mismatch");
         }
 
+        latencies_ns.sort_unstable();
+
+        let total: u128 = latencies_ns.iter().sum();
+        let average = total as f64 / ITERATIONS as f64;
+        let minimum = latencies_ns[0];
+        let maximum = latencies_ns[ITERATIONS - 1];
+        let median = (latencies_ns[49] + latencies_ns[50]) as f64 / 2.0;
+
         println!(
-            "DAY20 blocklist_update_latency_us={:.3} target_us=1000 result={}",
-            update_elapsed.as_secs_f64() * 1_000_000.0,
-            if update_elapsed.as_micros() < 1000 {
-                "UNDER_1MS"
-            } else {
-                "AT_OR_OVER_1MS"
-            }
+            "DAY28 blocklist_update_latency_us iterations={} avg={:.3} median={:.3} min={:.3} max={:.3}",
+            ITERATIONS,
+            average / 1000.0,
+            median / 1000.0,
+            minimum as f64 / 1000.0,
+            maximum as f64 / 1000.0,
         );
 
-        println!("DAY20 BLOCKLIST read-back verified for {blocklist_ip}");
+        println!("DAY28 BLOCKLIST read-back verified for {blocklist_ip}");
     }
 
     let event_map = ebpf

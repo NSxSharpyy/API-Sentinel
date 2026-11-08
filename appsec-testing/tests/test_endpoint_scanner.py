@@ -1,8 +1,10 @@
+
 import json
 import io
 
 from scripts.recon.endpoint_scanner import (
     phase3_method_enumeration,
+    build_verifier_findings,
 )
 
 
@@ -49,3 +51,38 @@ def test_method_enumeration_classifies_http_responses():
     ]
     assert len(records) == 4
     assert all("classification" in record for record in records)
+
+
+def test_build_verifier_findings_converts_scanner_report():
+    report = {
+        "endpoint_classification": {
+            "auth": {
+                "/debug/dump-tokens": "shadow_candidate",
+                "/api/v1/login-status": "zombie_candidate",
+            }
+        },
+        "methods_by_endpoint": {
+            "auth/debug/dump-tokens": {
+                "GET": {
+                    "status": 200,
+                    "classification": "success_response",
+                }
+            },
+            "auth/api/v1/login-status": {
+                "GET": {
+                    "status": 200,
+                    "classification": "success_response",
+                }
+            },
+        },
+    }
+
+    findings = build_verifier_findings(report)
+
+    assert len(findings) == 2
+    assert findings[0]["classification"] == "shadow"
+    assert findings[1]["classification"] == "zombie"
+    assert all(
+        0 <= item["confidence"] <= 1
+        for item in findings
+    )

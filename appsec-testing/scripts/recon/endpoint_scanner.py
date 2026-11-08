@@ -209,6 +209,59 @@ def classify_endpoint(service, path):
 
     return "shadow_candidate"
 
+def build_verifier_findings(report):
+    """Convert scanner candidates into the Day 12 verifier contract."""
+    findings = []
+
+    classification_map = {
+        "shadow_candidate": "shadow",
+        "zombie_candidate": "zombie",
+        "documented_v2": "documented",
+        "versioned_undocumented_candidate": "unknown",
+    }
+
+    confidence_map = {
+        "shadow_candidate": 0.60,
+        "zombie_candidate": 0.60,
+        "documented_v2": 1.00,
+        "versioned_undocumented_candidate": 0.30,
+    }
+
+    endpoint_classification = report.get(
+        "endpoint_classification", {}
+    )
+    methods_by_endpoint = report.get("methods_by_endpoint", {})
+
+    for service, paths in endpoint_classification.items():
+        for path, candidate_class in paths.items():
+            endpoint_key = f"{service}{path}"
+            method_results = methods_by_endpoint.get(
+                endpoint_key, {}
+            )
+
+            classification = classification_map.get(
+                candidate_class, "unknown"
+            )
+            confidence = confidence_map.get(
+                candidate_class, 0.30
+            )
+
+            for method, result in method_results.items():
+                status = result.get("status")
+
+                if status is None or status == 404:
+                    continue
+
+                findings.append({
+                    "service": service,
+                    "method": method,
+                    "path": path,
+                    "classification": classification,
+                    "confidence": confidence,
+                })
+
+    return findings
+
 def phase3_method_enumeration(session, handle, paths_by_service, delay):
     results = {}
     print("\n[Phase 3] Method enumeration")

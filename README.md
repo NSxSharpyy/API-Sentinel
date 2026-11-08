@@ -5,11 +5,10 @@
 ![eBPF](https://img.shields.io/badge/eBPF-Kernel_Technology-blue)
 ![Linux](https://img.shields.io/badge/Linux-Platform-black?logo=linux)
 ![Aya](https://img.shields.io/badge/Aya-eBPF_Framework-purple)
-![License](https://img.shields.io/badge/License-Check_Repository-lightgrey)
 
 **API-Sentinel** is a Linux kernel-level network security and telemetry project built using **eBPF, Rust, and Aya**.
 
-It inspects supported IPv4/TCP traffic, classifies HTTP requests, associates network activity with client identifiers, and enforces IP-based blocklist rules directly inside the Linux kernel using the Traffic Control (TC) subsystem.
+It inspects supported IPv4/TCP traffic, classifies HTTP requests, associates network activity with client identifiers, and enforces IP-based blocklist rules inside the Linux kernel using the Traffic Control (TC) subsystem.
 
 The project aims to provide low-overhead network monitoring, kernel-level packet filtering, and asynchronous event delivery to userspace through a BPF Ring Buffer.
 
@@ -28,6 +27,7 @@ The project aims to provide low-overhead network monitoring, kernel-level packet
 - [Testing](#testing)
 - [BPF Maps](#bpf-maps)
 - [Project Structure](#project-structure)
+- [Development and Validation](#development-and-validation)
 - [Performance and Limitations](#performance-and-limitations)
 - [Security Considerations](#security-considerations)
 - [Contributing](#contributing)
@@ -39,35 +39,41 @@ The project aims to provide low-overhead network monitoring, kernel-level packet
 ## Features
 
 ### 1. Kernel-Level Blocklist Enforcement
+
 - IPv4-based traffic filtering inside the Linux kernel.
 - Fast BPF HashMap lookups.
 - Packet rejection using `TC_ACT_SHOT`.
 - Reduces unnecessary userspace packet-processing overhead.
 
 ### 2. HTTP Traffic Classification
+
 - Inspection of supported IPv4/TCP packets.
 - HTTP request metadata extraction.
 - Identification of supported HTTP methods and URIs.
 - Client identification using BPF maps.
 
 ### 3. Asynchronous Event Telemetry
-- Kernel-to-userspace event delivery using `BPF Ring Buffer`.
+
+- Kernel-to-userspace event delivery using BPF Ring Buffer.
 - Shared event structure between kernel and userspace.
 - Event-drop monitoring.
 - Userspace event consumption and decoding.
 
 ### 4. Process and Client Identification
+
 - Socket-to-process TGID association.
 - IPv4-to-client identifier mapping.
 - Network activity attribution.
 
 ### 5. Isolated Testing Environment
+
 - Linux Network Namespaces.
 - Virtual Ethernet (`veth`) interfaces.
 - Isolated traffic generation.
 - Blocklist and HTTP classification testing.
 
 ### 6. Safety Mechanisms
+
 - Test-mode support.
 - Isolated network testing.
 - Configurable network interface.
@@ -78,38 +84,39 @@ The project aims to provide low-overhead network monitoring, kernel-level packet
 ## System Architecture
 
 ```text
-        Incoming / Outgoing Network Traffic
-                       |
-                       v
-       +-----------------------------------+
-       |       Linux Kernel Subsystem      |
-       |                                   |
-       |        TC (clsact) Hook           |
-       |                                   |
-       |     IPv4/TCP Packet Parsing       |
-       |                 |                 |
-       |          +------+-------+         |
-       |          |              |        |
-       |          v              v        |
-       |      BLOCKLIST     HTTP Classifier|
-       |          |              |        |
-       |          v              v        |
-       |      TC_ACT_SHOT   CLIENT MAP     |
-       |                         |         |
-       |                         v         |
-       |                    BPF Ring Buffer|
-       +-------------------------+---------+
-                                 |
-                                 v
-       +-----------------------------------+
-       |       Userspace Telemetry         |
-       |                                   |
-       |  - Event Consumption              |
-       |  - Event Decoding                 |
-       |  - Client Identification          |
-       |  - Telemetry Logging              |
-       |  - BPF Map Management             |
-       +-----------------------------------+
+              Incoming / Outgoing Network Traffic
+                             |
+                             v
+              +-----------------------------+
+              |      Linux Kernel          |
+              |                             |
+              |       TC (clsact) Hook      |
+              |              |              |
+              |              v              |
+              |     IPv4/TCP Packet Parsing |
+              |              |              |
+              |       +------+-------+      |
+              |       |              |      |
+              |       v              v      |
+              |   BLOCKLIST     HTTP CLASSIFIER
+              |       |              |      |
+              |       v              v      |
+              |   TC_ACT_SHOT    CLIENT MAP |
+              |                      |      |
+              |                      v      |
+              |                BPF Ring Buffer
+              +----------------------+------+
+                                     |
+                                     v
+              +-----------------------------+
+              |    Userspace Telemetry      |
+              |                             |
+              |  - Event Consumption        |
+              |  - Event Decoding           |
+              |  - Client Identification    |
+              |  - Telemetry Logging        |
+              |  - BPF Map Management       |
+              +-----------------------------+
 ```
 
 ---
@@ -232,7 +239,7 @@ Build the project in release mode:
 cargo build --release
 ```
 
-The expected executable location is:
+The expected executable location for the userspace binary is:
 
 ```text
 target/release/api-sentinel-ebpf
@@ -267,7 +274,7 @@ Replace `ens33` with your actual network interface name.
 
 API-Sentinel development includes isolated network testing using Linux Network Namespaces and virtual Ethernet interfaces.
 
-The functional testing workflow is intended to validate:
+The testing workflow is intended to validate:
 
 - eBPF program loading.
 - TCP monitoring.
@@ -277,46 +284,64 @@ The functional testing workflow is intended to validate:
 - Ring-buffer event delivery.
 - Event-drop counters.
 
-### Run Functional Tests
+### Manual Validation
 
-If the repository contains `tests/run_functional_tests.sh`, execute:
-
-```bash
-chmod +x tests/run_functional_tests.sh
-```
-
-Then:
+Check loaded eBPF programs:
 
 ```bash
-sudo ./tests/run_functional_tests.sh
+sudo bpftool prog show
 ```
 
-Inspect the script before execution to understand its network setup, cleanup operations, and required privileges.
+Check available BPF maps:
+
+```bash
+sudo bpftool map show
+```
+
+Check network interfaces:
+
+```bash
+ip link show
+```
+
+Check Rust formatting:
+
+```bash
+cargo fmt --all -- --check
+```
+
+Build the project:
+
+```bash
+cargo build --release
+```
+
+**Note:** These commands provide basic validation. They do not replace complete functional or integration testing.
 
 ### Example Expected Results
 
+The following is an illustrative example of a functional test workflow:
+
 ```text
-[*] Cleaning up stale test environment...
+[*] Setting up isolated network namespace...
 
-[1/5] Setting up isolated network namespace...
+[*] Starting API-Sentinel in test mode...
 
-[2/5] Starting API-Sentinel in test mode...
-
-[3/5] Verifying blocklist enforcement...
+[*] Verifying blocklist enforcement...
 
 [+] PASSED: Blocked IP traffic dropped successfully.
 
-[4/5] Starting mock HTTP receiver...
-
-[5/5] Testing HTTP classification and ring-buffer telemetry...
+[*] Testing HTTP classification...
 
 [+] PASSED: HTTP request classified successfully.
 
-===========================================
-       FUNCTIONAL TESTS COMPLETED
-===========================================
+[*] Checking ring-buffer telemetry...
 
-[+] Cleanup complete.
+[+] Event processing verified.
+
+[*] Checking event-drop counters...
+
+[+] Test workflow completed.
 ```
 
 *The output above is illustrative. Actual results depend on the implementation and test environment.*
@@ -334,7 +359,7 @@ API-Sentinel uses the following BPF maps:
 | `BLOCKLIST` | Stores IPv4 addresses selected for blocking |
 | `EVENTS` | Ring buffer for kernel-to-userspace events |
 | `EVENT_DROPS` | Tracks events that could not be submitted |
-| `BLOCKLIST_DROPS` | Tracks packets rejected by blocklist enforcement |
+| `BLOCKLIST_DROPS` | Tracks blocklist-related packet-drop events |
 
 ---
 
@@ -372,7 +397,7 @@ API-Sentinel/
 
 ---
 
-## Development & Validation
+## Development and Validation
 
 ### Check Rust Formatting
 
@@ -485,10 +510,12 @@ Developed as a collaborative cybersecurity engineering project using:
 - Linux Networking
 - Traffic Control (TC)
 
-**GitHub Profile:**  
+**GitHub Profile:**
+
 https://github.com/NSxSharpyy
 
-**Project Repository:**  
+**Project Repository:**
+
 https://github.com/NSxSharpyy/API-Sentinel
 
 ---

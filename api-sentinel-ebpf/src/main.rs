@@ -1,4 +1,5 @@
 use std::{mem::size_of, process::Command};
+use zeroize::Zeroize;
 
 use anyhow::Context;
 use api_sentinel_ebpf_common::{
@@ -14,6 +15,7 @@ use log::{debug, warn};
 use tokio::signal;
 
 const INTERFACE: &str = "ens33";
+const TEST_INTERFACE: &str = "as-test-host";
 
 fn direction_name(value: u8) -> &'static str {
     match value {
@@ -60,9 +62,7 @@ fn ensure_clsact(interface: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn read_total_drops(
-    drops_map: &PerCpuArray<&mut aya::maps::MapData, u64>,
-) -> anyhow::Result<u64> {
+fn read_total_drops(drops_map: &PerCpuArray<&mut aya::maps::MapData, u64>) -> anyhow::Result<u64> {
     let values = drops_map.get(&0, 0)?;
     Ok(values.iter().copied().fold(0u64, u64::wrapping_add))
 }
@@ -70,14 +70,13 @@ fn read_total_drops(
 fn print_event(event: &NetworkEvent) {
     if event.event_type == EVENT_TYPE_HTTP_REQUEST {
         let len = usize::from(event.uri_len).min(event.uri_prefix.len());
-        let uri = String::from_utf8_lossy(&event.uri_prefix[..len]);
 
         println!(
-            "HTTP_REQUEST method={} client_id={} uri_prefix={} direction={} \
+            "HTTP_REQUEST method={} client_id={} uri_len={} direction={} \
              src={}.{}.{}.{}:{} dst={}.{}.{}.{}:{}",
             method_name(event.http_method),
             event.client_id,
-            uri,
+            len,
             direction_name(event.traffic_direction),
             event.source_ipv4[0],
             event.source_ipv4[1],
@@ -126,6 +125,31 @@ fn print_event(event: &NetworkEvent) {
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
+    let test_mode = std::env::var("API_SENTINEL_TEST_MODE")
+        .map(|value| value == "1")
+        .unwrap_or(false);
+
+    let interface = if test_mode {
+        let requested = std::env::var("API_SENTINEL_INTERFACE")
+            .context("Test mode requires API_SENTINEL_INTERFACE=as-test-host")?;
+
+        if requested != TEST_INTERFACE {
+            anyhow::bail!(
+                "Safety guard: test mode only permits interface {TEST_INTERFACE}, got {requested}"
+            );
+        }
+
+        requested
+    } else {
+        std::env::var("API_SENTINEL_INTERFACE").unwrap_or_else(|_| INTERFACE.to_string())
+    };
+
+    if test_mode {
+        println!("DAY22 TEST MODE ENABLED");
+        println!("Safety guard: interface restricted to {TEST_INTERFACE}");
+        println!("Global tracepoint and kprobe attachments are disabled");
+    }
+
     let rlim = libc::rlimit {
         rlim_cur: libc::RLIM_INFINITY,
         rlim_max: libc::RLIM_INFINITY,
@@ -141,47 +165,61 @@ async fn main() -> anyhow::Result<()> {
         "/api-sentinel-ebpf"
     )))?;
 
-    {
-        let program: &mut TracePoint = ebpf
-            .program_mut("api_sentinel_ebpf")
-            .context("TCP tracepoint program not found")?
-            .try_into()?;
-        program.load()?;
-        program.attach("sock", "inet_sock_set_state")?;
-        println!("TCP lifecycle tracepoint attached");
+    // Global hooks are intentionally skipped in isolated test mode.
+    if !test_mode {
+        {
+            let program: &mut TracePoint = ebpf
+                .program_mut("api_sentinel_ebpf")
+                .context("TCP tracepoint program not found")?
+                .try_into()?;
+
+            program.load()?;
+            program.attach("sock", "inet_sock_set_state")?;
+            println!("TCP lifecycle tracepoint attached");
+        }
+
+        {
+            let program: &mut KProbe = ebpf
+                .program_mut("api_sentinel_tcp_v4_connect")
+                .context("TCP connect kprobe not found")?
+                .try_into()?;
+
+            program.load()?;
+            program.attach("tcp_v4_connect", 0)?;
+            println!("TCP connect kprobe attached");
+        }
     }
 
-    {
-        let program: &mut KProbe = ebpf
-            .program_mut("api_sentinel_tcp_v4_connect")
-            .context("TCP connect kprobe not found")?
-            .try_into()?;
-        program.load()?;
-        program.attach("tcp_v4_connect", 0)?;
-        println!("TCP connect kprobe attached");
-    }
+    ensure_clsact(&interface)?;
 
-    ensure_clsact(INTERFACE)?;
-
-    {
+    // Keep the returned link ID so the TC classifier can be detached on Ctrl-C.
+    let tc_link_id = {
         let program: &mut SchedClassifier = ebpf
             .program_mut("api_sentinel_http_classifier")
             .context("HTTP classifier program not found in eBPF object")?
             .try_into()?;
-        program.load()?;
-        program.attach(INTERFACE, TcAttachType::Egress)?;
-        println!("HTTP classifier attached to {INTERFACE} egress");
-    }
 
-    // Day 10: userspace-to-kernel client-map smoke test.
-    // 192.0.2.10 is a documentation-only example address.
+        program.load()?;
+        let link_id = program.attach(&interface, TcAttachType::Egress)?;
+
+        println!("HTTP classifier attached to {interface} egress");
+        link_id
+    };
+
+    // Userspace-to-kernel client-map smoke test.
     {
         let mut clients = HashMap::<_, u32, u32>::try_from(
             ebpf.map_mut("CLIENT_IDENTIFIERS")
                 .ok_or_else(|| anyhow::anyhow!("CLIENT_IDENTIFIERS map not found"))?,
         )?;
 
-        let test_ip = u32::from_ne_bytes([192, 168, 235, 142]);
+        let client_ip = if test_mode {
+            std::net::Ipv4Addr::new(10, 20, 20, 1)
+        } else {
+            std::net::Ipv4Addr::new(192, 168, 235, 142)
+        };
+
+        let test_ip = u32::from_ne_bytes(client_ip.octets());
         let test_client_id = 1001u32;
 
         clients.insert(test_ip, test_client_id, 0)?;
@@ -192,38 +230,65 @@ async fn main() -> anyhow::Result<()> {
             anyhow::bail!("Client map read-back mismatch");
         }
 
-        println!(
-            "CLIENT_IDENTIFIERS map verified: 192.168.235.142 -> {}",
-            stored_id
-        );
+        println!("CLIENT_IDENTIFIERS map verified: {client_ip} -> {stored_id}");
     }
 
-    // Day 20: measure userspace-to-kernel BLOCKLIST map update latency.
+    // Blocklist map update and read-back verification.
     {
         let mut blocklist = HashMap::<_, u32, u32>::try_from(
             ebpf.map_mut("BLOCKLIST")
                 .context("BLOCKLIST map not found")?,
         )?;
 
-        // TEST-NET address reserved for documentation and examples.
-        let test_ip = u32::from_ne_bytes([192, 0, 2, 20]);
+        let default_ip = if test_mode {
+            "10.20.20.2"
+        } else {
+            "192.0.2.20"
+        };
+
+        let blocklist_ip: std::net::Ipv4Addr = std::env::var("API_SENTINEL_BLOCKLIST_IP")
+            .unwrap_or_else(|_| default_ip.to_string())
+            .parse()
+            .context("Invalid API_SENTINEL_BLOCKLIST_IP IPv4 address")?;
+
+        let test_ip = u32::from_ne_bytes(blocklist_ip.octets());
         let block_value = 1u32;
 
-        let start = std::time::Instant::now();
-        blocklist.insert(test_ip, block_value, 0)?;
-        let update_elapsed = start.elapsed();
+        // Day 28: Repeated BLOCKLIST map update benchmark.
+        const ITERATIONS: usize = 100;
+        let mut latencies_ns = Vec::with_capacity(ITERATIONS);
 
+        for _ in 0..ITERATIONS {
+            let start = std::time::Instant::now();
+            blocklist.insert(test_ip, block_value, 0)?;
+            latencies_ns.push(start.elapsed().as_nanos());
+        }
+
+        // Verify map value outside the timed measurement.
         let stored_value = blocklist.get(&test_ip, 0)?;
+
         if stored_value != block_value {
             anyhow::bail!("BLOCKLIST map read-back mismatch");
         }
 
+        latencies_ns.sort_unstable();
+
+        let total: u128 = latencies_ns.iter().sum();
+        let average = total as f64 / ITERATIONS as f64;
+        let minimum = latencies_ns[0];
+        let maximum = latencies_ns[ITERATIONS - 1];
+        let median = (latencies_ns[49] + latencies_ns[50]) as f64 / 2.0;
+
         println!(
-            "DAY20 blocklist_update_latency_us={:.3} target_us=1000 result={}",
-            update_elapsed.as_secs_f64() * 1_000_000.0,
-            if update_elapsed.as_micros() < 1000 { "UNDER_1MS" } else { "AT_OR_OVER_1MS" }
+            "DAY28 blocklist_update_latency_us iterations={} avg={:.3} median={:.3} min={:.3} max={:.3}",
+            ITERATIONS,
+            average / 1000.0,
+            median / 1000.0,
+            minimum as f64 / 1000.0,
+            maximum as f64 / 1000.0,
         );
-        println!("DAY20 BLOCKLIST read-back verified for 192.0.2.20");
+
+        println!("DAY28 BLOCKLIST read-back verified for {blocklist_ip}");
     }
 
     let event_map = ebpf
@@ -237,18 +302,20 @@ async fn main() -> anyhow::Result<()> {
     let drops_map = ebpf
         .map_mut("EVENT_DROPS")
         .context("EVENT_DROPS per-CPU map not found")?;
+
     let drops_map = PerCpuArray::<_, u64>::try_from(drops_map)?;
 
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
 
-    println!("API-Sentinel listening on {INTERFACE}");
+    println!("API-Sentinel listening on {interface}");
     println!("Press Ctrl-C to stop.");
 
     loop {
         tokio::select! {
             result = &mut ctrl_c => {
                 result?;
+                println!("Shutdown signal received");
                 break;
             }
 
@@ -264,13 +331,14 @@ async fn main() -> anyhow::Result<()> {
                         continue;
                     }
 
-                    let event = unsafe {
+                    let mut event = unsafe {
                         std::ptr::read_unaligned(
                             item.as_ptr().cast::<NetworkEvent>()
                         )
                     };
 
                     print_event(&event);
+                    event.uri_prefix.zeroize();
                 }
 
                 guard.clear_ready();
@@ -281,6 +349,18 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+    }
+
+    // Explicitly detach the TC classifier before exiting.
+    {
+        let program: &mut SchedClassifier = ebpf
+            .program_mut("api_sentinel_http_classifier")
+            .context("HTTP classifier program not found during cleanup")?
+            .try_into()?;
+
+        program.detach(tc_link_id)?;
+
+        println!("HTTP classifier detached from {interface}");
     }
 
     println!("API-Sentinel exiting");

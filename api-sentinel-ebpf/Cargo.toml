@@ -10,10 +10,10 @@ api-sentinel-ebpf-common = { path = "../api-sentinel-ebpf-common", features = ["
 
 anyhow = { workspace = true, default-features = true }
 aya = { workspace = true }
-aya-log = { workspace = true }
 env_logger = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
+zeroize = { workspace = true }
 tokio = { workspace = true, features = [
     "macros",
     "rt",
@@ -21,6 +21,7 @@ tokio = { workspace = true, features = [
     "net",
     "signal",
 ] }
+
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

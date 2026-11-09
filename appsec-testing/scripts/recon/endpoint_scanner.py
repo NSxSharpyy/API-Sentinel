@@ -210,49 +210,37 @@ def classify_endpoint(service, path):
     return "shadow_candidate"
 
 def build_verifier_findings(report):
-    """Convert scanner candidates into the Day 12 verifier contract."""
+    """Convert scanner observations into conservative Day 12 verifier findings.
+
+    Path heuristics and HTTP responses indicate that a route may exist, but do
+    not independently prove that it is a shadow or zombie API. Preserve the
+    documented-v2 label for known public routes; classify other responding
+    routes as unknown until stronger, independent evidence is collected.
+    """
     findings = []
 
-    classification_map = {
-        "shadow_candidate": "shadow",
-        "zombie_candidate": "zombie",
-        "documented_v2": "documented",
-        "versioned_undocumented_candidate": "unknown",
-    }
-
-    confidence_map = {
-        "shadow_candidate": 0.60,
-        "zombie_candidate": 0.60,
-        "documented_v2": 1.00,
-        "versioned_undocumented_candidate": 0.30,
-    }
-
-    endpoint_classification = report.get(
-        "endpoint_classification", {}
-    )
+    endpoint_classification = report.get("endpoint_classification", {})
     methods_by_endpoint = report.get("methods_by_endpoint", {})
 
     for service, paths in endpoint_classification.items():
         for path, candidate_class in paths.items():
             endpoint_key = f"{service}{path}"
-            method_results = methods_by_endpoint.get(
-                endpoint_key, {}
-            )
+            method_results = methods_by_endpoint.get(endpoint_key, {})
 
-            classification = classification_map.get(
-                candidate_class, "unknown"
-            )
-            confidence = confidence_map.get(
-                candidate_class, 0.30
-            )
+            # The scanner's path-based candidate class is a heuristic only.
+            # HTTP status by itself cannot confirm shadow/zombie status.
+            if candidate_class == "documented_v2":
+                classification = "documented"
+                confidence = 1.00
+            else:
+                classification = "unknown"
+                confidence = 0.30
 
             for method, result in method_results.items():
                 status = result.get("status")
 
-                # A 405 response means this HTTP method is not supported
-                # for the discovered route; do not report it as a finding.
-                # Keep other non-404 responses (e.g. 200, 401, 403) as
-                # evidence that the method-route pair responded.
+                # Skip methods that did not respond or are explicitly absent /
+                # unsupported. Other responses only establish reachability.
                 if status is None or status in (404, 405):
                     continue
 

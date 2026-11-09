@@ -1,4 +1,3 @@
-
 import json
 import io
 
@@ -53,7 +52,7 @@ def test_method_enumeration_classifies_http_responses():
     assert all("classification" in record for record in records)
 
 
-def test_build_verifier_findings_converts_scanner_report():
+def test_build_verifier_findings_keeps_heuristic_candidates_unknown():
     report = {
         "endpoint_classification": {
             "auth": {
@@ -80,9 +79,40 @@ def test_build_verifier_findings_converts_scanner_report():
     findings = build_verifier_findings(report)
 
     assert len(findings) == 2
-    assert findings[0]["classification"] == "shadow"
-    assert findings[1]["classification"] == "zombie"
+    assert all(item["classification"] == "unknown" for item in findings)
+    assert all(item["confidence"] == 0.30 for item in findings)
     assert all(
         0 <= item["confidence"] <= 1
         for item in findings
     )
+
+
+def test_http_status_alone_does_not_prove_shadow_or_zombie():
+    report = {
+        "endpoint_classification": {
+            "user": {
+                "/api/v0/users/export": "zombie_candidate",
+                "/api/v1/debug/metrics": "shadow_candidate",
+            }
+        },
+        "methods_by_endpoint": {
+            "user/api/v0/users/export": {
+                "GET": {
+                    "status": 200,
+                    "classification": "success_response",
+                }
+            },
+            "user/api/v1/debug/metrics": {
+                "GET": {
+                    "status": 200,
+                    "classification": "success_response",
+                }
+            },
+        },
+    }
+
+    findings = build_verifier_findings(report)
+
+    assert len(findings) == 2
+    assert all(item["classification"] == "unknown" for item in findings)
+    assert all(item["confidence"] == 0.30 for item in findings)

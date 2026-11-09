@@ -1,0 +1,23 @@
+{
+    "total_findings": 3,
+    "findings": [
+        {
+            "method": "GET",
+            "path": "/api/v1/users",
+            "classification": "potential_unapproved_endpoint",
+            "status": "needs_review"
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/old-users",
+            "classification": "potential_unapproved_endpoint",
+            "status": "needs_review"
+        },
+        {
+            "method": "POST",
+            "path": "/api/v1/legacy-orders",
+            "classification": "potential_unapproved_endpoint",
+            "status": "needs_review"
+        }
+    ]
+}

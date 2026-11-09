@@ -1,0 +1,5 @@
+﻿method,path,operation_id,summary,is_approved,is_declared,runtime_observation_count,discovery_state,risk_rating
+GET,/api/v1/old-users,,Deprecated users endpoint,False,True,2,ZOMBIE_API,HIGH
+GET,/api/v1/users,,Get active users,False,True,1,UNAPPROVED,MEDIUM
+POST,/api/users,,,True,False,0,APPROVED,LOW
+POST,/api/v1/legacy-orders,,Inactive legacy orders endpoint,False,True,3,ZOMBIE_API,HIGH

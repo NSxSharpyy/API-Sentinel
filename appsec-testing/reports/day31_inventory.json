@@ -1,0 +1,63 @@
+{
+    "generated_at": "2026-11-09T11:30:12.971220+00:00",
+    "api_name": "API-Sentinel Day 19 Demo",
+    "openapi_version": "3.0.3",
+    "total_endpoints": 4,
+    "approved_endpoints": 1,
+    "unapproved_endpoints": 1,
+    "shadow_endpoints": 0,
+    "zombie_endpoints": 2,
+    "unclassified_endpoints": 0,
+    "risk_summary": {
+        "HIGH": 2,
+        "MEDIUM": 1,
+        "LOW": 1
+    },
+    "total_runtime_observations": 6,
+    "endpoints": [
+        {
+            "method": "GET",
+            "path": "/api/v1/old-users",
+            "operation_id": null,
+            "summary": "Deprecated users endpoint",
+            "is_approved": false,
+            "is_declared": true,
+            "runtime_observation_count": 2,
+            "discovery_state": "ZOMBIE_API",
+            "risk_rating": "HIGH"
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/users",
+            "operation_id": null,
+            "summary": "Get active users",
+            "is_approved": false,
+            "is_declared": true,
+            "runtime_observation_count": 1,
+            "discovery_state": "UNAPPROVED",
+            "risk_rating": "MEDIUM"
+        },
+        {
+            "method": "POST",
+            "path": "/api/users",
+            "operation_id": null,
+            "summary": null,
+            "is_approved": true,
+            "is_declared": false,
+            "runtime_observation_count": 0,
+            "discovery_state": "APPROVED",
+            "risk_rating": "LOW"
+        },
+        {
+            "method": "POST",
+            "path": "/api/v1/legacy-orders",
+            "operation_id": null,
+            "summary": "Inactive legacy orders endpoint",
+            "is_approved": false,
+            "is_declared": true,
+            "runtime_observation_count": 3,
+            "discovery_state": "ZOMBIE_API",
+            "risk_rating": "HIGH"
+        }
+    ]
+}

@@ -249,7 +249,11 @@ def build_verifier_findings(report):
             for method, result in method_results.items():
                 status = result.get("status")
 
-                if status is None or status == 404:
+                # A 405 response means this HTTP method is not supported
+                # for the discovered route; do not report it as a finding.
+                # Keep other non-404 responses (e.g. 200, 401, 403) as
+                # evidence that the method-route pair responded.
+                if status is None or status in (404, 405):
                     continue
 
                 findings.append({
@@ -385,9 +389,19 @@ def main():
         "methods_by_endpoint": method_results,
     }
 
+    verifier_report = {
+        "scan_timestamp": datetime.now(timezone.utc).isoformat(),
+        "findings": build_verifier_findings(report),
+    }
+
     REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n",
                            encoding="utf-8")
 
+    verifier_path = ROOT / "logs" / "actual_discovery_output.json"
+    verifier_path.write_text(
+        json.dumps(verifier_report, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print(f"\n{'=' * 50}")
     print(f"DISCOVERY COMPLETE: {total} candidate endpoints found")
     for service, paths in all_discovered.items():

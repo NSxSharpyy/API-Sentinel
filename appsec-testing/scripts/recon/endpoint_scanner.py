@@ -209,6 +209,92 @@ def classify_endpoint(service, path):
 
     return "shadow_candidate"
 
+    
+def probe_auth_behavior(session, base_url, path):
+    """
+    Compare an unauthenticated GET with a malformed Bearer-token GET.
+    A difference in status is a candidate signal, not proof of a bypass.
+    """
+    url = base_url.rstrip("/") + "/" + path.lstrip("/")
+
+    try:
+        no_auth_response = session.request(
+            "GET",
+            url,
+            timeout=3,
+        )
+
+        malformed_auth_response = session.request(
+            "GET",
+            url,
+            timeout=3,
+            headers={
+                "Authorization": "Bearer malformed.invalid-token"
+            },
+        )
+
+        no_auth_status = no_auth_response.status_code
+        malformed_auth_status = malformed_auth_response.status_code
+
+        auth_bypass_candidate = (
+            no_auth_status in (401, 403)
+            and 200 <= malformed_auth_status < 300
+        )
+
+        return {
+            "no_auth_status": no_auth_status,
+            "malformed_auth_status": malformed_auth_status,
+            "auth_bypass_candidate": auth_bypass_candidate,
+        }
+
+    except requests.RequestException:
+        return {
+            "no_auth_status": None,
+            "malformed_auth_status": None,
+            "auth_bypass_candidate": False,
+        }
+
+def phase4_auth_behavior_probe(session, handle, paths_by_service, delay):
+    results = {}
+
+    print("\n[Phase 4] Authentication behavior probes")
+
+    for service, paths in paths_by_service.items():
+        for path in sorted(paths):
+            # Skip endpoints that may change application state.
+            if path == "/_admin/reset-cache":
+                print(f"  SKIPPED state-changing route: {service}{path}")
+                continue
+
+            # Restrict probes to GET requests on discovered routes.
+            result = probe_auth_behavior(
+                session,
+                SERVICES[service],
+                path,
+            )
+
+            endpoint_key = f"{service}{path}"
+            results[endpoint_key] = result
+
+            log_probe(
+                handle,
+                phase="auth_behavior",
+                service=service,
+                path=path,
+                method="GET",
+                **result,
+            )
+
+            if result["auth_bypass_candidate"]:
+                print(
+                    f"  AUTH BYPASS CANDIDATE: "
+                    f"{endpoint_key} -> {result}"
+                )
+
+            time.sleep(max(0, delay))
+
+    return results
+
 def build_verifier_findings(report):
     """Convert scanner observations into conservative Day 12 verifier findings.
 
@@ -355,8 +441,13 @@ def main():
 
             if args.skip_method_enum:
                 method_results = {}
+                auth_behavior_results = {}
             else:
                 method_results = phase3_method_enumeration(
+                    session, handle, all_discovered, args.delay
+                )
+
+                auth_behavior_results = phase4_auth_behavior_probe(
                     session, handle, all_discovered, args.delay
                 )
 
@@ -375,6 +466,7 @@ def main():
             for service, paths in all_discovered.items()
         },
         "methods_by_endpoint": method_results,
+        "auth_behavior_findings": auth_behavior_results,
     }
 
     verifier_report = {

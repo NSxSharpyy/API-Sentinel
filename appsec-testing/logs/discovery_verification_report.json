@@ -1,35 +1,90 @@
 {
-  "generated_at": "2026-11-09T10:20:15.906396+05:30",
-  "input_report": "C:\\Users\\Asus\\API-Sentinel\\appsec-testing\\scripts\\recon\\mock_member3_discovery_output.json",
+  "generated_at": "2026-11-09T15:10:13.303535+05:30",
+  "input_report": "logs\\actual_discovery_output.json",
   "manifest": "C:\\Users\\Asus\\API-Sentinel\\appsec-testing\\docs\\shadow_zombie_manifest.md",
   "verdict": "FAIL",
   "exit_code": 1,
   "ground_truth_endpoints": 7,
-  "valid_unique_findings": 7,
-  "matched_endpoints": 6,
-  "recall": 0.8571428571428571,
-  "false_positive_count": 1,
+  "valid_unique_findings": 10,
+  "matched_endpoints": 7,
+  "recall": 1.0,
+  "false_positive_count": 3,
   "false_positives": [
+    {
+      "service": "billing",
+      "method": "GET",
+      "path": "/api/v1/billing/1",
+      "documented_route": false
+    },
     {
       "service": "user",
       "method": "GET",
-      "path": "/api/v2/users/me",
-      "documented_route": true
+      "path": "/api/v0/users/export",
+      "documented_route": false
+    },
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/api/v1/debug/metrics",
+      "documented_route": false
     }
   ],
-  "precision": 0.8571428571428571,
-  "classification_error_count": 0,
-  "classification_errors": [],
-  "validation_error_count": 0,
-  "validation_errors": [],
-  "missed_endpoints": [
+  "precision": 0.7,
+  "classification_error_count": 7,
+  "classification_errors": [
+    {
+      "service": "auth",
+      "method": "GET",
+      "path": "/debug/dump-tokens",
+      "reported_classification": "unknown",
+      "expected_classification": "shadow"
+    },
+    {
+      "service": "auth",
+      "method": "GET",
+      "path": "/api/v1/login-status",
+      "reported_classification": "unknown",
+      "expected_classification": "zombie"
+    },
+    {
+      "service": "user",
+      "method": "GET",
+      "path": "/internal/config",
+      "reported_classification": "unknown",
+      "expected_classification": "shadow"
+    },
     {
       "service": "user",
       "method": "GET",
       "path": "/api/v1/users/1",
+      "reported_classification": "unknown",
+      "expected_classification": "zombie"
+    },
+    {
+      "service": "order",
+      "method": "GET",
+      "path": "/api/v1/orders/1",
+      "reported_classification": "unknown",
+      "expected_classification": "zombie"
+    },
+    {
+      "service": "billing",
+      "method": "POST",
+      "path": "/_admin/reset-cache",
+      "reported_classification": "unknown",
+      "expected_classification": "shadow"
+    },
+    {
+      "service": "billing",
+      "method": "GET",
+      "path": "/api/v1/invoices/1",
+      "reported_classification": "unknown",
       "expected_classification": "zombie"
     }
   ],
+  "validation_error_count": 0,
+  "validation_errors": [],
+  "missed_endpoints": [],
   "per_endpoint": [
     {
       "service": "auth",
@@ -37,8 +92,8 @@
       "path": "/api/v1/login-status",
       "expected_classification": "zombie",
       "found": true,
-      "reported_classification": "zombie",
-      "classification_correct": true
+      "reported_classification": "unknown",
+      "classification_correct": false
     },
     {
       "service": "auth",
@@ -46,8 +101,8 @@
       "path": "/debug/dump-tokens",
       "expected_classification": "shadow",
       "found": true,
-      "reported_classification": "shadow",
-      "classification_correct": true
+      "reported_classification": "unknown",
+      "classification_correct": false
     },
     {
       "service": "billing",
@@ -55,8 +110,8 @@
       "path": "/api/v1/invoices/1",
       "expected_classification": "zombie",
       "found": true,
-      "reported_classification": "zombie",
-      "classification_correct": true
+      "reported_classification": "unknown",
+      "classification_correct": false
     },
     {
       "service": "billing",
@@ -64,8 +119,8 @@
       "path": "/_admin/reset-cache",
       "expected_classification": "shadow",
       "found": true,
-      "reported_classification": "shadow",
-      "classification_correct": true
+      "reported_classification": "unknown",
+      "classification_correct": false
     },
     {
       "service": "order",
@@ -73,16 +128,16 @@
       "path": "/api/v1/orders/1",
       "expected_classification": "zombie",
       "found": true,
-      "reported_classification": "zombie",
-      "classification_correct": true
+      "reported_classification": "unknown",
+      "classification_correct": false
     },
     {
       "service": "user",
       "method": "GET",
       "path": "/api/v1/users/1",
       "expected_classification": "zombie",
-      "found": false,
-      "reported_classification": null,
+      "found": true,
+      "reported_classification": "unknown",
       "classification_correct": false
     },
     {
@@ -91,8 +146,8 @@
       "path": "/internal/config",
       "expected_classification": "shadow",
       "found": true,
-      "reported_classification": "shadow",
-      "classification_correct": true
+      "reported_classification": "unknown",
+      "classification_correct": false
     }
   ]
 }

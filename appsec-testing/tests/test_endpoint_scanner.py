@@ -1,3 +1,4 @@
+
 import json
 import io
 
@@ -48,6 +49,7 @@ def test_method_enumeration_classifies_http_responses():
         json.loads(line)
         for line in log.getvalue().splitlines()
     ]
+
     assert len(records) == 4
     assert all("classification" in record for record in records)
 
@@ -116,3 +118,31 @@ def test_http_status_alone_does_not_prove_shadow_or_zombie():
     assert len(findings) == 2
     assert all(item["classification"] == "unknown" for item in findings)
     assert all(item["confidence"] == 0.30 for item in findings)
+
+
+def test_auth_behavior_probe_detects_malformed_token_acceptance():
+    from scripts.recon.endpoint_scanner import probe_auth_behavior
+
+    class AuthProbeSession:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, url, timeout, headers=None):
+            self.calls.append(headers)
+
+            if headers is None:
+                return FakeResponse(401)
+
+            return FakeResponse(200)
+
+    session = AuthProbeSession()
+
+    result = probe_auth_behavior(
+        session,
+        "http://127.0.0.1:5003",
+        "/api/v1/orders/1",
+    )
+
+    assert result["no_auth_status"] == 401
+    assert result["malformed_auth_status"] == 200
+    assert result["auth_bypass_candidate"] is True

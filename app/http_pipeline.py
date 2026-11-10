@@ -203,6 +203,7 @@ class HTTPMessagePipeline:
     def close_connection(
         self,
         connection_id: str = DEFAULT_CONNECTION_ID,
+        reason: str = "explicit_connection_close",
     ) -> None:
         """Remove parser state and pending correlation requests."""
         reverse_id = _reverse_connection_id(connection_id)
@@ -217,7 +218,7 @@ class HTTPMessagePipeline:
         if reverse_id is not None:
             self._pending_head_responses.pop(reverse_id, None)
 
-        self.correlator.close_connection(connection_id)
+        self.correlator.close_connection(connection_id, reason=reason)
 
     def _sync_head_response_context(
         self,
@@ -367,7 +368,9 @@ class HTTPMessagePipeline:
             )
 
             self._publish_all(exc.messages, connection_id)
-            self.close_connection(connection_id)
+            self.close_connection(
+                connection_id, reason="http_parse_error"
+            )
             raise
 
         for message in messages:

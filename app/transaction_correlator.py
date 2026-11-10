@@ -33,6 +33,11 @@ class HTTPTransactionCorrelator:
         self._pending: dict[str, deque[tuple[float, HTTPMessage]]] = {}
         self.unmatched_responses = 0
         self.dropped_requests = 0
+        self.expired_requests = 0
+        self.capacity_evicted_requests = 0
+        self.connection_closed_requests = 0
+        self.drop_reason_counts: dict[str, int] = {}
+        self.recent_drop_samples: deque[dict[str, object]] = deque(maxlen=100)
 
     @staticmethod
     def _connection_key(connection_id: str | None) -> str | None:
@@ -52,13 +57,37 @@ class HTTPTransactionCorrelator:
         first, second = sorted((left, right))
         return f"{protocol.upper()}|{first}<->{second}"
 
+    def _record_drop(
+        self,
+        created_at: float,
+        message: HTTPMessage,
+        reason: str,
+        now: float,
+    ) -> None:
+        """Record bounded diagnostics without request or connection identifiers."""
+        self.drop_reason_counts[reason] = (
+            self.drop_reason_counts.get(reason, 0) + 1
+        )
+
+        self.recent_drop_samples.append(
+            {
+                "reason": reason,
+                "method": (message.method or "UNKNOWN")[:16],
+                "age_seconds": round(max(0.0, now - created_at), 3),
+            }
+        )
+
     def _expire(self, key: str, now: float) -> None:
         pending = self._pending.get(key)
         if pending is None:
             return
 
         while pending and now - pending[0][0] >= self.request_ttl_seconds:
-            pending.popleft()
+            created_at, message = pending.popleft()
+            self._record_drop(
+                created_at, message, "http_request_ttl_expired", now
+            )
+            self.expired_requests += 1
             self.dropped_requests += 1
 
         if not pending:
@@ -91,16 +120,28 @@ class HTTPTransactionCorrelator:
             pending = self._pending.setdefault(key, deque())
 
             if len(pending) >= self.max_pending_per_connection:
-                pending.popleft()
+                created_at, evicted = pending.popleft()
+                self._record_drop(
+                    created_at,
+                    evicted,
+                    "http_pending_capacity_eviction",
+                    now,
+                )
+                self.capacity_evicted_requests += 1
                 self.dropped_requests += 1
 
             pending.append((now, message))
             return None
 
         if message.message_type == "response":
-            # Informational responses (for example 100 Continue or 103 Early
-            # Hints) are interim and must not consume the corresponding request.
-            if message.status_code is not None and message.status_code < 200:
+            # Most 1xx responses are interim. 101 Switching Protocols completes
+            # the HTTP Upgrade exchange and must consume its pending request.
+            status_code = message.status_code
+            if (
+                status_code is not None
+                and 100 <= status_code < 200
+                and status_code != 101
+            ):
                 return None
 
             pending = self._pending.get(key)
@@ -122,14 +163,25 @@ class HTTPTransactionCorrelator:
 
         return None
 
-    def close_connection(self, connection_id: str) -> None:
-        """Discard pending requests for either direction of a connection."""
+    def close_connection(
+        self,
+        connection_id: str,
+        reason: str = "explicit_connection_close",
+    ) -> None:
+        """Discard pending requests and record why the connection closed."""
         key = self._connection_key(connection_id)
         if key is None:
             return
 
         pending = self._pending.pop(key, ())
-        self.dropped_requests += len(pending)
+        now = monotonic()
+        closed_count = len(pending)
+
+        for created_at, message in pending:
+            self._record_drop(created_at, message, reason, now)
+
+        self.connection_closed_requests += closed_count
+        self.dropped_requests += closed_count
 
     def pending_for_connection(self, connection_id: str) -> int:
         """Count pending requests using either connection direction."""

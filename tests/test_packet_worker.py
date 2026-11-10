@@ -15,9 +15,37 @@ from app.schemas import RawPacketChunk
 
 @pytest.fixture
 def packet_queue(monkeypatch):
-    """Provide an isolated queue for each test."""
+    """Provide an isolated packet queue and worker metrics for each test."""
     queue = asyncio.Queue(maxsize=100)
     monkeypatch.setattr(worker_module, "raw_packet_queue", queue)
+
+    # Packet-worker metrics are module-level globals. Isolate them so worker
+    # tests cannot leak counters into API tests or other test modules.
+    counter_names = (
+        "tcp_packets_processed_count",
+        "tcp_syn_packets_count",
+        "tcp_stream_limit_rejection_count",
+        "tcp_half_closed_connection_limit_rejection_count",
+        "tcp_packets_without_stream_count",
+        "tcp_payload_packets_count",
+        "tcp_payload_bytes_count",
+        "tcp_reassembly_buffer_overflow_count",
+        "tcp_payload_delivered_to_http_count",
+        "tcp_payload_bytes_delivered_to_http_count",
+    )
+    for name in counter_names:
+        monkeypatch.setattr(queues, name, 0)
+
+    monkeypatch.setattr(
+        queues, "raw_packet_queue_wait_metrics", queues.QueueWaitMetrics()
+    )
+    monkeypatch.setattr(
+        queues,
+        "tcp_stream_diagnostics",
+        {"active_streams": 0, "reported_streams": 0, "streams": []},
+        raising=False,
+    )
+
     return queue
 
 
@@ -198,7 +226,7 @@ def test_worker_ignores_payload_without_syn(packet_queue):
     asyncio.run(run_test())
 
 
-def test_worker_cleans_up_on_rst(packet_queue):
+def test_worker_cleans_up_both_directions_on_rst(packet_queue):
     async def run_test():
         pipeline = Mock()
 
@@ -207,6 +235,16 @@ def test_worker_cleans_up_on_rst(packet_queue):
             payload=b"",
             sequence_number=99,
             tcp_flags=["SYN"],
+        )
+        syn_ack = make_packet(
+            packet_id="syn-ack",
+            source_ip="10.0.0.20",
+            destination_ip="10.0.0.10",
+            source_port=80,
+            destination_port=49152,
+            payload=b"",
+            sequence_number=499,
+            tcp_flags=["SYN", "ACK"],
         )
         rst = make_packet(
             packet_id="rst",
@@ -217,14 +255,18 @@ def test_worker_cleans_up_on_rst(packet_queue):
 
         connection_id = build_connection_id(syn)
 
-        await packet_queue.put(syn)
-        await packet_queue.put(rst)
+        for packet in (syn, syn_ack, rst):
+            await packet_queue.put(packet)
 
         task, stop_event = start_worker(packet_queue, pipeline)
 
         try:
             await asyncio.wait_for(packet_queue.join(), timeout=2)
-            pipeline.close_connection.assert_called_once_with(connection_id)
+
+            pipeline.close_connection.assert_called_once_with(
+                connection_id, reason="tcp_rst"
+            )
+            assert queues.tcp_stream_diagnostics["active_streams"] == 0
 
         finally:
             await stop_worker(task, stop_event)
@@ -469,6 +511,75 @@ def test_worker_counts_tcp_stream_limit_rejections(
     asyncio.run(run_test())
 
 
+
+def test_worker_bounds_half_closed_connections_without_evicting_active_stream(
+    packet_queue, monkeypatch
+):
+    async def run_test():
+        pipeline = Mock()
+        pipeline.correlator.expire_stale_requests.return_value = 0
+
+        monkeypatch.setattr(
+            worker_module, "MAX_HALF_CLOSED_CONNECTIONS", 1
+        )
+        monkeypatch.setattr(
+            queues, "tcp_half_closed_connection_limit_rejection_count", 0
+        )
+
+        first_fin = make_packet(
+            packet_id="first-half-close",
+            source_port=49152,
+            payload=b"",
+            sequence_number=99,
+            tcp_flags=["FIN", "ACK"],
+        )
+        active_syn = make_packet(
+            packet_id="unrelated-active-syn",
+            source_port=49153,
+            payload=b"",
+            sequence_number=199,
+            tcp_flags=["SYN"],
+        )
+        rejected_fin = make_packet(
+            packet_id="rejected-half-close",
+            source_port=49154,
+            payload=b"",
+            sequence_number=299,
+            tcp_flags=["FIN", "ACK"],
+        )
+
+        active_connection_id = build_connection_id(active_syn)
+        rejected_connection_id = build_connection_id(rejected_fin)
+
+        for packet in (first_fin, active_syn, rejected_fin):
+            await packet_queue.put(packet)
+
+        task, stop_event = start_worker(packet_queue, pipeline)
+
+        try:
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+
+            assert queues.tcp_half_closed_connection_limit_rejection_count == 1
+
+            # The newly rejected connection is explicitly closed.
+            pipeline.close_connection.assert_called_once_with(
+                rejected_connection_id,
+                reason="tcp_half_close_state_limit",
+            )
+
+            # The previously tracked half-close and unrelated active stream
+            # remain intact; the active stream was not silently evicted.
+            diagnostics = queues.tcp_stream_diagnostics
+            assert diagnostics["active_streams"] == 1
+            assert diagnostics["streams"][0]["connection_id"] == (
+                active_connection_id
+            )
+
+        finally:
+            await stop_worker(task, stop_event)
+
+    asyncio.run(run_test())
+
 def test_worker_counts_tcp_reassembly_buffer_overflows(
     packet_queue,
     monkeypatch,
@@ -522,7 +633,8 @@ def test_worker_counts_tcp_reassembly_buffer_overflows(
             )
 
             pipeline.close_connection.assert_called_once_with(
-                build_connection_id(syn)
+                build_connection_id(syn),
+                reason="tcp_reassembly_overflow",
             )
 
         finally:
@@ -626,7 +738,9 @@ def test_worker_resets_state_when_initial_syn_reuses_tuple(packet_queue):
         try:
             await asyncio.wait_for(packet_queue.join(), timeout=2)
 
-            pipeline.close_connection.assert_called_once_with(connection_id)
+            pipeline.close_connection.assert_called_once_with(
+                connection_id, reason="tcp_tuple_reuse"
+            )
             assert pipeline.feed.call_count == 2
 
         finally:
@@ -760,3 +874,256 @@ def test_worker_drains_accepted_packets_after_stop_is_set(packet_queue):
         assert pipeline.feed.call_args.args[0] == data.payload
 
     asyncio.run(run_test())
+
+def test_worker_preserves_reverse_stream_after_one_sided_fin(packet_queue):
+    async def run_test():
+        pipeline = Mock()
+
+        request_payload = (
+            b"GET /pending HTTP/1.1\r\n"
+            b"Host: example.test\r\n"
+            b"\r\n"
+        )
+        response_payload = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Length: 2\r\n"
+            b"\r\n"
+            b"OK"
+        )
+
+        client_syn = make_packet(
+            packet_id="client-syn",
+            payload=b"",
+            sequence_number=99,
+            tcp_flags=["SYN"],
+        )
+        server_syn_ack = make_packet(
+            packet_id="server-syn-ack",
+            source_ip="10.0.0.20",
+            destination_ip="10.0.0.10",
+            source_port=80,
+            destination_port=49152,
+            payload=b"",
+            sequence_number=499,
+            tcp_flags=["SYN", "ACK"],
+        )
+        client_request = make_packet(
+            packet_id="client-request",
+            payload=request_payload,
+            sequence_number=100,
+            tcp_flags=["ACK"],
+        )
+        client_fin = make_packet(
+            packet_id="client-fin",
+            payload=b"",
+            sequence_number=100 + len(request_payload),
+            tcp_flags=["FIN", "ACK"],
+        )
+        server_response = make_packet(
+            packet_id="server-response",
+            source_ip="10.0.0.20",
+            destination_ip="10.0.0.10",
+            source_port=80,
+            destination_port=49152,
+            payload=response_payload,
+            sequence_number=500,
+            tcp_flags=["ACK"],
+        )
+        server_fin = make_packet(
+            packet_id="server-fin",
+            source_ip="10.0.0.20",
+            destination_ip="10.0.0.10",
+            source_port=80,
+            destination_port=49152,
+            payload=b"",
+            sequence_number=500 + len(response_payload),
+            tcp_flags=["FIN", "ACK"],
+        )
+
+        client_connection_id = build_connection_id(client_syn)
+        server_connection_id = build_connection_id(server_syn_ack)
+
+        for packet in (
+            client_syn,
+            server_syn_ack,
+            client_request,
+            client_fin,
+        ):
+            await packet_queue.put(packet)
+
+        task, stop_event = start_worker(packet_queue, pipeline)
+
+        try:
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+
+            # One FIN must not close the bidirectional HTTP connection.
+            pipeline.close_connection.assert_not_called()
+            assert queues.tcp_stream_diagnostics["active_streams"] == 1
+
+            await packet_queue.put(server_response)
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+
+            assert pipeline.feed.call_count == 2
+            assert pipeline.feed.call_args_list[0].args[0] == request_payload
+            assert pipeline.feed.call_args_list[1].args[0] == response_payload
+            assert (
+                pipeline.feed.call_args_list[1].kwargs["connection_id"]
+                == server_connection_id
+            )
+            pipeline.close_connection.assert_not_called()
+
+            await packet_queue.put(server_fin)
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+
+            pipeline.close_connection.assert_called_once_with(
+                server_connection_id,
+                reason="tcp_fin_complete",
+            )
+            assert queues.tcp_stream_diagnostics["active_streams"] == 0
+
+        finally:
+            await stop_worker(task, stop_event)
+
+    asyncio.run(run_test())
+
+def test_worker_expires_half_closed_connection_without_reverse_stream(
+    packet_queue, monkeypatch
+):
+    async def run_test():
+        monkeypatch.setattr(worker_module, "TCP_STREAM_TTL_SECONDS", 0.03)
+        monkeypatch.setattr(worker_module, "TCP_GC_INTERVAL_SECONDS", 0.01)
+
+        pipeline = Mock()
+        pipeline.correlator.expire_stale_requests.return_value = 0
+
+        fin = make_packet(
+            packet_id="fin-without-reverse-stream",
+            payload=b"",
+            tcp_flags=["FIN", "ACK"],
+        )
+        connection_id = build_connection_id(fin)
+        await packet_queue.put(fin)
+
+        task, stop_event = start_worker(packet_queue, pipeline)
+
+        try:
+            await asyncio.wait_for(packet_queue.join(), timeout=2)
+
+            # The first FIN must be tracked even though no SYN or reverse
+            # stream was observed. TTL cleanup must eventually close it.
+            deadline = asyncio.get_running_loop().time() + 1.0
+            while (
+                not pipeline.close_connection.called
+                and asyncio.get_running_loop().time() < deadline
+            ):
+                await asyncio.sleep(0.01)
+
+            pipeline.close_connection.assert_called_once_with(
+                connection_id, reason="tcp_idle_timeout"
+            )
+
+        finally:
+            await stop_worker(task, stop_event)
+
+    asyncio.run(run_test())
+
+
+def test_fin_state_limit_preserves_same_connection_reverse_stream(
+    monkeypatch,
+):
+    connection_fin = make_packet(
+        packet_id="client-fin-at-capacity",
+        source_ip="10.0.0.10",
+        destination_ip="10.0.0.20",
+        source_port=49152,
+        destination_port=80,
+        payload=b"",
+        tcp_flags=["FIN", "ACK"],
+    )
+    connection_id = build_connection_id(connection_fin)
+    _, reverse_id = worker_module._connection_directions(connection_id)
+
+    reverse_stream = object()
+    streams = {reverse_id: reverse_stream}
+    last_seen = {
+        connection_id: 10.0,
+        reverse_id: 11.0,
+    }
+
+    existing_pair = frozenset((
+        "TCP|192.0.2.1:1000->192.0.2.2:80",
+        "TCP|192.0.2.2:80->192.0.2.1:1000",
+    ))
+    fin_seen = {
+        existing_pair: {"TCP|192.0.2.1:1000->192.0.2.2:80"}
+    }
+
+    pipeline = Mock()
+    monkeypatch.setattr(
+        worker_module, "MAX_HALF_CLOSED_CONNECTIONS", 1
+    )
+    monkeypatch.setattr(
+        queues, "tcp_half_closed_connection_limit_rejection_count", 0
+    )
+
+    result = worker_module._record_tcp_fin(
+        connection_id,
+        streams,
+        last_seen,
+        fin_seen,
+        pipeline,
+    )
+
+    assert result is False
+    assert queues.tcp_half_closed_connection_limit_rejection_count == 1
+
+    # The FIN direction is removed, but the reverse response stream survives.
+    assert connection_id not in streams
+    assert streams[reverse_id] is reverse_stream
+    assert connection_id not in last_seen
+    assert reverse_id in last_seen
+
+    # Existing half-close state is not evicted or replaced.
+    assert len(fin_seen) == 1
+    assert existing_pair in fin_seen
+    pipeline.close_connection.assert_not_called()
+
+
+def test_close_tcp_connection_preserves_state_when_pipeline_cleanup_fails():
+    connection_id = build_connection_id(make_packet())
+    directions = worker_module._connection_directions(connection_id)
+    pair_key = frozenset(directions)
+
+    streams = {
+        direction: object()
+        for direction in directions
+    }
+    last_seen = {
+        direction: 10.0
+        for direction in directions
+    }
+    fin_seen = {pair_key: {connection_id}}
+
+    pipeline = Mock()
+    pipeline.close_connection.side_effect = RuntimeError(
+        "simulated pipeline cleanup failure"
+    )
+
+    with pytest.raises(RuntimeError, match="simulated pipeline cleanup failure"):
+        worker_module._close_tcp_connection(
+            connection_id,
+            streams,
+            last_seen,
+            fin_seen,
+            pipeline,
+            reason="tcp_rst",
+        )
+
+    # Failed HTTP cleanup must not make the connection invisible to GC.
+    assert set(streams) == set(directions)
+    assert set(last_seen) == set(directions)
+    assert fin_seen == {pair_key: {connection_id}}
+    pipeline.close_connection.assert_called_once_with(
+        connection_id,
+        reason="tcp_rst",
+    )

@@ -4,7 +4,7 @@ import logging
 import time
 
 from app import queues
-from app.http_pipeline import HTTPMessagePipeline
+from app.http_pipeline import HTTPMessagePipeline, _reverse_connection_id
 from app.http_reassembly import HTTPParseError
 from app.queues import raw_packet_queue
 from app.schemas import RawPacketChunk
@@ -13,6 +13,7 @@ from app.tcp_reassembly import TCPStreamReassembler
 logger = logging.getLogger(__name__)
 
 MAX_TCP_STREAMS = 10_000
+MAX_HALF_CLOSED_CONNECTIONS = 10_000
 MAX_TCP_BUFFERED_BYTES = 1_048_576
 TCP_STREAM_TTL_SECONDS = 30.0
 TCP_GC_INTERVAL_SECONDS = 5.0
@@ -36,6 +37,101 @@ def build_connection_id(packet: RawPacketChunk) -> str | None:
         f"{packet.source_ip}:{packet.source_port}->"
         f"{packet.destination_ip}:{packet.destination_port}"
     )
+
+
+def _connection_directions(connection_id: str) -> tuple[str, ...]:
+    """Return both directional IDs for one bidirectional TCP connection."""
+    reverse_id = _reverse_connection_id(connection_id)
+    if reverse_id is None or reverse_id == connection_id:
+        return (connection_id,)
+    return (connection_id, reverse_id)
+
+
+def _close_tcp_connection(
+    connection_id: str,
+    streams: dict[str, TCPStreamReassembler],
+    last_seen: dict[str, float],
+    fin_seen: dict[frozenset[str], set[str]],
+    pipeline: HTTPMessagePipeline,
+    reason: str = "tcp_connection_closed",
+) -> None:
+    """Remove both directional TCP streams and close HTTP connection state."""
+    directions = _connection_directions(connection_id)
+
+    # Close HTTP parser and correlation state first. If this fails, preserve
+    # TCP tracking so the caller or stale-connection cleanup can retry.
+    pipeline.close_connection(connection_id, reason=reason)
+
+    for direction in directions:
+        streams.pop(direction, None)
+        last_seen.pop(direction, None)
+
+    fin_seen.pop(frozenset(directions), None)
+
+
+def _record_tcp_fin(
+    connection_id: str,
+    streams: dict[str, TCPStreamReassembler],
+    last_seen: dict[str, float],
+    fin_seen: dict[frozenset[str], set[str]],
+    pipeline: HTTPMessagePipeline,
+) -> bool:
+    """Record one directional FIN; close only after both directions finish."""
+    directions = _connection_directions(connection_id)
+    pair_key = frozenset(directions)
+
+    if (
+        pair_key not in fin_seen
+        and len(fin_seen) >= MAX_HALF_CLOSED_CONNECTIONS
+    ):
+        queues.tcp_half_closed_connection_limit_rejection_count += 1
+
+        reverse_direction = next(
+            (direction for direction in directions if direction != connection_id),
+            None,
+        )
+
+        if reverse_direction in streams:
+            # Tracking capacity is full, but the reverse stream must remain
+            # available to deliver the HTTP response. Do not retain a new
+            # half-close entry; the active reverse stream remains TTL-tracked.
+            streams.pop(connection_id, None)
+            last_seen.pop(connection_id, None)
+            return False
+
+        # No reverse stream can deliver a response, so reject and clean up
+        # this new connection without evicting previously tracked state.
+        _close_tcp_connection(
+            connection_id,
+            streams,
+            last_seen,
+            fin_seen,
+            pipeline,
+            reason="tcp_half_close_state_limit",
+        )
+        return False
+
+    seen_directions = fin_seen.setdefault(pair_key, set())
+    seen_directions.add(connection_id)
+
+    # A FIN ends this direction, not the reverse direction. Retain its
+    # timestamp so TTL cleanup can discover a half-closed connection even
+    # when the reverse-direction stream was never initialized.
+    streams.pop(connection_id, None)
+    last_seen[connection_id] = time.monotonic()
+
+    if all(direction in seen_directions for direction in directions):
+        _close_tcp_connection(
+            connection_id,
+            streams,
+            last_seen,
+            fin_seen,
+            pipeline,
+            reason="tcp_fin_complete",
+        )
+        return True
+
+    return False
 
 
 def _flags(packet: RawPacketChunk) -> set[str]:
@@ -91,8 +187,11 @@ async def _cleanup_stale_streams(
     last_seen: dict[str, float],
     pipeline: HTTPMessagePipeline,
     stop_event: asyncio.Event,
+    fin_seen: dict[frozenset[str], set[str]] | None = None,
 ) -> None:
-    """Remove TCP streams inactive for longer than the configured TTL."""
+    """Remove bidirectional TCP connections inactive beyond the configured TTL."""
+    if fin_seen is None:
+        fin_seen = {}
     while not stop_event.is_set():
         try:
             await asyncio.wait_for(
@@ -105,27 +204,52 @@ async def _cleanup_stale_streams(
 
         now = time.monotonic()
 
-        stale_ids = [
-            connection_id
-            for connection_id, last_activity in list(last_seen.items())
-            if now - last_activity > TCP_STREAM_TTL_SECONDS
-        ]
+        stale_pairs: dict[frozenset[str], str] = {}
 
-        for connection_id in stale_ids:
-            streams.pop(connection_id, None)
-            last_seen.pop(connection_id, None)
+        # Include half-closed pairs even if one or both directional streams
+        # have already been removed.
+        for pair_key, seen_directions in list(fin_seen.items()):
+            if pair_key:
+                # Prefer a direction that actually sent FIN. Sorting makes
+                # cleanup deterministic if more than one direction is stored.
+                representative = (
+                    min(seen_directions)
+                    if seen_directions
+                    else min(pair_key)
+                )
+                stale_pairs.setdefault(pair_key, representative)
+
+        for connection_id in list(last_seen):
+            pair_key = frozenset(_connection_directions(connection_id))
+            stale_pairs.setdefault(pair_key, connection_id)
+
+        for pair_key, representative in stale_pairs.items():
+            # Activity in either direction keeps the whole connection alive.
+            last_activity = max(
+                (last_seen.get(direction, 0.0) for direction in pair_key),
+                default=0.0,
+            )
+            if now - last_activity <= TCP_STREAM_TTL_SECONDS:
+                continue
 
             try:
-                pipeline.close_connection(connection_id)
+                _close_tcp_connection(
+                    representative,
+                    streams,
+                    last_seen,
+                    fin_seen,
+                    pipeline,
+                    reason="tcp_idle_timeout",
+                )
             except Exception:
                 logger.exception(
                     "Failed to close expired connection %s",
-                    connection_id,
+                    representative,
                 )
 
             logger.debug(
-                "Expired inactive TCP stream: %s",
-                connection_id,
+                "Expired inactive TCP connection: %s",
+                representative,
             )
 
         try:
@@ -152,6 +276,7 @@ async def packet_worker(
     """Reassemble ordered TCP payloads before passing them to the HTTP parser."""
     streams: dict[str, TCPStreamReassembler] = {}
     last_seen: dict[str, float] = {}
+    fin_seen: dict[frozenset[str], set[str]] = {}
 
     queues.tcp_stream_diagnostics = {
         "active_streams": 0,
@@ -165,6 +290,7 @@ async def packet_worker(
             last_seen,
             pipeline,
             stop_event,
+            fin_seen,
         )
     )
 
@@ -218,12 +344,23 @@ async def packet_worker(
 
                     # A new initial SYN reusing an active connection
                     # tuple means the previous connection has ended.
-                    if "ACK" not in flags and connection_id in streams:
-                        streams.pop(connection_id, None)
-                        last_seen.pop(connection_id, None)
-
-                        pipeline.close_connection(connection_id)
-                        stream = None
+                    if "ACK" not in flags:
+                        directions = _connection_directions(connection_id)
+                        pair_key = frozenset(directions)
+                        previous_connection_exists = (
+                            pair_key in fin_seen
+                            or any(direction in streams for direction in directions)
+                        )
+                        if previous_connection_exists:
+                            _close_tcp_connection(
+                                connection_id,
+                                streams,
+                                last_seen,
+                                fin_seen,
+                                pipeline,
+                                reason="tcp_tuple_reuse",
+                            )
+                            stream = None
 
                     # Initialize a new stream when necessary.
                     # Preserve an existing stream on a retransmitted SYN-ACK.
@@ -259,6 +396,32 @@ async def packet_worker(
                     last_seen[connection_id] = time.monotonic()
 
                 if stream is None:
+                    # Terminal control packets must still clean up or update
+                    # connection state even when their directional stream
+                    # was already removed by an earlier FIN.
+                    if "RST" in flags:
+                        _close_tcp_connection(
+                            connection_id,
+                            streams,
+                            last_seen,
+                            fin_seen,
+                            pipeline,
+                            reason="tcp_rst",
+                        )
+                        _publish_tcp_stream_diagnostics(streams, last_seen)
+                        continue
+
+                    if "FIN" in flags:
+                        _record_tcp_fin(
+                            connection_id,
+                            streams,
+                            last_seen,
+                            fin_seen,
+                            pipeline,
+                        )
+                        _publish_tcp_stream_diagnostics(streams, last_seen)
+                        continue
+
                     queues.tcp_packets_without_stream_count += 1
 
                     logger.debug(
@@ -292,10 +455,14 @@ async def packet_worker(
 
                         queues.tcp_reassembly_buffer_overflow_count += 1
 
-                        streams.pop(connection_id, None)
-                        last_seen.pop(connection_id, None)
-
-                        pipeline.close_connection(connection_id)
+                        _close_tcp_connection(
+                            connection_id,
+                            streams,
+                            last_seen,
+                            fin_seen,
+                            pipeline,
+                            reason="tcp_reassembly_overflow",
+                        )
 
                         _publish_tcp_stream_diagnostics(
                             streams,
@@ -329,11 +496,26 @@ async def packet_worker(
                                 exc,
                             )
 
-                if "FIN" in flags or "RST" in flags:
-                    streams.pop(connection_id, None)
-                    last_seen.pop(connection_id, None)
-
-                    pipeline.close_connection(connection_id)
+                if "RST" in flags:
+                    # Reset aborts the entire bidirectional connection.
+                    _close_tcp_connection(
+                        connection_id,
+                        streams,
+                        last_seen,
+                        fin_seen,
+                        pipeline,
+                        reason="tcp_rst",
+                    )
+                elif "FIN" in flags:
+                    # FIN closes only this sending direction. The reverse
+                    # direction may still carry the HTTP response.
+                    _record_tcp_fin(
+                        connection_id,
+                        streams,
+                        last_seen,
+                        fin_seen,
+                        pipeline,
+                    )
 
                 _publish_tcp_stream_diagnostics(
                     streams,
@@ -360,9 +542,29 @@ async def packet_worker(
         except asyncio.CancelledError:
             pass
 
-        for connection_id in list(streams):
+        closed_pairs: set[frozenset[str]] = set()
+        cleanup_ids = list(streams)
+        cleanup_ids.extend(
+            next(iter(pair_key))
+            for pair_key in list(fin_seen)
+            if pair_key
+        )
+
+        for connection_id in cleanup_ids:
+            pair_key = frozenset(_connection_directions(connection_id))
+            if pair_key in closed_pairs:
+                continue
+            closed_pairs.add(pair_key)
+
             try:
-                pipeline.close_connection(connection_id)
+                _close_tcp_connection(
+                    connection_id,
+                    streams,
+                    last_seen,
+                    fin_seen,
+                    pipeline,
+                    reason="worker_shutdown",
+                )
             except Exception:
                 logger.exception(
                     "Failed to close connection %s during shutdown",
@@ -371,6 +573,7 @@ async def packet_worker(
 
         streams.clear()
         last_seen.clear()
+        fin_seen.clear()
 
         _publish_tcp_stream_diagnostics(
             streams,

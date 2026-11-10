@@ -159,6 +159,7 @@ accepted_udp_event_count = 0
 
 # TCP stream rejection and reassembly counters
 tcp_stream_limit_rejection_count = 0
+tcp_half_closed_connection_limit_rejection_count = 0
 tcp_reassembly_buffer_overflow_count = 0
 
 # TCP packet-processing diagnostic counters

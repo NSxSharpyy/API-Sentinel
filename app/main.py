@@ -423,6 +423,8 @@ async def lifespan(app: FastAPI):
                         queues.tcp_payload_delivered_to_http_count,
                     "tcp_stream_limit_rejection_count":
                         queues.tcp_stream_limit_rejection_count,
+                    "tcp_half_closed_connection_limit_rejection_count":
+                        queues.tcp_half_closed_connection_limit_rejection_count,
                     "tcp_reassembly_buffer_overflow_count":
                         queues.tcp_reassembly_buffer_overflow_count,
                     "transaction_processing_count":
@@ -1241,6 +1243,46 @@ async def queue_status():
             len(pipeline.completed_transactions)
             if pipeline is not None else 0
         ),
+        "http_completed_transaction_history_size": (
+            len(pipeline.completed_transactions)
+            if pipeline is not None else 0
+        ),
+        "http_completed_transaction_history_capacity": (
+            pipeline.completed_transactions.maxlen
+            if pipeline is not None else 0
+        ),
+        "http_parsed_request_count": (
+            pipeline.parsed_request_count
+            if pipeline is not None else 0
+        ),
+        "http_parsed_response_count": (
+            pipeline.parsed_response_count
+            if pipeline is not None else 0
+        ),
+        "http_dropped_request_count": (
+            pipeline.correlator.dropped_requests
+            if pipeline is not None else 0
+        ),
+        "http_expired_request_count": (
+            pipeline.correlator.expired_requests
+            if pipeline is not None else 0
+        ),
+        "http_capacity_evicted_request_count": (
+            pipeline.correlator.capacity_evicted_requests
+            if pipeline is not None else 0
+        ),
+        "http_connection_closed_request_count": (
+            pipeline.correlator.connection_closed_requests
+            if pipeline is not None else 0
+        ),
+        "http_pending_request_count": (
+            pipeline.correlator.pending_request_count
+            if pipeline is not None else 0
+        ),
+        "http_unmatched_response_count": (
+            pipeline.correlator.unmatched_responses
+            if pipeline is not None else 0
+        ),
         "transaction_processing_count": (
             pipeline.transaction_processing_count
             if pipeline is not None else 0
@@ -1296,6 +1338,9 @@ async def queue_status():
         "tcp_stream_limit_rejection_count": (
             queues.tcp_stream_limit_rejection_count
         ),
+        "tcp_half_closed_connection_limit_rejection_count": (
+            queues.tcp_half_closed_connection_limit_rejection_count
+        ),
         "tcp_reassembly_buffer_overflow_count": (
             queues.tcp_reassembly_buffer_overflow_count
         ),
@@ -1328,31 +1373,46 @@ async def debug_http_parsers():
     if pipeline is None:
         return {"error": "HTTP pipeline is not initialized"}
 
+    parsers = tuple(pipeline._parsers.values())
+    stream_diagnostics = getattr(queues, "tcp_stream_diagnostics", {})
+    if not isinstance(stream_diagnostics, dict):
+        stream_diagnostics = {}
+
     return {
-        "parser_count": len(pipeline._parsers),
-        "parsers": [
-            {
-                "buffered_bytes": len(parser.buffer),
-                "pending_head_responses": parser.pending_head_responses,
-            }
-            for parser in pipeline._parsers.values()
-        ],
+        "parser_count": len(parsers),
+        "buffered_parser_count": sum(bool(parser.buffer) for parser in parsers),
+        "total_buffered_bytes": sum(len(parser.buffer) for parser in parsers),
+        "pending_head_responses": sum(
+            parser.pending_head_responses for parser in parsers
+        ),
         "parsed_request_count": pipeline.parsed_request_count,
         "parsed_response_count": pipeline.parsed_response_count,
+        "transaction_processing_count": pipeline.transaction_processing_count,
         "completed_transactions": len(pipeline.completed_transactions),
+        "completed_transaction_history_size": len(
+            pipeline.completed_transactions
+        ),
+        "completed_transaction_history_capacity": (
+            pipeline.completed_transactions.maxlen
+        ),
         "pending_requests": pipeline.correlator.pending_request_count,
         "unmatched_responses": pipeline.correlator.unmatched_responses,
-        "tcp_stream_diagnostics": getattr(
-            queues,
-            "tcp_stream_diagnostics",
-            {
-                "active_streams": 0,
-                "reported_streams": 0,
-                "streams": [],
-            },
+        "dropped_requests": pipeline.correlator.dropped_requests,
+        "expired_requests": pipeline.correlator.expired_requests,
+        "capacity_evicted_requests": (
+            pipeline.correlator.capacity_evicted_requests
         ),
+        "connection_closed_requests": (
+            pipeline.correlator.connection_closed_requests
+        ),
+        "drop_reason_counts": dict(
+            pipeline.correlator.drop_reason_counts
+        ),
+        "drop_sample_capacity": (
+            pipeline.correlator.recent_drop_samples.maxlen
+        ),
+        "active_tcp_streams": stream_diagnostics.get("active_streams", 0),
     }
-
 
 @app.get("/detection-status")
 async def detection_status():

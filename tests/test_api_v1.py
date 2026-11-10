@@ -190,6 +190,30 @@ def test_metrics_expose_database_and_alert_bus_counts(api_client):
     assert "queue_wait_sample_count" in body["persistence"]
     assert "average_queue_wait_ms" in body["persistence"]
     assert "p95_queue_wait_ms" in body["persistence"]
+
+    processing = body["processing"]
+    assert processing["transaction_processing_count"] >= 0
+    assert processing["parsed_request_count"] >= 0
+    assert processing["parsed_response_count"] >= 0
+    assert processing["dropped_request_count"] >= 0
+    assert processing["expired_request_count"] >= 0
+    assert processing["capacity_evicted_request_count"] >= 0
+    assert processing["connection_closed_request_count"] >= 0
+    assert processing["dropped_request_count"] == (
+        processing["expired_request_count"]
+        + processing["capacity_evicted_request_count"]
+        + processing["connection_closed_request_count"]
+    )
+    assert processing["pending_request_count"] >= 0
+    assert processing["unmatched_response_count"] >= 0
+    assert (
+        processing["completed_transaction_history_size"]
+        == processing["completed_transactions"]
+    )
+    assert (
+        processing["completed_transaction_history_size"]
+        <= processing["completed_transaction_history_capacity"]
+    )
     assert body["detection"]["status"] == "running"
 
 

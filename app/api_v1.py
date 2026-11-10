@@ -280,6 +280,50 @@ async def get_metrics(request: Request):
                 len(pipeline.completed_transactions)
                 if pipeline is not None else 0
             ),
+            "completed_transaction_history_size": (
+                len(pipeline.completed_transactions)
+                if pipeline is not None else 0
+            ),
+            "completed_transaction_history_capacity": (
+                pipeline.completed_transactions.maxlen
+                if pipeline is not None else 0
+            ),
+            "transaction_processing_count": (
+                pipeline.transaction_processing_count
+                if pipeline is not None else 0
+            ),
+            "parsed_request_count": (
+                pipeline.parsed_request_count
+                if pipeline is not None else 0
+            ),
+            "parsed_response_count": (
+                pipeline.parsed_response_count
+                if pipeline is not None else 0
+            ),
+            "dropped_request_count": (
+                pipeline.correlator.dropped_requests
+                if pipeline is not None else 0
+            ),
+            "expired_request_count": (
+                pipeline.correlator.expired_requests
+                if pipeline is not None else 0
+            ),
+            "capacity_evicted_request_count": (
+                pipeline.correlator.capacity_evicted_requests
+                if pipeline is not None else 0
+            ),
+            "connection_closed_request_count": (
+                pipeline.correlator.connection_closed_requests
+                if pipeline is not None else 0
+            ),
+            "pending_request_count": (
+                pipeline.correlator.pending_request_count
+                if pipeline is not None else 0
+            ),
+            "unmatched_response_count": (
+                pipeline.correlator.unmatched_responses
+                if pipeline is not None else 0
+            ),
             "last_transaction_processing_latency_ms": (
                 pipeline.last_transaction_processing_latency_ms
                 if pipeline is not None else 0.0

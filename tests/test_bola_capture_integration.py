@@ -192,6 +192,7 @@ def test_reader_events_detect_bola_and_redact_sensitive_data(
             "accepted_tcp_event_count",
             "accepted_udp_event_count",
             "tcp_stream_limit_rejection_count",
+            "tcp_half_closed_connection_limit_rejection_count",
             "tcp_reassembly_buffer_overflow_count",
             "tcp_packets_processed_count",
             "tcp_syn_packets_count",

@@ -1,0 +1,9 @@
+{
+    "summary": {
+        "total_runtime_events_checked": 2,
+        "total_drift_findings": 0,
+        "undocumented_request_fields": 0,
+        "undocumented_response_fields": 0
+    },
+    "findings": []
+}

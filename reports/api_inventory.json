@@ -1,0 +1,51 @@
+{
+    "generated_at": "2026-11-11T06:25:06.606879+00:00",
+    "api_name": "API-Sentinel Day 18 Demo",
+    "openapi_version": "3.0.0",
+    "total_endpoints": 3,
+    "approved_endpoints": 1,
+    "unapproved_endpoints": 0,
+    "shadow_endpoints": 0,
+    "zombie_endpoints": 2,
+    "unclassified_endpoints": 0,
+    "risk_summary": {
+        "HIGH": 2,
+        "LOW": 1
+    },
+    "total_runtime_observations": 2,
+    "endpoints": [
+        {
+            "method": "GET",
+            "path": "/api/v1/legacy/orders",
+            "operation_id": null,
+            "summary": "Inactive legacy orders endpoint",
+            "is_approved": false,
+            "is_declared": true,
+            "runtime_observation_count": 1,
+            "discovery_state": "ZOMBIE_API",
+            "risk_rating": "HIGH"
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/legacy/users",
+            "operation_id": null,
+            "summary": "Legacy users endpoint",
+            "is_approved": false,
+            "is_declared": true,
+            "runtime_observation_count": 1,
+            "discovery_state": "ZOMBIE_API",
+            "risk_rating": "HIGH"
+        },
+        {
+            "method": "POST",
+            "path": "/api/users",
+            "operation_id": null,
+            "summary": "Create user",
+            "is_approved": true,
+            "is_declared": true,
+            "runtime_observation_count": 0,
+            "discovery_state": "APPROVED",
+            "risk_rating": "LOW"
+        }
+    ]
+}

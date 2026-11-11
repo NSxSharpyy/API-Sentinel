@@ -1,0 +1,43 @@
+{
+    "generated_at": "2026-11-11T06:25:06.599976+00:00",
+    "total_alerts": 2,
+    "total_observations": 2,
+    "alerts": [
+        {
+            "alert_id": "619d3171-7c8d-4db3-ba05-868dd8e942fd",
+            "alert_type": "ZOMBIE_API_TRAFFIC",
+            "severity": "HIGH",
+            "status": "OPEN",
+            "method": "GET",
+            "route": "/api/v1/legacy/orders",
+            "endpoint_status": "ZOMBIE_API",
+            "reasons": [
+                "Declared API endpoint is inactive but still receives live traffic."
+            ],
+            "message": "Live traffic detected on zombie API endpoint: GET /api/v1/legacy/orders",
+            "occurrence_count": 1,
+            "first_seen": "2026-11-11T06:25:06.599976+00:00",
+            "last_seen": "2026-11-11T06:25:06.599976+00:00",
+            "detected_at": "2026-11-11T06:25:06.599976+00:00",
+            "needs_review": true
+        },
+        {
+            "alert_id": "227010a8-d4a8-407d-820d-6a0b8bef83de",
+            "alert_type": "ZOMBIE_API_TRAFFIC",
+            "severity": "HIGH",
+            "status": "OPEN",
+            "method": "GET",
+            "route": "/api/v1/legacy/users",
+            "endpoint_status": "ZOMBIE_API",
+            "reasons": [
+                "Declared API endpoint is deprecated but still receives live traffic."
+            ],
+            "message": "Live traffic detected on zombie API endpoint: GET /api/v1/legacy/users",
+            "occurrence_count": 1,
+            "first_seen": "2026-11-11T06:25:06.599976+00:00",
+            "last_seen": "2026-11-11T06:25:06.599976+00:00",
+            "detected_at": "2026-11-11T06:25:06.599976+00:00",
+            "needs_review": true
+        }
+    ]
+}

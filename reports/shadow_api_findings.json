@@ -1,0 +1,18 @@
+{
+    "generated_at": "2026-11-11T06:25:06.592128+00:00",
+    "total_findings": 2,
+    "findings": [
+        {
+            "path": "/api/v1/legacy/users",
+            "method": "GET",
+            "operation_id": null,
+            "summary": "Legacy users endpoint"
+        },
+        {
+            "path": "/api/v1/legacy/orders",
+            "method": "GET",
+            "operation_id": null,
+            "summary": "Inactive legacy orders endpoint"
+        }
+    ]
+}

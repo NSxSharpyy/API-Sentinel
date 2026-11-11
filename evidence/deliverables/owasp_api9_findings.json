@@ -1,0 +1,27 @@
+{
+    "generated_at": "2026-11-11T06:25:06.606879+00:00",
+    "owasp_category": "API9:2023",
+    "owasp_name": "Improper Inventory Management",
+    "total_findings": 2,
+    "unique_endpoints": 2,
+    "shadow_findings": 0,
+    "zombie_findings": 2,
+    "findings": [
+        {
+            "method": "GET",
+            "route": "/api/v1/legacy/users",
+            "status": "ZOMBIE_API",
+            "reason": "Declared API endpoint is deprecated but still receives live traffic.",
+            "owasp_category": "API9:2023",
+            "owasp_name": "Improper Inventory Management"
+        },
+        {
+            "method": "GET",
+            "route": "/api/v1/legacy/orders",
+            "status": "ZOMBIE_API",
+            "reason": "Declared API endpoint is inactive but still receives live traffic.",
+            "owasp_category": "API9:2023",
+            "owasp_name": "Improper Inventory Management"
+        }
+    ]
+}
